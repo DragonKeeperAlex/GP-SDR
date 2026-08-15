@@ -1,0 +1,7 @@
+.DS_Store
+build/
+dist/
+# Legacy pre-0.3 data directory.
+SignalHarborData/
+*.log
+*.tmp

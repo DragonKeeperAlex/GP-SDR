@@ -1,0 +1,376 @@
+package app
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+)
+
+var (
+	ErrNotFound = errors.New("requested item was not found")
+	ErrBuiltIn  = errors.New("built-in profiles cannot be replaced; duplicate the profile first")
+)
+
+type ProfileStore struct {
+	mu       sync.RWMutex
+	dir      string
+	profiles map[string]ScanProfile
+}
+
+func NewProfileStore(dir string) (*ProfileStore, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	store := &ProfileStore{dir: dir, profiles: make(map[string]ScanProfile)}
+	for _, profile := range builtInProfiles() {
+		store.profiles[profile.ID] = profile
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var profile ScanProfile
+		if json.Unmarshal(data, &profile) == nil && validateProfile(profile) == nil {
+			store.profiles[profile.ID] = normalizeProfile(profile)
+		}
+	}
+	return store, nil
+}
+
+func (s *ProfileStore) All() []ScanProfile {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]ScanProfile, 0, len(s.profiles))
+	for _, profile := range s.profiles {
+		items = append(items, profile)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].BuiltIn != items[j].BuiltIn {
+			return items[i].BuiltIn
+		}
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+	return items
+}
+
+func (s *ProfileStore) Get(id string) (ScanProfile, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	profile, ok := s.profiles[id]
+	return profile, ok
+}
+
+func (s *ProfileStore) Save(profile ScanProfile) (ScanProfile, error) {
+	if err := validateProfile(profile); err != nil {
+		return ScanProfile{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.profiles[profile.ID]; ok && existing.BuiltIn {
+		return ScanProfile{}, ErrBuiltIn
+	}
+	profile = normalizeProfile(profile)
+	profile.BuiltIn = false
+	s.profiles[profile.ID] = profile
+	return profile, s.persist(profile)
+}
+
+func (s *ProfileStore) Import(data []byte) (ScanProfile, error) {
+	if len(data) > 1_000_000 {
+		return ScanProfile{}, errors.New("profile is larger than 1 MB")
+	}
+	var profile ScanProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return ScanProfile{}, errors.New("not a valid GP-SDR profile")
+	}
+	if err := validateProfile(profile); err != nil {
+		return ScanProfile{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.profiles[profile.ID]; exists || profile.BuiltIn {
+		profile.ID = NewID()
+	}
+	profile = normalizeProfile(profile)
+	profile.BuiltIn = false
+	s.profiles[profile.ID] = profile
+	return profile, s.persist(profile)
+}
+
+func (s *ProfileStore) Duplicate(id string) (ScanProfile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	profile, ok := s.profiles[id]
+	if !ok {
+		return ScanProfile{}, ErrNotFound
+	}
+	profile.ID, profile.Name, profile.BuiltIn = NewID(), profile.Name+" Copy", false
+	s.profiles[profile.ID] = profile
+	return profile, s.persist(profile)
+}
+
+func (s *ProfileStore) Export(id string) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	profile, ok := s.profiles[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return json.MarshalIndent(profile, "", "  ")
+}
+
+func (s *ProfileStore) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	profile, ok := s.profiles[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if profile.BuiltIn {
+		return ErrBuiltIn
+	}
+	delete(s.profiles, id)
+	return os.Remove(filepath.Join(s.dir, id+".json"))
+}
+
+func (s *ProfileStore) persist(profile ScanProfile) error {
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return err
+	}
+	temporary := filepath.Join(s.dir, profile.ID+".tmp")
+	if err := os.WriteFile(temporary, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(temporary, filepath.Join(s.dir, profile.ID+".json"))
+}
+
+func validateProfile(profile ScanProfile) error {
+	if profile.SchemaVersion != 1 {
+		return fmt.Errorf("unsupported profile version %d", profile.SchemaVersion)
+	}
+	if strings.TrimSpace(profile.Name) == "" || len(profile.Name) > 80 {
+		return errors.New("profile name is required and must be 80 characters or fewer")
+	}
+	if len(profile.Ranges) > 100 || len(profile.Channels) > 5000 || len(profile.P25Systems) > 20 {
+		return errors.New("profile contains too many ranges or channels")
+	}
+	for _, item := range profile.Ranges {
+		if item.StartHz < 0 || item.EndHz <= item.StartHz || item.StepHz <= 0 || item.DwellMilliseconds < 20 {
+			return fmt.Errorf("invalid values in range %q", item.Name)
+		}
+	}
+	for _, item := range profile.Channels {
+		if item.FrequencyHz <= 0 || item.BandwidthHz <= 0 {
+			return fmt.Errorf("invalid values in channel %q", item.Name)
+		}
+	}
+	for _, system := range profile.P25Systems {
+		if strings.TrimSpace(system.Name) == "" || len(system.ControlChannelsHz) == 0 || len(system.ControlChannelsHz) > 32 {
+			return fmt.Errorf("P25 system %q needs a name and at least one control channel", system.Name)
+		}
+		if len(system.Talkgroups) > 20_000 {
+			return fmt.Errorf("P25 system %q has too many talkgroups", system.Name)
+		}
+		seenTalkgroups := make(map[int]bool, len(system.Talkgroups))
+		for _, talkgroup := range system.Talkgroups {
+			if talkgroup.ID < 1 || talkgroup.ID > 65535 {
+				return fmt.Errorf("P25 system %q has an invalid talkgroup ID %d", system.Name, talkgroup.ID)
+			}
+			if seenTalkgroups[talkgroup.ID] {
+				return fmt.Errorf("P25 system %q contains duplicate talkgroup ID %d", system.Name, talkgroup.ID)
+			}
+			seenTalkgroups[talkgroup.ID] = true
+		}
+		for _, frequency := range system.ControlChannelsHz {
+			if frequency <= 0 {
+				return fmt.Errorf("P25 system %q has an invalid control channel", system.Name)
+			}
+		}
+	}
+	return nil
+}
+
+type EventStore struct {
+	mu      sync.RWMutex
+	path    string
+	events  []TransmissionEvent
+	signals map[string]SignalSummary
+}
+
+func NewEventStore(dir string) (*EventStore, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	store := &EventStore{path: filepath.Join(dir, "events.jsonl"), signals: make(map[string]SignalSummary)}
+	file, err := os.Open(store.path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err = os.WriteFile(store.path, nil, 0o644); err != nil {
+			return nil, err
+		}
+		return store, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+	for scanner.Scan() {
+		var event TransmissionEvent
+		if json.Unmarshal(scanner.Bytes(), &event) == nil {
+			store.events = append(store.events, event)
+			store.aggregate(event)
+		}
+	}
+	if len(store.events) > 25_000 {
+		store.events = store.events[len(store.events)-25_000:]
+	}
+	return store, scanner.Err()
+}
+
+func (s *EventStore) Append(event TransmissionEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	file, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.Write(append(data, '\n'))
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	s.events = append(s.events, event)
+	if len(s.events) > 25_000 {
+		s.events = s.events[len(s.events)-25_000:]
+	}
+	s.aggregate(event)
+	return nil
+}
+
+func (s *EventStore) Recent(limit int) []TransmissionEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	if limit > len(s.events) {
+		limit = len(s.events)
+	}
+	items := make([]TransmissionEvent, limit)
+	for i := 0; i < limit; i++ {
+		items[i] = s.events[len(s.events)-1-i]
+	}
+	return items
+}
+
+func (s *EventStore) Get(id string) (TransmissionEvent, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for index := len(s.events) - 1; index >= 0; index-- {
+		if s.events[index].ID == id {
+			return s.events[index], true
+		}
+	}
+	return TransmissionEvent{}, false
+}
+
+func (s *EventStore) UpdateTranscript(id, transcript string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := false
+	for index := range s.events {
+		if s.events[index].ID == id {
+			s.events[index].Transcript = ptr(transcript)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	temporary := s.path + ".tmp"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(file)
+	for _, event := range s.events {
+		if err := encoder.Encode(event); err != nil {
+			_ = file.Close()
+			_ = os.Remove(temporary)
+			return err
+		}
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return os.Rename(temporary, s.path)
+}
+
+func (s *EventStore) Signals(limit int) []SignalSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]SignalSummary, 0, len(s.signals))
+	for _, item := range s.signals {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].LastSeen.After(items[j].LastSeen) })
+	if limit < 1 {
+		limit = 1
+	}
+	if limit < len(items) {
+		items = items[:limit]
+	}
+	return items
+}
+
+func (s *EventStore) Count() int { s.mu.RLock(); defer s.mu.RUnlock(); return len(s.events) }
+
+func (s *EventStore) aggregate(event TransmissionEvent) {
+	key := fmt.Sprintf("%.0f", event.FrequencyHz)
+	summary, ok := s.signals[key]
+	if !ok {
+		s.signals[key] = SignalSummary{ID: key, FrequencyHz: event.FrequencyHz, FirstSeen: event.StartedAt, LastSeen: event.StartedAt, EventCount: 1, StrongestDBFS: event.SignalDBFS, Modulation: event.Modulation, ProtocolName: event.ProtocolName, Label: event.Label, Confidence: event.Confidence}
+		return
+	}
+	if event.StartedAt.Before(summary.FirstSeen) {
+		summary.FirstSeen = event.StartedAt
+	}
+	if event.StartedAt.After(summary.LastSeen) {
+		summary.LastSeen = event.StartedAt
+	}
+	summary.EventCount++
+	if event.SignalDBFS > summary.StrongestDBFS {
+		summary.StrongestDBFS = event.SignalDBFS
+	}
+	if event.Confidence >= summary.Confidence {
+		summary.Modulation = event.Modulation
+		summary.ProtocolName = event.ProtocolName
+		if event.Label != nil {
+			summary.Label = event.Label
+		}
+		summary.Confidence = event.Confidence
+	}
+	s.signals[key] = summary
+}

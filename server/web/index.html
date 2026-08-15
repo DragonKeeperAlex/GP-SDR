@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>GP-SDR</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand" title="General Purpose Software Designed Radio">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>GP-SDR</span>
+      </div>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-view="live" title="Live receiver and channel mixer">
+          <span class="nav-icon">◉</span><span>Live</span>
+        </button>
+        <button class="nav-item" data-view="tuner" title="Tune one frequency and inspect its live spectrum">
+          <span class="nav-icon">⌖</span><span>Tuner</span>
+        </button>
+        <button class="nav-item" data-view="activity" title="Recorded activity and discovered signals">
+          <span class="nav-icon">≋</span><span>Activity</span>
+        </button>
+        <button class="nav-item" data-view="profiles" title="Scan ranges, channels, and receiver assignments">
+          <span class="nav-icon">▤</span><span>Profiles</span>
+        </button>
+        <button class="nav-item" data-view="decoders" title="Open a workspace for each decoder">
+          <span class="nav-icon">⌗</span><span>Decoders</span>
+        </button>
+        <button class="nav-item" data-view="hardware" title="Connected SDRs and decoder availability">
+          <span class="nav-icon">⌁</span><span>Hardware</span>
+        </button>
+        <button class="nav-item" data-view="settings" title="Server, storage, and application information">
+          <span class="nav-icon">⚙︎</span><span>Settings</span>
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <span id="side-dot" class="status-dot"></span>
+        <span id="side-status">Connecting</span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Live</h1>
+          <p id="view-subtitle">Receiver and channel mixer</p>
+        </div>
+        <div class="top-actions">
+          <label class="profile-select-wrap" title="Profile used when the survey starts">
+            <span>Profile</span>
+            <select id="active-profile"></select>
+          </label>
+          <button id="survey-toggle" class="primary" title="Start the selected scan profile">
+            <span class="button-dot"></span><span>Start</span>
+          </button>
+        </div>
+      </header>
+
+      <section id="view-live" class="view active">
+        <div id="demo-banner" class="banner hidden">
+          Demo source is active. Events are simulated and clearly marked.
+        </div>
+        <div id="runtime-error" class="banner error hidden"></div>
+        <div class="metric-grid">
+          <article class="metric"><span>Receivers</span><strong id="metric-devices">0</strong><small>connected</small></article>
+          <article class="metric"><span>Signals</span><strong id="metric-signals">0</strong><small>discovered</small></article>
+          <article class="metric"><span>Events</span><strong id="metric-events">0</strong><small>logged</small></article>
+          <article class="metric"><span>Session</span><strong id="metric-session">—</strong><small id="metric-mode">idle</small></article>
+        </div>
+
+        <article class="panel spectrum-panel">
+          <div class="panel-head">
+            <div><h2>Spectrum</h2><span id="spectrum-label">Waiting for receiver</span></div>
+            <div class="legend"><i class="noise"></i> Noise <i class="signal"></i> Activity</div>
+          </div>
+          <canvas id="spectrum" height="220" aria-label="Live spectrum display"></canvas>
+        </article>
+
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-head"><div><h2>Latest</h2><span>Most recent transmission</span></div></div>
+            <div id="latest-event" class="empty-state compact">No activity yet</div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <div><h2>Channel mixer</h2><span>Audio controls do not affect logging</span></div>
+              <button id="mute-all" class="icon-button" title="Mute or unmute every channel">M</button>
+            </div>
+            <div id="mixer-list" class="mixer-list empty-state compact">Start a channel profile</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-tuner" class="view">
+        <div class="tuner-layout">
+          <article class="panel tuner-controls">
+            <form id="tuner-form">
+              <div class="tuner-readout"><span>Frequency</span><strong id="tuner-readout">462.6750</strong><small>MHz</small></div>
+              <label>Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
+              <label>Frequency · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Center frequency in MHz"></label>
+              <div class="form-grid two">
+                <label>Mode<select id="tuner-mode" title="Audio demodulation mode"><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+                <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Audio channel bandwidth"></label>
+              </div>
+              <div class="form-grid two">
+                <label>Sample rate<select id="tuner-rate" title="Receiver sample rate; Auto chooses a safe value"><option value="0">Auto</option><option value="1000000">1.0 MS/s</option><option value="2000000">2.0 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8.0 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
+                <label>Gain · dB<input id="tuner-gain" type="number" min="0" max="62" step="1" value="20" title="Receiver gain"></label>
+              </div>
+              <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Tune</button><button id="tuner-stop" type="button">Stop</button></div>
+              <p id="tuner-status">Choose a receiver and frequency.</p>
+            </form>
+          </article>
+          <div class="tuner-displays">
+            <article class="panel spectrum-panel tuner-spectrum-panel">
+              <div class="panel-head"><div><h2>Spectrum</h2><span id="tuner-span">No IQ data</span></div><span id="tuner-center" class="frequency-caption">—</span></div>
+              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum"></canvas>
+            </article>
+            <article class="panel waterfall-panel">
+              <div class="panel-head"><div><h2>Waterfall</h2><span>Newest samples appear at the top</span></div><div class="waterfall-scale"><i></i><span>−110</span><span>−20 dBFS</span></div></div>
+              <canvas id="waterfall" height="330" aria-label="Live waterfall display"></canvas>
+              <div class="frequency-axis"><span id="waterfall-start">—</span><span id="waterfall-mid">—</span><span id="waterfall-end">—</span></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-activity" class="view">
+        <div class="segmented" role="tablist">
+          <button class="active" data-activity-tab="signals">Signals</button>
+          <button data-activity-tab="events">Timeline</button>
+        </div>
+        <article id="activity-signals" class="panel table-panel">
+          <div class="panel-head">
+            <div><h2>Discovered signals</h2><span>Repeated activity is grouped by frequency</span></div>
+            <input id="signal-search" class="search" type="search" placeholder="Filter" aria-label="Filter discovered signals">
+          </div>
+          <div class="table-scroll">
+            <table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Last seen</th><th></th></tr></thead>
+              <tbody id="signals-body"></tbody></table>
+          </div>
+        </article>
+        <article id="activity-events" class="panel table-panel hidden">
+          <div class="panel-head"><div><h2>Timeline</h2><span>Individual transmission events</span></div></div>
+          <div class="table-scroll">
+            <table><thead><tr><th>Time</th><th>Frequency</th><th>Type</th><th>Level</th><th>Duration</th><th>Transcript</th><th></th></tr></thead>
+              <tbody id="events-body"></tbody></table>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-profiles" class="view">
+        <div class="section-actions">
+          <div><h2>Scan profiles</h2><p>Portable ranges, channels, and receiver roles.</p></div>
+          <div>
+            <input id="import-profile" type="file" accept=".json,application/json" hidden>
+            <button id="reference-button" title="Find RadioReference channels and systems near a ZIP code">Location import</button>
+            <button id="import-button" title="Import a shared GP-SDR JSON profile">Import</button>
+            <button id="new-profile" class="primary" title="Create a custom scan profile">＋ New profile</button>
+          </div>
+        </div>
+        <div id="profile-grid" class="card-grid"></div>
+      </section>
+
+      <section id="view-hardware" class="view">
+        <div class="section-actions">
+          <div><h2>Receivers</h2><p>Multiple radios can run concurrently with independent roles.</p></div>
+          <button id="refresh-hardware" title="Search again for radios and decoder tools">↻ Refresh</button>
+        </div>
+        <div id="setup-job" class="setup-job hidden" role="status"></div>
+        <div id="device-grid" class="card-grid hardware-grid"></div>
+        <div class="section-actions lower"><div><h2>Decoders</h2><p>Optional tools appear only when actually available.</p></div></div>
+        <div id="decoder-grid" class="card-grid hardware-grid"></div>
+      </section>
+
+      <section id="view-decoders" class="view">
+        <div class="decoder-layout">
+          <aside id="decoder-nav" class="decoder-nav" aria-label="Decoder pages"></aside>
+          <div id="decoder-detail" class="decoder-detail"></div>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="settings-grid">
+          <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd id="setting-address">—</dd><dt>Access</dt><dd>Local by default</dd></dl></article>
+          <article class="panel settings-card"><h2>Data</h2><dl><dt>Format</dt><dd>Portable JSON profiles</dd><dt>Journal</dt><dd>Local event history</dd></dl></article>
+          <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>
+          <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. Remote access is off unless the server is explicitly bound to the network.</p></article>
+        </div>
+        <div class="section-actions lower"><div><h2>Integrations</h2><p>Optional components never block the interface.</p></div></div>
+        <div id="integration-grid" class="card-grid hardware-grid"></div>
+        <article class="panel acknowledgements">
+          <h2>Acknowledgements</h2>
+          <p>GP-SDR includes the GopherTrunk P25 stack and integrates with SoapySDR, OP25, whisper.cpp, HackRF, and RTL-SDR. Each remains under its own license. Complete credits and bundling details are in <code>THIRD_PARTY.md</code>.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="profile-dialog">
+    <form id="profile-form" method="dialog">
+      <header><div><h2 id="profile-dialog-title">New profile</h2><p>Ranges, channels, and radio roles.</p></div><button value="cancel" class="dialog-close" title="Close">×</button></header>
+      <div class="dialog-body">
+        <div class="form-grid two"><label>Name<input id="profile-name" required maxlength="80"></label><label>Note<input id="profile-summary" maxlength="160"></label></div>
+
+        <div class="editor-head"><h3>Scan ranges</h3><button type="button" id="add-range" title="Add a frequency range">＋ Range</button></div>
+        <div id="ranges-editor" class="row-editor"></div>
+
+        <div class="editor-head"><h3>Fixed channels</h3><button type="button" id="add-channel" title="Add one exact channel">＋ Channel</button></div>
+        <div id="channels-editor" class="row-editor"></div>
+
+        <div class="editor-head"><h3>Receiver roles</h3><button type="button" id="add-assignment" title="Assign another SDR role">＋ Receiver</button></div>
+        <div id="assignments-editor" class="row-editor"></div>
+
+        <div class="editor-head"><h3>P25 systems</h3><button type="button" id="add-p25" title="Add a P25 trunked radio system">＋ P25</button></div>
+        <div id="p25-editor" class="row-editor"></div>
+
+        <div class="editor-head"><h3>Logging</h3></div>
+        <div class="toggle-grid">
+          <label><input id="record-audio" type="checkbox"> Record audio</label>
+          <label><input id="transcribe-voice" type="checkbox"> Transcribe voice</label>
+        </div>
+      </div>
+      <footer><button value="cancel">Cancel</button><button id="save-profile" class="primary" value="default">Save profile</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="reference-dialog" class="reference-dialog">
+    <form id="reference-form" method="dialog">
+      <header><div><h2>Location import</h2><p>RadioReference channels and P25 systems.</p></div><button value="cancel" class="dialog-close" title="Close">×</button></header>
+      <div class="dialog-body">
+        <div class="reference-search">
+          <label>ZIP code<input id="reference-zip" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="00000" required></label>
+          <label>Range
+            <select id="reference-range" title="Search radius from the ZIP code">
+              <option value="5">5 miles</option><option value="10">10 miles</option>
+              <option value="25" selected>25 miles</option><option value="50">50 miles</option>
+              <option value="100">100 miles</option><option value="custom">Custom…</option>
+            </select>
+          </label>
+          <label id="custom-range-wrap" class="hidden">Miles<input id="custom-range" type="number" min="1" max="100" step="1" value="25" title="Custom search range, up to 100 miles"></label>
+          <button id="reference-search" class="primary" type="submit">Search</button>
+        </div>
+        <div id="reference-status" class="reference-status">Enter a ZIP code to begin.</div>
+        <div id="reference-results" class="reference-results hidden"></div>
+      </div>
+      <footer><button value="cancel">Cancel</button><button id="reference-import" class="primary" type="button" disabled>Import selected</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="setup-dialog" class="setup-dialog">
+    <form method="dialog">
+      <header><div><h2 id="setup-dialog-title">Component setup</h2><p>GP-SDR only installs allow-listed open-source packages.</p></div><button value="cancel" class="dialog-close" title="Close">×</button></header>
+      <div class="dialog-body setup-guide-body">
+        <p id="setup-guide"></p>
+        <code id="setup-command" class="setup-command hidden"></code>
+        <a id="setup-link" class="setup-link" href="#" target="_blank" rel="noreferrer">Open upstream instructions ↗</a>
+      </div>
+      <footer><button value="cancel" class="primary">Done</button></footer>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

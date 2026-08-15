@@ -1,0 +1,19 @@
+[Unit]
+Description=GP-SDR receiver and trunking server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gp-sdr --listen 127.0.0.1 --port 8073
+Restart=on-failure
+RestartSec=3
+DynamicUser=yes
+StateDirectory=gp-sdr
+Environment=XDG_CONFIG_HOME=/var/lib/gp-sdr
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

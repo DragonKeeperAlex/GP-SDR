@@ -1,0 +1,10 @@
+Package: gp-sdr
+Version: @VERSION@
+Section: hamradio
+Priority: optional
+Architecture: @ARCH@
+Maintainer: GP-SDR Contributors
+Recommends: hackrf, rtl-sdr, soapysdr-tools
+Description: General-purpose SDR survey, trunking, logging, and receiver console
+ GP-SDR manages scan profiles, concurrent receiver roles, P25 trunk following, activity logs,
+ decoder discovery, and an authenticated browser interface.

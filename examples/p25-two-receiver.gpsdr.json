@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "7b6e319c-1db0-459f-8cf0-65d89d2acbb9",
+  "name": "P25 · Two Receiver Template",
+  "summary": "Add the authorized system control channel and talkgroups after import",
+  "ranges": [],
+  "channels": [],
+  "p25Systems": [
+    {
+      "id": "replace-this-system-id",
+      "name": "Replace with authorized P25 system",
+      "controlChannelsHz": [851012500],
+      "nac": "0x0",
+      "wacn": "0x00000",
+      "systemID": "0x000",
+      "tdmaControl": false,
+      "talkgroups": [],
+      "enabled": true
+    }
+  ],
+  "deviceAssignments": [
+    {
+      "id": "9041da54-6095-4b9a-93cf-1c58e3a5882a",
+      "deviceID": null,
+      "role": "control",
+      "target": "P25 control channel"
+    },
+    {
+      "id": "6fac9710-4896-46a0-bdf8-e9c99334414d",
+      "deviceID": null,
+      "role": "voice",
+      "target": "P25 voice grants"
+    }
+  ],
+  "settings": {
+    "noiseMarginDB": 8,
+    "revisitSeconds": 5,
+    "recordAudio": true,
+    "recordIQForUnknown": true,
+    "transcribeVoice": false,
+    "maxRecordingDays": 30
+  },
+  "builtIn": false
+}

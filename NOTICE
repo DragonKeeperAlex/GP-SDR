@@ -1,0 +1,8 @@
+GP-SDR (General Purpose Software Designed Radio)
+Copyright 2026 GP-SDR contributors
+
+GP-SDR is distributed under the MIT License in LICENSE.
+
+GP-SDR binary packages include GopherTrunk v0.9.8 under the Apache License 2.0.
+Runtime integrations, upstream credits, bundled-component versions, licenses,
+and redistribution details are documented in THIRD_PARTY.md.
