@@ -4,7 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0d10">
   <title>GP-SDR</title>
+  <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -156,9 +159,9 @@
         <div class="section-actions">
           <div><h2>Scan profiles</h2><p>Portable ranges, channels, and receiver roles.</p></div>
           <div>
-            <input id="import-profile" type="file" accept=".json,application/json" hidden>
+            <input id="import-profile" type="file" accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values" multiple hidden>
             <button id="reference-button" title="Find RadioReference channels and systems near a ZIP code">Location import</button>
-            <button id="import-button" title="Import a shared GP-SDR JSON profile">Import</button>
+            <button id="import-button" title="Bulk import GP-SDR profiles, CHIRP CSVs, or tab-separated channel files">Import</button>
             <button id="new-profile" class="primary" title="Create a custom scan profile">＋ New profile</button>
           </div>
         </div>
@@ -189,6 +192,7 @@
           <article class="panel settings-card"><h2>Data</h2><dl><dt>Format</dt><dd>Portable JSON profiles</dd><dt>Journal</dt><dd>Local event history</dd></dl></article>
           <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>
           <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. Remote access is off unless the server is explicitly bound to the network.</p></article>
+          <article class="panel settings-card"><h2>Radio references</h2><div class="settings-links"><a href="/reference/GMRS_Repeater_Rev3_Accurate_Schematic.svg" target="_blank" rel="noreferrer">Repeater schematic ↗</a><a href="/reference/GMRS_Repeater_Rev3_Exact_Solder_Map_v2.svg" target="_blank" rel="noreferrer">Solder map ↗</a></div></article>
         </div>
         <div class="section-actions lower"><div><h2>Integrations</h2><p>Optional components never block the interface.</p></div></div>
         <div id="integration-grid" class="card-grid hardware-grid"></div>

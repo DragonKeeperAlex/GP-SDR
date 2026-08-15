@@ -1,0 +1,305 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="3300" viewBox="0 0 2200 3300">
+<rect x="0" y="0" width="2200" height="3300" rx="0" stroke="#111" stroke-width="4" fill="white"/>
+<text x="1100.0" y="58" font-family="Arial, Helvetica, sans-serif" font-size="46" fill="black" text-anchor="middle" font-weight="bold">GMRS REPEATER REV 3 — EXACT SOLDER MAP</text>
+<text x="1100.0" y="100" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="#333" text-anchor="middle" font-weight="normal">Use this as the build reference. It is generated from the corrected netlist, not a generative schematic.</text>
+<text x="1100.0" y="135" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="#b00000" text-anchor="middle" font-weight="bold">Same colored label = same electrical node. Do not solder together labels that are different unless a component connects them.</text>
+<rect x="45" y="165" width="2110" height="115" rx="12" stroke="#b00000" stroke-width="3" fill="#fff8f8"/>
+<text x="1100.0" y="205" font-family="Arial, Helvetica, sans-serif" font-size="30" fill="#b00000" text-anchor="middle" font-weight="bold">CRITICAL ISOLATION RULE</text>
+<text x="1100.0" y="245" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#b00000" text-anchor="middle" font-weight="normal">RX_RED and CIRCUIT_GND / TX copper must NOT be directly connected. The audio transformer T1 is the isolation barrier.</text>
+<rect x="40.0" y="300" width="180" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="130" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">RX_BLUE</text>
+<rect x="240.0" y="300" width="180" height="50" rx="24" stroke="#d22" stroke-width="3" fill="white"/>
+<text x="330" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#d22" text-anchor="middle" font-weight="bold">RX_RED</text>
+<rect x="440.0" y="300" width="180" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="530" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">ISO_HOT</text>
+<rect x="620.0" y="300" width="220" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="730" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">AUDIO_BUF</text>
+<rect x="860.0" y="300" width="220" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="970" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">TX_GREEN</text>
+<rect x="1120.0" y="300" width="180" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="1210" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">TX_BLUE</text>
+<rect x="1300.0" y="300" width="220" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="1410" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="1560.0" y="300" width="180" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="1650" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="1760.0" y="300" width="180" height="50" rx="24" stroke="#e60000" stroke-width="3" fill="white"/>
+<text x="1850" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#e60000" text-anchor="middle" font-weight="bold">+3V3</text>
+<rect x="1960.0" y="300" width="180" height="50" rx="24" stroke="#f28c00" stroke-width="3" fill="white"/>
+<text x="2050" y="333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#f28c00" text-anchor="middle" font-weight="bold">GPIO22</text>
+<rect x="45" y="430" width="1020" height="410" rx="12" stroke="#0057d9" stroke-width="3" fill="#fbfbfb"/>
+<text x="555.0" y="472" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#0057d9" text-anchor="middle" font-weight="bold">1) RX SIDE: RADIO → C1 → VR1 → T1 PRIMARY</text>
+<rect x="63" y="472" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">RX radio 3.5mm TIP / blue wire</text>
+<text x="473.4" y="505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to C1 input side</text>
+<rect x="795.0" y="474" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="920" y="507" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">RX_BLUE</text>
+<rect x="63" y="536" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C1 output side</text>
+<text x="473.4" y="569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to VR1 outer lug A</text>
+<rect x="795.0" y="538" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="920" y="571" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">RX_VOL_IN</text>
+<rect x="63" y="600" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="633" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">VR1 middle lug / wiper</text>
+<text x="473.4" y="633" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to T1 primary hot</text>
+<rect x="795.0" y="602" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="920" y="635" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">T1_PRI_HOT</text>
+<rect x="63" y="664" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="697" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">RX radio 3.5mm SLEEVE / red wire</text>
+<text x="473.4" y="697" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to VR1 outer lug B and T1 primary cold</text>
+<rect x="795.0" y="666" width="250" height="50" rx="24" stroke="#d22" stroke-width="3" fill="white"/>
+<text x="920" y="699" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#d22" text-anchor="middle" font-weight="bold">RX_RED</text>
+<rect x="63" y="728" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="761" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">T1 primary cold</text>
+<text x="473.4" y="761" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to RX red only, not circuit ground</text>
+<rect x="795.0" y="730" width="250" height="50" rx="24" stroke="#d22" stroke-width="3" fill="white"/>
+<text x="920" y="763" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#d22" text-anchor="middle" font-weight="bold">RX_RED</text>
+<text x="555" y="835" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#333" text-anchor="middle" font-weight="normal">C1 = 10µF. Non-polar/bipolar preferred; if electrolytic, + usually toward RX_BLUE.</text>
+<rect x="45" y="875" width="1020" height="346" rx="12" stroke="#0b7aa9" stroke-width="3" fill="#fbfbfb"/>
+<text x="555.0" y="917" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#0b7aa9" text-anchor="middle" font-weight="bold">2) ISOLATED SECONDARY SIDE</text>
+<rect x="63" y="917" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="950" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">T1 secondary hot</text>
+<text x="473.4" y="950" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to C2 input side</text>
+<rect x="795.0" y="919" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="920" y="952" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">ISO_HOT</text>
+<rect x="63" y="981" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="1014" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C2 output side</text>
+<text x="473.4" y="1014" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to LM2904P pin 3</text>
+<rect x="795.0" y="983" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="920" y="1016" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">ISO_HOT</text>
+<rect x="63" y="1045" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1078" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">T1 secondary cold</text>
+<text x="473.4" y="1078" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to TX/circuit ground</text>
+<rect x="795.0" y="1047" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="920" y="1080" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="63" y="1109" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="1142" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">TX copper/brown wire</text>
+<text x="473.4" y="1142" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to TX/circuit ground</text>
+<rect x="795.0" y="1111" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="920" y="1144" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<text x="555" y="1216" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#333" text-anchor="middle" font-weight="normal">C2 = 1µF. If electrolytic, + goes toward LM2904P pin 3.</text>
+<rect x="1120" y="430" width="1035" height="602" rx="12" stroke="#333" stroke-width="3" fill="#fbfbfb"/>
+<text x="1637.5" y="472" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#333" text-anchor="middle" font-weight="bold">3) LM2904P DIP-8 SOCKET CONNECTIONS — TOP VIEW PIN NUMBERS</text>
+<rect x="1138" y="472" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 1 OUT A</text>
+<text x="1554.7" y="505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">short to pin 2; also to C3 input and R8 to GPIO34</text>
+<rect x="1885.0" y="474" width="250" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="2010" y="507" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">AUDIO_BUF</text>
+<rect x="1138" y="536" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 2 IN− A</text>
+<text x="1554.7" y="569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">short to pin 1 only</text>
+<rect x="1885.0" y="538" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="2010" y="571" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">PIN1_TO_PIN2</text>
+<rect x="1138" y="600" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="633" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 3 IN+ A</text>
+<text x="1554.7" y="633" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">C2 output side + R3 100k to VREF</text>
+<rect x="1885.0" y="602" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="2010" y="635" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">ISO_HOT + VREF</text>
+<rect x="1138" y="664" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="697" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 4 GND / V−</text>
+<text x="1554.7" y="697" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">TX/circuit ground</text>
+<rect x="1885.0" y="666" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="2010" y="699" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="1138" y="728" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="761" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 5 IN+ B</text>
+<text x="1554.7" y="761" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">VREF</text>
+<rect x="1885.0" y="730" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="2010" y="763" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="1138" y="792" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="825" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 6 IN− B</text>
+<text x="1554.7" y="825" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">short to pin 7 only</text>
+<rect x="1885.0" y="794" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="2010" y="827" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">PIN6_TO_PIN7</text>
+<rect x="1138" y="856" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="889" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 7 OUT B</text>
+<text x="1554.7" y="889" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">short to pin 6 only</text>
+<rect x="1885.0" y="858" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="2010" y="891" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">PIN6_TO_PIN7</text>
+<rect x="1138" y="920" width="999" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="953" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Pin 8 V+</text>
+<text x="1554.7" y="953" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">ESP32 3.3V; C5/C6 to pin 4 ground</text>
+<rect x="1885.0" y="922" width="250" height="50" rx="24" stroke="#e60000" stroke-width="3" fill="white"/>
+<text x="2010" y="955" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#e60000" text-anchor="middle" font-weight="bold">+3V3</text>
+<rect x="1335" y="1057" width="610" height="355" rx="12" stroke="#333" stroke-width="3" fill="#ffffff"/>
+<text x="1640" y="1097" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="black" text-anchor="middle" font-weight="bold">LM2904P TOP VIEW</text>
+<rect x="1500" y="1137" width="280" height="220" rx="8" stroke="#111" stroke-width="4" fill="white"/>
+<path d="M 1610 1137 Q 1640 1167 1670 1137" stroke="black" stroke-width="3" fill="none"/>
+<line x1="1465" y1="1177" x2="1500" y2="1177" stroke="#148a25" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1440" y="1184" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#148a25" text-anchor="middle" font-weight="bold">1</text>
+<text x="1530" y="1184" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">OUT A</text>
+<line x1="1465" y1="1225" x2="1500" y2="1225" stroke="#0057d9" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1440" y="1232" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#0057d9" text-anchor="middle" font-weight="bold">2</text>
+<text x="1530" y="1232" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">IN− A</text>
+<line x1="1465" y1="1273" x2="1500" y2="1273" stroke="#0057d9" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1440" y="1280" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#0057d9" text-anchor="middle" font-weight="bold">3</text>
+<text x="1530" y="1280" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">IN+ A</text>
+<line x1="1465" y1="1321" x2="1500" y2="1321" stroke="#8b5a2b" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1440" y="1328" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#8b5a2b" text-anchor="middle" font-weight="bold">4</text>
+<text x="1530" y="1328" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">GND</text>
+<line x1="1780" y1="1177" x2="1815" y2="1177" stroke="#e60000" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1840" y="1184" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#e60000" text-anchor="middle" font-weight="bold">8</text>
+<text x="1750" y="1184" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="end" font-weight="normal">V+</text>
+<line x1="1780" y1="1225" x2="1815" y2="1225" stroke="#7a31c2" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1840" y="1232" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#7a31c2" text-anchor="middle" font-weight="bold">7</text>
+<text x="1750" y="1232" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="end" font-weight="normal">OUT B</text>
+<line x1="1780" y1="1273" x2="1815" y2="1273" stroke="#7a31c2" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1840" y="1280" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#7a31c2" text-anchor="middle" font-weight="bold">6</text>
+<text x="1750" y="1280" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="end" font-weight="normal">IN− B</text>
+<line x1="1780" y1="1321" x2="1815" y2="1321" stroke="#7a31c2" stroke-width="4" fill="none" stroke-linecap="round"/>
+<text x="1840" y="1328" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#7a31c2" text-anchor="middle" font-weight="bold">5</text>
+<text x="1750" y="1328" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="end" font-weight="normal">IN+ B</text>
+<text x="1640" y="1382" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#b00000" text-anchor="middle" font-weight="bold">Only pin-to-pin shorts on U1: 1↔2 and 6↔7.</text>
+<rect x="45" y="1256" width="1020" height="496" rx="12" stroke="#7a31c2" stroke-width="3" fill="#fbfbfb"/>
+<text x="555.0" y="1298" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#7a31c2" text-anchor="middle" font-weight="bold">4) VREF + POWER DECOUPLING</text>
+<rect x="63" y="1298" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1331" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R4 100k</text>
+<text x="473.4" y="1331" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">from +3V3 to VREF</text>
+<rect x="795.0" y="1300" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="1333" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="63" y="1356" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="1389" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R5 100k</text>
+<text x="473.4" y="1389" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">from VREF to CIRCUIT_GND</text>
+<rect x="795.0" y="1358" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="1391" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="63" y="1414" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1447" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C4 10µF</text>
+<text x="473.4" y="1447" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">+ to VREF, − to CIRCUIT_GND</text>
+<rect x="795.0" y="1416" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="1449" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="63" y="1472" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="1505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R3 100k</text>
+<text x="473.4" y="1505" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">from LM pin 3 to VREF</text>
+<rect x="795.0" y="1474" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="1507" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="63" y="1530" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1563" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">LM pin 5</text>
+<text x="473.4" y="1563" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to VREF</text>
+<rect x="795.0" y="1532" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="1565" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">VREF</text>
+<rect x="63" y="1588" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="1621" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C5 47–100nF</text>
+<text x="473.4" y="1621" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">LM pin 8 to LM pin 4, close to chip</text>
+<rect x="795.0" y="1590" width="250" height="50" rx="24" stroke="#e60000" stroke-width="3" fill="white"/>
+<text x="920" y="1623" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#e60000" text-anchor="middle" font-weight="bold">+3V3/GND</text>
+<rect x="63" y="1646" width="984" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1679" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C6 10µF</text>
+<text x="473.4" y="1679" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">LM pin 8 to LM pin 4</text>
+<rect x="795.0" y="1648" width="250" height="50" rx="24" stroke="#e60000" stroke-width="3" fill="white"/>
+<text x="920" y="1681" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#e60000" text-anchor="middle" font-weight="bold">+3V3/GND</text>
+<rect x="1120" y="1432" width="1035" height="400" rx="12" stroke="#148a25" stroke-width="3" fill="#fbfbfb"/>
+<text x="1637.5" y="1474" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#148a25" text-anchor="middle" font-weight="bold">5) TX AUDIO: LM OUTPUT → VR2 → TX MIC</text>
+<rect x="1138" y="1474" width="999" height="62" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="1507" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">LM2904P pin 1</text>
+<text x="1554.7" y="1507" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to C3 input side</text>
+<rect x="1885.0" y="1476" width="250" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="2010" y="1509" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">AUDIO_BUF</text>
+<rect x="1138" y="1536" width="999" height="62" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="1569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">C3 output side</text>
+<text x="1554.7" y="1569" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to VR2 outer lug A</text>
+<rect x="1885.0" y="1538" width="250" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="2010" y="1571" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">TX_LEVEL_IN</text>
+<rect x="1138" y="1598" width="999" height="62" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="1631" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">VR2 outer lug B</text>
+<text x="1554.7" y="1631" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to circuit ground / TX copper</text>
+<rect x="1885.0" y="1600" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="2010" y="1633" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="1138" y="1660" width="999" height="62" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="1693" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">VR2 middle lug / wiper</text>
+<text x="1554.7" y="1693" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to R1 input side</text>
+<rect x="1885.0" y="1662" width="250" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="2010" y="1695" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">TX_MIC_PRE</text>
+<rect x="1138" y="1722" width="999" height="62" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="1755" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R1 output side</text>
+<text x="1554.7" y="1755" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to TX radio 2.5mm TIP / green wire</text>
+<rect x="1885.0" y="1724" width="250" height="50" rx="24" stroke="#148a25" stroke-width="3" fill="white"/>
+<text x="2010" y="1757" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#148a25" text-anchor="middle" font-weight="bold">TX_GREEN</text>
+<text x="1638" y="1829" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#333" text-anchor="middle" font-weight="normal">C3 = 1µF, + toward LM pin 1. R1 = 4.7k start; 2.2k only if TX audio is too quiet.</text>
+<rect x="1120" y="1867" width="1035" height="438" rx="12" stroke="#f28c00" stroke-width="3" fill="#fbfbfb"/>
+<text x="1637.5" y="1909" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#f28c00" text-anchor="middle" font-weight="bold">6) PTT DRIVER</text>
+<rect x="1138" y="1909" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="1942" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">ESP32 GPIO22</text>
+<text x="1554.7" y="1942" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to R6 1k input</text>
+<rect x="1885.0" y="1911" width="250" height="50" rx="24" stroke="#f28c00" stroke-width="3" fill="white"/>
+<text x="2010" y="1944" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#f28c00" text-anchor="middle" font-weight="bold">GPIO22</text>
+<rect x="1138" y="1967" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="2000" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R6 output</text>
+<text x="1554.7" y="2000" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to Q1 base</text>
+<rect x="1885.0" y="1969" width="250" height="50" rx="24" stroke="#f28c00" stroke-width="3" fill="white"/>
+<text x="2010" y="2002" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#f28c00" text-anchor="middle" font-weight="bold">Q1_BASE</text>
+<rect x="1138" y="2025" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="2058" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">R7 10k</text>
+<text x="1554.7" y="2058" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">from Q1 base to Q1 emitter</text>
+<rect x="1885.0" y="2027" width="250" height="50" rx="24" stroke="#f28c00" stroke-width="3" fill="white"/>
+<text x="2010" y="2060" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#f28c00" text-anchor="middle" font-weight="bold">BASE_PULLDOWN</text>
+<rect x="1138" y="2083" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="2116" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Q1 emitter</text>
+<text x="1554.7" y="2116" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to circuit ground / TX copper</text>
+<rect x="1885.0" y="2085" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="2010" y="2118" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="1138" y="2141" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="1155" y="2174" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">Q1 collector</text>
+<text x="1554.7" y="2174" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to TX radio 2.5mm RING / blue wire</text>
+<rect x="1885.0" y="2143" width="250" height="50" rx="24" stroke="#0057d9" stroke-width="3" fill="white"/>
+<text x="2010" y="2176" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#0057d9" text-anchor="middle" font-weight="bold">TX_BLUE</text>
+<rect x="1138" y="2199" width="999" height="58" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="1155" y="2232" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">TX radio sleeve / copper-brown</text>
+<text x="1554.7" y="2232" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">to circuit ground</text>
+<rect x="1885.0" y="2201" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="2010" y="2234" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<text x="1638" y="2302" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#333" text-anchor="middle" font-weight="normal">GPIO22 HIGH keys TX by pulling TX_BLUE to TX copper/circuit ground. Check Q1 pinout before soldering.</text>
+<rect x="45" y="1870" width="1020" height="346" rx="12" stroke="#555" stroke-width="3" fill="#fbfbfb"/>
+<text x="555.0" y="1912" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#555" text-anchor="middle" font-weight="bold">7) ESP32 CONNECTIONS</text>
+<rect x="63" y="1912" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="1945" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">ESP32 3.3V</text>
+<text x="473.4" y="1945" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">LM pin 8, VREF R4 top, one side of C5/C6</text>
+<rect x="795.0" y="1914" width="250" height="50" rx="24" stroke="#e60000" stroke-width="3" fill="white"/>
+<text x="920" y="1947" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#e60000" text-anchor="middle" font-weight="bold">+3V3</text>
+<rect x="63" y="1976" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="2009" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">ESP32 GND</text>
+<text x="473.4" y="2009" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">TX copper/circuit ground, LM pin 4</text>
+<rect x="795.0" y="1978" width="250" height="50" rx="24" stroke="#8b5a2b" stroke-width="3" fill="white"/>
+<text x="920" y="2011" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#8b5a2b" text-anchor="middle" font-weight="bold">CIRCUIT_GND</text>
+<rect x="63" y="2040" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#ffffff"/>
+<text x="80" y="2073" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">ESP32 GPIO22</text>
+<text x="473.4" y="2073" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">R6 1k to Q1 base</text>
+<rect x="795.0" y="2042" width="250" height="50" rx="24" stroke="#f28c00" stroke-width="3" fill="white"/>
+<text x="920" y="2075" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#f28c00" text-anchor="middle" font-weight="bold">GPIO22</text>
+<rect x="63" y="2104" width="984" height="64" rx="4" stroke="#ddd" stroke-width="1" fill="#f4f4f4"/>
+<text x="80" y="2137" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="bold">ESP32 GPIO34</text>
+<text x="473.4" y="2137" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="black" text-anchor="start" font-weight="normal">R8 10k from LM pin 1 / AUDIO_BUF</text>
+<rect x="795.0" y="2106" width="250" height="50" rx="24" stroke="#7a31c2" stroke-width="3" fill="white"/>
+<text x="920" y="2139" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#7a31c2" text-anchor="middle" font-weight="bold">RX_DETECT</text>
+<rect x="1120" y="2360" width="1035" height="520" rx="12" stroke="#b00000" stroke-width="3" fill="#fffafa"/>
+<text x="1638" y="2400" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#b00000" text-anchor="middle" font-weight="bold">8) MUST-DO MULTIMETER CHECKS BEFORE RADIOS</text>
+<text x="1160" y="2450.0" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">Pre-power continuity checks:</text>
+<text x="1160" y="2479.04" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">1. RX_RED must NOT short to TX copper / CIRCUIT_GND.</text>
+<text x="1160" y="2508.08" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">2. LM pin 1 should short to pin 2. LM pin 6 should short to pin 7.</text>
+<text x="1160" y="2537.12" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">3. LM pin 4 should connect to TX copper/circuit ground. LM pin 8 should connect to +3.3V.</text>
+<text x="1160" y="2566.16" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">4. TX_BLUE should NOT be grounded until Q1 is driven by GPIO22.</text>
+<text x="1160" y="2595.2" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal"></text>
+<text x="1160" y="2624.24" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">Power-on voltage checks, before connecting radios:</text>
+<text x="1160" y="2653.28" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• LM pin 8 ≈ 3.3V       • LM pin 4 = 0V</text>
+<text x="1160" y="2682.32" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• VREF ≈ 1.65V          • LM pin 3 ≈ 1.65V</text>
+<text x="1160" y="2711.36" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• LM pin 1 ≈ 1.65V      • Start VR2 almost all the way down for first transmit test.</text>
+<rect x="45" y="2260" width="1020" height="450" rx="12" stroke="#333" stroke-width="3" fill="#f9f9f9"/>
+<text x="555" y="2300" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="black" text-anchor="middle" font-weight="bold">POTENTIOMETER LUG RULE</text>
+<text x="85" y="2360.0" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">VR1 RX level:</text>
+<text x="85" y="2391.05" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• one outer lug → RX_VOL_IN from C1</text>
+<text x="85" y="2422.1" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• middle lug/wiper → T1_PRI_HOT</text>
+<text x="85" y="2453.15" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• other outer lug → RX_RED</text>
+<text x="85" y="2484.2" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal"></text>
+<text x="85" y="2515.25" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">VR2 TX level:</text>
+<text x="85" y="2546.3" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• one outer lug → TX_LEVEL_IN from C3</text>
+<text x="85" y="2577.35" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• middle lug/wiper → R1 → TX_GREEN</text>
+<text x="85" y="2608.4" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="black" text-anchor="start" font-weight="normal">• other outer lug → CIRCUIT_GND / TX copper</text>
+<text x="555" y="2665" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#b00000" text-anchor="middle" font-weight="bold">If turning a knob backwards lowers/raises the opposite way, swap the two OUTER lugs only.</text>
+<rect x="45" y="2735" width="2110" height="405" rx="12" stroke="#333" stroke-width="3" fill="#f9f9f9"/>
+<text x="1100" y="2780" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="black" text-anchor="middle" font-weight="bold">BILL OF MATERIALS</text>
+<text x="85" y="2830.0" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">BOM for this map:</text>
+<text x="85" y="2859.04" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• U1 LM2904P + optional DIP-8 socket</text>
+<text x="85" y="2888.08" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• T1 one channel of 1:1 car audio ground-loop isolator transformer</text>
+<text x="85" y="2917.12" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• Q1 2N2222 / 2N3904 / C1815 NPN transistor</text>
+<text x="85" y="2946.16" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• VR1, VR2: 10k potentiometers</text>
+<text x="85" y="2975.2" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• R1 4.7k; R3/R4/R5 100k; R6 1k; R7/R8 10k</text>
+<text x="85" y="3004.24" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• C1 10µF; C2/C3 1µF; C4/C6 10µF; C5 47–100nF</text>
+<text x="85" y="3033.28" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="black" text-anchor="start" font-weight="normal">• 3.5mm RX speaker cable and 2.5mm TX mic/PTT cable</text>
+</svg>

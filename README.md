@@ -6,7 +6,7 @@ mixing, and later review. The native macOS app contains the complete interface
 and local receiver service. The same interface can also run headlessly in a web
 browser and is designed for phones and tablets.
 
-> GP-SDR 0.3 is a public preview. It is useful now, but on-air performance still
+> GP-SDR 1.0 is a public release. On-air performance still
 > depends on the receiver, antenna, local signals, USB link, and gain settings.
 
 ## What is included
@@ -24,7 +24,10 @@ browser and is designed for phones and tablets.
   acarsdec, and AIS-catcher
 - Built-in GMRS, NOAA Weather Radio, MURS, CB, broadcast FM/AM, civil air,
   marine VHF, 2 m, 70 cm, public-safety discovery, and custom-range profiles
-- Profile and single-channel import/export for sharing configurations
+- Bundled San Ramon/East Bay conventional and P25 profiles, all 84 California
+  GMRS repeaters from the local archive, and sanitized handheld/travel banks
+- Profile export plus bulk CHIRP CSV/TSV import; select multiple programming
+  files and turn every file into a complete channel bank in one step
 - RadioReference ZIP/location import with 5/10/25/50/100-mile and custom
   1–100-mile ranges
 - Optional local whisper.cpp transcription
@@ -58,7 +61,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_0.3.0-preview.1_amd64.deb
+sudo apt install ./gp-sdr_1.0.0_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -83,6 +86,9 @@ Demo activity is clearly labeled and never presented as received RF.
 6. Press **Start** on **Live**.
 7. Control every active channel or P25 talkgroup from the mixer; inspect saved
    transmissions under **Activity**.
+
+Bundled regional data, public sources, local-file sanitization, and accepted
+bulk-import columns are documented in [Docs/CHANNEL_DATA.md](Docs/CHANNEL_DATA.md).
 
 GP-SDR chooses the standard user configuration directory and migrates legacy
 Signal Harbor data automatically when found. `-data /path` selects another

@@ -130,6 +130,14 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		saved, err := s.runtime.Profiles.Import(data)
 		writeResult(w, saved, err, 201)
+	case r.Method == "POST" && path == "/api/profiles/import-channels":
+		data, err := io.ReadAll(io.LimitReader(r.Body, 5_000_001))
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		saved, err := s.runtime.Profiles.ImportChannelCSV(r.URL.Query().Get("filename"), data)
+		writeResult(w, saved, err, 201)
 	case r.Method == "POST" && path == "/api/profiles/duplicate":
 		saved, err := s.runtime.Profiles.Duplicate(r.URL.Query().Get("id"))
 		writeResult(w, saved, err, 201)

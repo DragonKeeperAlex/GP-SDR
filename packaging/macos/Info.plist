@@ -6,6 +6,7 @@
   <key>CFBundleDisplayName</key><string>GP-SDR</string>
   <key>CFBundleExecutable</key><string>GP-SDR</string>
   <key>CFBundleIdentifier</key><string>app.gp-sdr.desktop</string>
+  <key>CFBundleIconFile</key><string>GP-SDR</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>GP-SDR</string>
   <key>CFBundlePackageType</key><string>APPL</string>

@@ -725,9 +725,16 @@ $('#reference-form').addEventListener('submit', async event => {
 $('#reference-import').addEventListener('click', importReferenceSelection);
 $('#import-button').addEventListener('click', () => $('#import-profile').click());
 $('#import-profile').addEventListener('change', async event => {
-  const file = event.target.files[0]; if (!file) return;
-  try { await api('/api/profiles/import',{method:'POST',body:await file.text()}); toast('Profile imported'); await refreshAll(); }
-  catch(error){toast(error.message,true);} event.target.value='';
+  const files = [...event.target.files]; if (!files.length) return;
+  let imported = 0;
+  try {
+    for (const file of files) {
+      const isJSON = file.name.toLowerCase().endsWith('.json');
+      const endpoint = isJSON ? '/api/profiles/import' : '/api/profiles/import-channels?filename=' + encodeURIComponent(file.name);
+      await api(endpoint,{method:'POST',body:await file.text()}); imported++;
+    }
+    toast(imported === 1 ? 'Import complete' : `${imported} channel banks imported`); await refreshAll();
+  } catch(error){toast(`${imported ? `${imported} imported · ` : ''}${error.message}`,true);} event.target.value='';
 });
 $('#refresh-hardware').addEventListener('click', async () => {
   try { await api('/api/devices/refresh',{method:'POST',body:'{}'}); toast('Hardware refreshed'); await refreshAll(); }

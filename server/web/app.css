@@ -145,6 +145,9 @@ td.transcript { max-width: 330px; overflow: hidden; text-overflow: ellipsis; col
 .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .settings-card { min-height: 150px; padding: 16px; }
 .settings-card h2 { margin-bottom: 15px; }.settings-card p { font-size: 12px; }
+.settings-links { display: flex; flex-direction: column; gap: 10px; }
+.settings-links a { color: var(--accent); text-decoration: none; }
+.settings-links a:hover { text-decoration: underline; }
 dl { display: grid; grid-template-columns: 85px 1fr; margin: 0; font-size: 12px; }
 dt, dd { padding: 7px 0; border-bottom: 1px solid var(--line-soft); }dt { color: var(--dim); }dd { margin: 0; color: #bbc3cc; text-align: right; }
 .acknowledgements { margin-top: 10px; padding: 16px; }

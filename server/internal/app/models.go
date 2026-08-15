@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "0.3.0-dev"
+var Version = "1.0.0-dev"
 
 type SDRDevice struct {
 	ID                 string   `json:"id"`
@@ -265,7 +265,11 @@ func builtInProfiles() []ScanProfile {
 	publicSafety := rangeProfile("5fdcfc10-2b76-43aa-b8e6-4b7c7831f3a4", "Public Safety Discovery", "Common 700 and 800 MHz receive segments", "Public safety",
 		ScanRange{ID: NewID(), Name: "700 MHz", StartHz: 769e6, EndHz: 775e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true},
 		ScanRange{ID: NewID(), Name: "800 MHz", StartHz: 851e6, EndHz: 869e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true})
-	return []ScanProfile{discovery, gmrs, weather, murs, cb, fm, am, airband, marine, ham, publicSafety}
+	profiles := []ScanProfile{discovery, gmrs, weather, murs, cb, fm, am, airband, marine, ham, publicSafety}
+	profiles = append(profiles, handheldProfiles()...)
+	profiles = append(profiles, regionalConventionalProfiles()...)
+	profiles = append(profiles, regionalP25Profiles()...)
+	return profiles
 }
 
 func fixedChannelProfile(id, name, summary, target string) ScanProfile {

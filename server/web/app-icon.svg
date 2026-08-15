@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">GP-SDR</title>
+  <g fill="#49d5aa">
+    <rect x="148" y="316" width="168" height="392" rx="84" opacity="0.6"/>
+    <rect x="428" y="64" width="168" height="896" rx="84"/>
+    <rect x="708" y="232" width="168" height="560" rx="84" opacity="0.8"/>
+  </g>
+</svg>
