@@ -1,6 +1,6 @@
-# Signal Harbor 0.2.0-preview.1
+# GP-SDR 0.2.0-preview.1
 
-This preview turns Signal Harbor's original simulator into an early live receiver pipeline while keeping all hardware-dependent features explicit about their readiness.
+This preview turns GP-SDR's original simulator into an early live receiver pipeline while keeping all hardware-dependent features explicit about their readiness.
 
 ## Highlights
 
@@ -30,7 +30,7 @@ This preview turns Signal Harbor's original simulator into an early live receive
 ## Known limits
 
 - The macOS applications are ad-hoc signed, not notarized. Windows packages are not code-signed.
-- Vendor drivers are not embedded into the main executable. Signal Harbor discovers compatible system tools and libraries; optional SoapySDR helpers are included only when they are built in the packaging environment.
+- Vendor drivers are not embedded into the main executable. GP-SDR discovers compatible system tools and libraries; optional SoapySDR helpers are included only when they are built in the packaging environment.
 - Live RadioReference use requires a Premium account and a separately approved API key.
 - OP25 and whisper.cpp remain separate programs under their own licenses and must be installed/configured by the user unless a future release explicitly records and bundles a compatible build.
 - Hardware-in-the-loop acceptance still needs to be repeated on each supported receiver, OS, P25 system, and RadioReference account configuration.

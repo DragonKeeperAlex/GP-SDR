@@ -112,15 +112,12 @@ func (node *xmlNode) UnmarshalXML(decoder *xml.Decoder, start xml.StartElement) 
 func newRadioReferenceClient() *radioReferenceClient {
 	endpoint := strings.TrimSpace(os.Getenv("GPSDR_RR_ENDPOINT"))
 	if endpoint == "" {
-		endpoint = strings.TrimSpace(os.Getenv("SIGNALHARBOR_RR_ENDPOINT"))
-	}
-	if endpoint == "" {
 		endpoint = radioReferenceEndpoint
 	}
 	return &radioReferenceClient{
-		username: firstEnvironment("GPSDR_RR_USERNAME", "SIGNALHARBOR_RR_USERNAME"),
-		password: firstEnvironment("GPSDR_RR_PASSWORD", "SIGNALHARBOR_RR_PASSWORD"),
-		appKey:   firstEnvironment("GPSDR_RR_APP_KEY", "SIGNALHARBOR_RR_APP_KEY"),
+		username: firstEnvironment("GPSDR_RR_USERNAME"),
+		password: firstEnvironment("GPSDR_RR_PASSWORD"),
+		appKey:   firstEnvironment("GPSDR_RR_APP_KEY"),
 		endpoint: endpoint,
 		client:   &http.Client{Timeout: 35 * time.Second},
 	}

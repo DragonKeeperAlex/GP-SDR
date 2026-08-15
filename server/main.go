@@ -78,14 +78,7 @@ func main() {
 
 func defaultDataDirectory() string {
 	if dir, err := os.UserConfigDir(); err == nil {
-		newDirectory := filepath.Join(dir, "GP-SDR")
-		legacyDirectory := filepath.Join(dir, "SignalHarbor")
-		if _, err := os.Stat(newDirectory); errors.Is(err, os.ErrNotExist) {
-			if _, legacyErr := os.Stat(legacyDirectory); legacyErr == nil {
-				return legacyDirectory
-			}
-		}
-		return newDirectory
+		return filepath.Join(dir, "GP-SDR")
 	}
 	return filepath.Join(".", "GP-SDR-Data")
 }

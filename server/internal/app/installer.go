@@ -69,7 +69,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs the vendor-neutral SoapySDR runtime. A matching device module is also required. The stream helper is already included in macOS packages; native HackRF and RTL-SDR paths do not require SoapySDR.",
 			GuideURL: "https://github.com/pothosware/SoapySDR"}, tools: []string{"SoapySDRUtil"}, formulae: []string{"soapysdr"}},
 		{component: SetupComponent{ID: "transcription", Name: "Transcription", Category: "integration",
-			Guide:    "Installs whisper.cpp. After installation, choose or download a local ggml model and set GPSDR_WHISPER_MODEL before starting GP-SDR. The older SIGNALHARBOR_WHISPER_MODEL name remains compatible.",
+			Guide:    "Installs whisper.cpp. After installation, choose or download a local ggml model and set GPSDR_WHISPER_MODEL before starting GP-SDR.",
 			GuideURL: "https://github.com/ggml-org/whisper.cpp"}, tools: []string{"whisper-cli"}, formulae: []string{"whisper-cpp"}},
 		{component: SetupComponent{ID: "rtl-433", Name: "rtl_433", Category: "decoder",
 			Guide:    "Installs rtl_433 for compatible weather stations, TPMS devices, and ISM-band sensors.",

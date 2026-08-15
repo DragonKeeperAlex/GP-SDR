@@ -40,7 +40,7 @@ func TestLegacyAPITokenHeaderRemainsCompatible(t *testing.T) {
 	}
 	server := NewServer(runtime, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, "127.0.0.1", 8073, "secret")
 	request := httptest.NewRequest(http.MethodGet, "/api/status", nil)
-	request.Header.Set("X-SignalHarbor-Token", "secret")
+	request.Header.Set("X-GP-SDR-Token", "secret")
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

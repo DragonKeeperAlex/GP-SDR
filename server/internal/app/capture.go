@@ -41,9 +41,6 @@ func BuildCaptureCommand(device SDRDevice, spec CaptureSpec) (CaptureCommand, er
 	if strings.HasPrefix(device.Driver, "SoapySDR:") {
 		tool, err := findTool("gpsdr-soapy")
 		if err != nil {
-			tool, err = findTool("signalharbor-soapy")
-		}
-		if err != nil {
 			return CaptureCommand{}, errors.New("GP-SDR's SoapySDR stream helper is not installed")
 		}
 		args := []string{"--device", soapyDeviceArguments(device), "--frequency", strconv.FormatInt(spec.CenterFrequencyHz, 10), "--rate", strconv.Itoa(spec.SampleRateHz)}

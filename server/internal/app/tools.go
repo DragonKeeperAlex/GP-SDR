@@ -24,9 +24,6 @@ func findTool(names ...string) (string, error) {
 	var lastErr error
 	directories := make([]string, 0, 16)
 	configured := strings.TrimSpace(os.Getenv("GPSDR_HELPERS"))
-	if configured == "" {
-		configured = strings.TrimSpace(os.Getenv("SIGNALHARBOR_HELPERS"))
-	}
 	if configured != "" {
 		directories = append(directories, filepath.SplitList(configured)...)
 	}

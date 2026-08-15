@@ -1,4 +1,4 @@
-# Signal Harbor 0.1.0-preview.1
+# GP-SDR 0.1.0-preview.1
 
 This first developer preview establishes the distributable application foundation.
 

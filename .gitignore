@@ -2,6 +2,6 @@
 build/
 dist/
 # Legacy pre-0.3 data directory.
-SignalHarborData/
+GPSDRData/
 *.log
 *.tmp

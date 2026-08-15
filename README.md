@@ -63,7 +63,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.0_amd64.deb
+sudo apt install ./gp-sdr_1.0.2_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -94,9 +94,8 @@ bulk-import columns are documented in [Docs/CHANNEL_DATA.md](Docs/CHANNEL_DATA.m
 Google Sheets setup and accepted range columns are documented in
 [Docs/GOOGLE_SHEETS_SYNC.md](Docs/GOOGLE_SHEETS_SYNC.md).
 
-GP-SDR chooses the standard user configuration directory and migrates legacy
-Signal Harbor data automatically when found. `-data /path` selects another
-location.
+GP-SDR chooses the standard user configuration directory. `-data /path`
+selects another location.
 
 ## P25 setup
 
@@ -178,7 +177,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.1
+Scripts/build_release.sh 1.0.2
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS

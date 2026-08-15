@@ -158,7 +158,7 @@ func BuildOP25Configuration(profile ScanProfile, devices []SDRDevice, directory 
 		Terminal: map[string]any{"module": "terminal.py", "terminal_type": "http:127.0.0.1:8081", "http_plot_interval": 1.0, "curses_plot_interval": 0.1},
 		Metadata: map[string]any{"module": "icemeta.py", "streams": []any{}},
 	}
-	audioDevice := firstEnvironment("GPSDR_OP25_AUDIO_DEVICE", "SIGNALHARBOR_OP25_AUDIO_DEVICE")
+	audioDevice := firstEnvironment("GPSDR_OP25_AUDIO_DEVICE")
 	if audioDevice == "" {
 		audioDevice = "default"
 	}

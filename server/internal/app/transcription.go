@@ -26,15 +26,9 @@ type Transcriber struct {
 func NewTranscriber() *Transcriber {
 	executable := strings.TrimSpace(os.Getenv("GPSDR_WHISPER_EXECUTABLE"))
 	if executable == "" {
-		executable = strings.TrimSpace(os.Getenv("SIGNALHARBOR_WHISPER_EXECUTABLE"))
-	}
-	if executable == "" {
 		executable, _ = findTool("whisper-cli", "main")
 	}
 	model := strings.TrimSpace(os.Getenv("GPSDR_WHISPER_MODEL"))
-	if model == "" {
-		model = strings.TrimSpace(os.Getenv("SIGNALHARBOR_WHISPER_MODEL"))
-	}
 	return &Transcriber{executable: executable, model: model, semaphore: make(chan struct{}, 1)}
 }
 

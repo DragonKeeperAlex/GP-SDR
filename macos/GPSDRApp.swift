@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func startBundledServer() {
-        let environmentOverride = ProcessInfo.processInfo.environment["GPSDR_SERVER"] ?? ProcessInfo.processInfo.environment["SIGNALHARBOR_SERVER"]
+        let environmentOverride = ProcessInfo.processInfo.environment["GPSDR_SERVER"]
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin/gpsdr-server").path
         guard let executable = environmentOverride ?? bundled,
               FileManager.default.isExecutableFile(atPath: executable) else {

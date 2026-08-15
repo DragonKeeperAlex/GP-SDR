@@ -49,9 +49,6 @@ func (s *Server) authorized(r *http.Request) bool {
 	}
 	provided := r.Header.Get("X-GP-SDR-Token")
 	if provided == "" {
-		provided = r.Header.Get("X-SignalHarbor-Token")
-	}
-	if provided == "" {
 		provided = r.URL.Query().Get("token")
 	}
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(s.token)) == 1

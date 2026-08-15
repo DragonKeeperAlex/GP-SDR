@@ -20,9 +20,6 @@ func (r *Runtime) Integrations() IntegrationOverview {
 	soapy := ComponentStatus{State: "setup", Note: "Install SoapySDR and a module for your receiver; the macOS stream helper is included."}
 	if util, utilErr := findTool("SoapySDRUtil"); utilErr == nil {
 		helper, helperErr := findTool("gpsdr-soapy")
-		if helperErr != nil {
-			helper, helperErr = findTool("signalharbor-soapy")
-		}
 		if helperErr == nil {
 			soapy = ComponentStatus{State: "ready", Note: "SoapySDR discovery and streaming are ready.", Path: &helper}
 		} else {
