@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.0.0-dev"
+var Version = "1.0.1-dev"
 
 type SDRDevice struct {
 	ID                 string   `json:"id"`

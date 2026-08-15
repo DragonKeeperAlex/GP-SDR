@@ -145,6 +145,22 @@ td.transcript { max-width: 330px; overflow: hidden; text-overflow: ellipsis; col
 .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .settings-card { min-height: 150px; padding: 16px; }
 .settings-card h2 { margin-bottom: 15px; }.settings-card p { font-size: 12px; }
+.range-sync-card { grid-column: 1 / -1; min-height: 0; }
+.settings-card-head { display: flex; justify-content: space-between; gap: 14px; align-items: start; }
+.settings-card-head h2 { margin-bottom: 4px; }
+.range-sync-form { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 12px; align-items: end; margin-top: 15px; }
+.range-sync-form > label, .range-sync-options > label:not(.check-line) { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 10px; }
+.range-sync-options { display: flex; gap: 9px; align-items: end; }
+.range-sync-options select { min-width: 110px; }
+.check-line { display: flex; min-height: 35px; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.check-line input { width: auto; }
+.range-sync-actions { display: flex; gap: 6px; }
+.range-sync-detail { margin-top: 10px; color: var(--dim); font-size: 10px; }
+.range-sync-detail.error { color: #e68c8c; }
+.range-sync-format { margin-top: 9px; color: var(--dim); font-size: 10px; }
+.range-sync-format summary { cursor: pointer; }
+.range-sync-format code { display: block; margin-top: 7px; color: var(--muted); overflow-wrap: anywhere; }
+.chip.ready { color: var(--accent); }.chip.warning { color: var(--warning); }
 .settings-links { display: flex; flex-direction: column; gap: 10px; }
 .settings-links a { color: var(--accent); text-decoration: none; }
 .settings-links a:hover { text-decoration: underline; }
@@ -287,6 +303,10 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
   .legend { display: none; }
   .spectrum-panel canvas { height: 165px; }
   .two-column, .settings-grid, .decoder-columns { grid-template-columns: 1fr; }
+  .range-sync-form { grid-template-columns: 1fr; }
+  .range-sync-options { align-items: stretch; flex-direction: column; }
+  .range-sync-options select, .range-sync-actions button { width: 100%; }
+  .range-sync-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .mixer-row { grid-template-columns: minmax(100px, 1fr) 28px 28px 76px; grid-template-rows: auto 4px; gap: 7px; padding: 8px 9px; }
   .mixer-row .channel-name { grid-column: 1; grid-row: 1; }
   .mixer-row .level-meter { grid-column: 1 / -1; grid-row: 2; }

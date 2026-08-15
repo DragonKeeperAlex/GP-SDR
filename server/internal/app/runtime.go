@@ -33,6 +33,7 @@ type Runtime struct {
 	radioReference *radioReferenceClient
 	audioHub       *AudioHub
 	installer      *Installer
+	rangeSync      *RangeSyncManager
 	spectrum       SpectrumSnapshot
 	tuning         bool
 }
@@ -50,8 +51,18 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(), op25: &OP25Manager{},
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub()}
 	runtimeState.installer = NewInstaller(runtimeState.Refresh)
+	runtimeState.rangeSync, err = NewRangeSyncManager(dataDirectory, profiles)
+	if err != nil {
+		return nil, err
+	}
 	return runtimeState, nil
 }
+
+func (r *Runtime) RangeSyncStatus() RangeSyncStatus { return r.rangeSync.Status() }
+func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, error) {
+	return r.rangeSync.Update(config)
+}
+func (r *Runtime) SyncRangesNow() RangeSyncStatus { return r.rangeSync.SyncNow() }
 
 func (r *Runtime) Refresh() {
 	devices := DiscoverDevices(r.demo)

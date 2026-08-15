@@ -188,6 +188,19 @@
 
       <section id="view-settings" class="view">
         <div class="settings-grid">
+          <article class="panel settings-card range-sync-card">
+            <div class="settings-card-head"><div><h2>Range updates</h2><p>Sync built-in scan ranges from Google Sheets.</p></div><span id="range-sync-state" class="chip">Not configured</span></div>
+            <form id="range-sync-form" class="range-sync-form">
+              <label>Shared sheet link<input id="range-sync-url" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…" title="Paste the Google Sheets sharing link, including its tab ID"></label>
+              <div class="range-sync-options">
+                <label>Check every<select id="range-sync-interval" title="How often GP-SDR checks Google Sheets for updated ranges"><option value="15">15 minutes</option><option value="60">Hour</option><option value="360">6 hours</option><option value="1440">Day</option><option value="10080">Week</option></select></label>
+                <label class="check-line"><input id="range-sync-enabled" type="checkbox"> Auto sync</label>
+                <div class="range-sync-actions"><button id="range-sync-now" type="button" title="Download and apply the latest range sheet now">Sync now</button><button class="primary" type="submit" title="Save Google Sheets range sync settings">Save</button></div>
+              </div>
+            </form>
+            <div id="range-sync-detail" class="range-sync-detail">Paste a shared sheet link to begin.</div>
+            <details class="range-sync-format"><summary>Sheet columns</summary><code>Profile, Name, Start MHz, End MHz, Step kHz, Mode, Dwell ms, Enabled</code></details>
+          </article>
           <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd id="setting-address">—</dd><dt>Access</dt><dd>Local by default</dd></dl></article>
           <article class="panel settings-card"><h2>Data</h2><dl><dt>Format</dt><dd>Portable JSON profiles</dd><dt>Journal</dt><dd>Local event history</dd></dl></article>
           <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>

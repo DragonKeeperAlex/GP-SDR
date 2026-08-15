@@ -1,6 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
+  rangeSync: null,
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live'
 };
 const serverToken = new URLSearchParams(location.search).get('token') || '';
@@ -85,12 +86,12 @@ function setView(view) {
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -106,7 +107,27 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderTuner(); renderDecoders(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderRangeSync(); renderTuner(); renderDecoders(); drawSpectrum(); drawWaterfall();
+}
+
+function renderRangeSync() {
+  const sync = state.rangeSync; if (!sync) return;
+  const form = $('#range-sync-form');
+  if (!form.contains(document.activeElement)) {
+    $('#range-sync-url').value = sync.config.sheetURL || '';
+    $('#range-sync-interval').value = String(sync.config.intervalMinutes || 360);
+    $('#range-sync-enabled').checked = !!sync.config.enabled;
+  }
+  const badge = $('#range-sync-state');
+  badge.textContent = sync.syncing ? 'Syncing' : sync.lastError ? 'Needs attention' : sync.lastSync ? 'Current' : sync.config.enabled ? 'Waiting' : 'Off';
+  badge.className = `chip ${sync.lastError ? 'warning' : sync.lastSync && !sync.syncing ? 'ready' : ''}`;
+  $('#range-sync-now').disabled = sync.syncing || !sync.config.sheetURL;
+  const detail = $('#range-sync-detail');
+  if (sync.syncing) detail.textContent = 'Downloading range updates…';
+  else if (sync.lastError) detail.textContent = sync.lastError;
+  else if (sync.lastSync) detail.textContent = `${sync.profileCount} profiles · ${sync.rangeCount} ranges · updated ${timeAgo(sync.lastSync)}${sync.usingCache ? ' · cached' : ''}`;
+  else detail.textContent = sync.config.sheetURL ? 'Ready to sync.' : 'Paste a shared sheet link to begin.';
+  detail.classList.toggle('error', !!sync.lastError);
 }
 
 function renderStatus() {
@@ -738,6 +759,16 @@ $('#import-profile').addEventListener('change', async event => {
 });
 $('#refresh-hardware').addEventListener('click', async () => {
   try { await api('/api/devices/refresh',{method:'POST',body:'{}'}); toast('Hardware refreshed'); await refreshAll(); }
+  catch(error){toast(error.message,true);}
+});
+$('#range-sync-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const config = {sheetURL:$('#range-sync-url').value.trim(),intervalMinutes:Number($('#range-sync-interval').value),enabled:$('#range-sync-enabled').checked};
+  try { state.rangeSync = await api('/api/range-sync',{method:'PUT',body:JSON.stringify(config)}); renderRangeSync(); toast('Range sync saved'); setTimeout(refreshAll,800); }
+  catch(error){toast(error.message,true);}
+});
+$('#range-sync-now').addEventListener('click', async () => {
+  try { state.rangeSync = await api('/api/range-sync/now',{method:'POST',body:'{}'}); renderRangeSync(); if(state.rangeSync.lastError) toast(state.rangeSync.lastError,true); else { toast('Ranges updated'); await refreshAll(); } }
   catch(error){toast(error.message,true);}
 });
 $('#mute-all').addEventListener('click', async () => {

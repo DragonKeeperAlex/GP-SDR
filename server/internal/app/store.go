@@ -68,6 +68,28 @@ func (s *ProfileStore) Get(id string) (ScanProfile, bool) {
 	return profile, ok
 }
 
+func (s *ProfileStore) ReplaceSyncedProfiles(profiles []ScanProfile) error {
+	for _, profile := range profiles {
+		if !strings.HasPrefix(profile.ID, "sheet-") || !profile.BuiltIn {
+			return errors.New("synced range profiles need a sheet ID and built-in flag")
+		}
+		if err := validateProfile(profile); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.profiles {
+		if strings.HasPrefix(id, "sheet-") {
+			delete(s.profiles, id)
+		}
+	}
+	for _, profile := range profiles {
+		s.profiles[profile.ID] = normalizeProfile(profile)
+	}
+	return nil
+}
+
 func (s *ProfileStore) Save(profile ScanProfile) (ScanProfile, error) {
 	if err := validateProfile(profile); err != nil {
 		return ScanProfile{}, err

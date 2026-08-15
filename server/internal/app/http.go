@@ -113,6 +113,17 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := s.runtime.RadioReferenceNearby(zipCode, radius)
 		writeResult(w, result, err, 200)
+	case r.Method == "GET" && path == "/api/range-sync":
+		writeJSON(w, 200, s.runtime.RangeSyncStatus())
+	case r.Method == "PUT" && path == "/api/range-sync":
+		var config RangeSyncConfig
+		if !decodeBody(w, r, &config) {
+			return
+		}
+		status, err := s.runtime.UpdateRangeSync(config)
+		writeResult(w, status, err, 200)
+	case r.Method == "POST" && path == "/api/range-sync/now":
+		writeJSON(w, 200, s.runtime.SyncRangesNow())
 	case r.Method == "GET" && path == "/api/profiles":
 		writeJSON(w, 200, s.runtime.Profiles.All())
 	case r.Method == "POST" && path == "/api/profiles":

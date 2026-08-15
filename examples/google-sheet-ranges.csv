@@ -1,0 +1,4 @@
+Profile,Name,Start MHz,End MHz,Step kHz,Mode,Dwell ms,Enabled,Summary
+Common ranges,Civil Airband,118,136.975,25,AM,160,yes,Shared receive ranges
+Common ranges,GMRS,462.55,467.725,12.5,NFM,180,yes,
+Public safety,700 MHz,769,775,12.5,digital,180,yes,Public-safety discovery

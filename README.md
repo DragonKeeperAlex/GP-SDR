@@ -28,6 +28,8 @@ browser and is designed for phones and tablets.
   GMRS repeaters from the local archive, and sanitized handheld/travel banks
 - Profile export plus bulk CHIRP CSV/TSV import; select multiple programming
   files and turn every file into a complete channel bank in one step
+- Automatic Google Sheets range sync with read-only built-in profiles, manual
+  refresh, scheduled updates, validation, and an offline cache
 - RadioReference ZIP/location import with 5/10/25/50/100-mile and custom
   1–100-mile ranges
 - Optional local whisper.cpp transcription
@@ -89,6 +91,8 @@ Demo activity is clearly labeled and never presented as received RF.
 
 Bundled regional data, public sources, local-file sanitization, and accepted
 bulk-import columns are documented in [Docs/CHANNEL_DATA.md](Docs/CHANNEL_DATA.md).
+Google Sheets setup and accepted range columns are documented in
+[Docs/GOOGLE_SHEETS_SYNC.md](Docs/GOOGLE_SHEETS_SYNC.md).
 
 GP-SDR chooses the standard user configuration directory and migrates legacy
 Signal Harbor data automatically when found. `-data /path` selects another
@@ -174,7 +178,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 0.3.0-preview.1
+Scripts/build_release.sh 1.0.1
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
