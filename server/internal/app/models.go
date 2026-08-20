@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.0.8"
+var Version = "1.0.10"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -132,35 +132,44 @@ type ScanProfile struct {
 }
 
 type TransmissionEvent struct {
-	ID              string    `json:"id"`
-	StartedAt       time.Time `json:"startedAt"`
-	DurationSeconds float64   `json:"durationSeconds"`
-	FrequencyHz     float64   `json:"frequencyHz"`
-	BandwidthHz     float64   `json:"bandwidthHz"`
-	SignalDBFS      float64   `json:"signalDBFS"`
-	NoiseDBFS       float64   `json:"noiseDBFS"`
-	Modulation      string    `json:"modulation"`
-	ProtocolName    *string   `json:"protocolName"`
-	Label           *string   `json:"label"`
-	DeviceID        string    `json:"deviceID"`
-	Transcript      *string   `json:"transcript"`
-	Confidence      float64   `json:"confidence"`
-	AudioPath       *string   `json:"audioPath"`
-	IQPath          *string   `json:"iqPath"`
-	Simulated       bool      `json:"simulated"`
+	ID              string               `json:"id"`
+	StartedAt       time.Time            `json:"startedAt"`
+	DurationSeconds float64              `json:"durationSeconds"`
+	FrequencyHz     float64              `json:"frequencyHz"`
+	BandwidthHz     float64              `json:"bandwidthHz"`
+	SignalDBFS      float64              `json:"signalDBFS"`
+	NoiseDBFS       float64              `json:"noiseDBFS"`
+	Modulation      string               `json:"modulation"`
+	ProtocolName    *string              `json:"protocolName"`
+	Label           *string              `json:"label"`
+	DeviceID        string               `json:"deviceID"`
+	Transcript      *string              `json:"transcript"`
+	Confidence      float64              `json:"confidence"`
+	AudioPath       *string              `json:"audioPath"`
+	IQPath          *string              `json:"iqPath"`
+	Simulated       bool                 `json:"simulated"`
+	Location        *ObservationLocation `json:"location,omitempty"`
+}
+
+type ObservationLocation struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Label     string  `json:"label,omitempty"`
+	Precision string  `json:"precision,omitempty"`
 }
 
 type SignalSummary struct {
-	ID            string    `json:"id"`
-	FrequencyHz   float64   `json:"frequencyHz"`
-	FirstSeen     time.Time `json:"firstSeen"`
-	LastSeen      time.Time `json:"lastSeen"`
-	EventCount    int       `json:"eventCount"`
-	StrongestDBFS float64   `json:"strongestDBFS"`
-	Modulation    string    `json:"modulation"`
-	ProtocolName  *string   `json:"protocolName"`
-	Label         *string   `json:"label"`
-	Confidence    float64   `json:"confidence"`
+	ID            string               `json:"id"`
+	FrequencyHz   float64              `json:"frequencyHz"`
+	FirstSeen     time.Time            `json:"firstSeen"`
+	LastSeen      time.Time            `json:"lastSeen"`
+	EventCount    int                  `json:"eventCount"`
+	StrongestDBFS float64              `json:"strongestDBFS"`
+	Modulation    string               `json:"modulation"`
+	ProtocolName  *string              `json:"protocolName"`
+	Label         *string              `json:"label"`
+	Confidence    float64              `json:"confidence"`
+	Location      *ObservationLocation `json:"location,omitempty"`
 }
 
 type DecoderDescriptor struct {

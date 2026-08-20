@@ -26,18 +26,25 @@ type P25Status struct {
 }
 
 type OP25Manager struct {
-	mu         sync.Mutex
-	command    *exec.Cmd
-	done       chan struct{}
-	waitError  error
-	log        io.Closer
-	profileID  *string
-	configPath *string
-	lastError  *string
-	engine     string
-	apiURL     *string
-	streamStop chan struct{}
-	audioFeeds map[uint32]struct{}
+	mu           sync.Mutex
+	restartMu    sync.Mutex
+	command      *exec.Cmd
+	done         chan struct{}
+	waitError    error
+	log          io.Closer
+	profileID    *string
+	configPath   *string
+	lastError    *string
+	engine       string
+	apiURL       *string
+	streamStop   chan struct{}
+	audioFeeds   map[uint32]struct{}
+	profile      *ScanProfile
+	plan         []ReceiverPlanItem
+	devices      []SDRDevice
+	dataRoot     string
+	muted        map[uint32]bool
+	restartTimer *time.Timer
 }
 
 type op25Configuration struct {

@@ -243,20 +243,62 @@ func NewEventStore(dir string) (*EventStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+	removedLegacyEvents := 0
 	for scanner.Scan() {
 		var event TransmissionEvent
 		if json.Unmarshal(scanner.Bytes(), &event) == nil {
+			if isLegacyMapperFalsePositive(event) {
+				removedLegacyEvents++
+				continue
+			}
 			store.events = append(store.events, event)
 			store.aggregate(event)
 		}
 	}
+	scanErr := scanner.Err()
+	closeErr := file.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
 	if len(store.events) > 25_000 {
 		store.events = store.events[len(store.events)-25_000:]
 	}
-	return store, scanner.Err()
+	if removedLegacyEvents > 0 {
+		if err := writeEventFile(store.path, store.events); err != nil {
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
+func isLegacyMapperFalsePositive(event TransmissionEvent) bool {
+	return event.NoiseDBFS == 0 && event.DurationSeconds == .2 && event.Label != nil && *event.Label == "Mapper discovery" && event.Confidence == .72
+}
+
+func writeEventFile(path string, events []TransmissionEvent) error {
+	temporary := path + ".tmp"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(file)
+	for _, event := range events {
+		if err := encoder.Encode(event); err != nil {
+			_ = file.Close()
+			_ = os.Remove(temporary)
+			return err
+		}
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return os.Rename(temporary, path)
 }
 
 func (s *EventStore) Append(event TransmissionEvent) error {
@@ -330,24 +372,7 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	if !found {
 		return ErrNotFound
 	}
-	temporary := s.path + ".tmp"
-	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	encoder := json.NewEncoder(file)
-	for _, event := range s.events {
-		if err := encoder.Encode(event); err != nil {
-			_ = file.Close()
-			_ = os.Remove(temporary)
-			return err
-		}
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(temporary)
-		return err
-	}
-	return os.Rename(temporary, s.path)
+	return writeEventFile(s.path, s.events)
 }
 
 func (s *EventStore) Signals(limit int) []SignalSummary {
@@ -373,7 +398,7 @@ func (s *EventStore) aggregate(event TransmissionEvent) {
 	key := fmt.Sprintf("%.0f", event.FrequencyHz)
 	summary, ok := s.signals[key]
 	if !ok {
-		s.signals[key] = SignalSummary{ID: key, FrequencyHz: event.FrequencyHz, FirstSeen: event.StartedAt, LastSeen: event.StartedAt, EventCount: 1, StrongestDBFS: event.SignalDBFS, Modulation: event.Modulation, ProtocolName: event.ProtocolName, Label: event.Label, Confidence: event.Confidence}
+		s.signals[key] = SignalSummary{ID: key, FrequencyHz: event.FrequencyHz, FirstSeen: event.StartedAt, LastSeen: event.StartedAt, EventCount: 1, StrongestDBFS: event.SignalDBFS, Modulation: event.Modulation, ProtocolName: event.ProtocolName, Label: event.Label, Confidence: event.Confidence, Location: event.Location}
 		return
 	}
 	if event.StartedAt.Before(summary.FirstSeen) {
@@ -393,6 +418,9 @@ func (s *EventStore) aggregate(event TransmissionEvent) {
 			summary.Label = event.Label
 		}
 		summary.Confidence = event.Confidence
+	}
+	if event.Location != nil {
+		summary.Location = event.Location
 	}
 	s.signals[key] = summary
 }

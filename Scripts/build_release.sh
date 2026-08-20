@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.7-dev}
+VERSION=${1:-1.0.10-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.7; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.10; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
@@ -33,18 +33,18 @@ build_go windows amd64 "$BUILD_ROOT/bin/gpsdr-server-windows-amd64.exe"
 build_shell() {
   architecture=$1
   output=$2
-  log_file="$BUILD_ROOT/swift-$architecture.log"
+  log_file="$BUILD_ROOT/native-shell-$architecture.log"
   installed_shell="$HOME/Applications/GP-SDR.app/Contents/MacOS/GP-SDR"
-  if [ -f "$installed_shell" ] && git -C "$PROJECT_ROOT" diff --quiet -- macos/GPSDRApp.swift && lipo "$installed_shell" -verify_arch "$architecture" >/dev/null 2>&1; then
+  if [ -f "$installed_shell" ] && git -C "$PROJECT_ROOT" diff --quiet -- macos/GPSDRApp.m macos/GPSDRApp.swift && lipo "$installed_shell" -verify_arch "$architecture" >/dev/null 2>&1; then
     lipo "$installed_shell" -thin "$architecture" -output "$output"
     return
   fi
-  if xcrun swiftc -swift-version 5 -parse-as-library -O -target "$architecture-apple-macos13.0" \
-    -framework AppKit -framework WebKit "$PROJECT_ROOT/macos/GPSDRApp.swift" -o "$output" 2>"$log_file"; then
+  if xcrun clang -fobjc-arc -O2 -target "$architecture-apple-macos13.0" \
+    -framework AppKit -framework CoreLocation -framework WebKit "$PROJECT_ROOT/macos/GPSDRApp.m" -o "$output" 2>"$log_file"; then
     return
   fi
   if [ -f "$installed_shell" ] && lipo "$installed_shell" -verify_arch "$architecture" >/dev/null 2>&1; then
-    echo "Swift toolchain could not build $architecture; reusing the unchanged installed GP-SDR shell."
+    echo "Native shell toolchain could not build $architecture; reusing the unchanged installed GP-SDR shell."
     lipo "$installed_shell" -thin "$architecture" -output "$output"
     return
   fi
@@ -56,6 +56,12 @@ build_shell arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64"
 build_shell x86_64 "$BUILD_ROOT/bin/GP-SDR-shell-amd64"
 
 mkdir -p "$PROJECT_ROOT/build/helpers/darwin-arm64" "$PROJECT_ROOT/build/helpers/darwin-amd64"
+xcrun clang -fobjc-arc -O2 -target arm64-apple-macos13.0 -framework Foundation \
+  "$PROJECT_ROOT/macos/GPSDRPreferences.m" \
+  -o "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-mac-prefs"
+xcrun clang -fobjc-arc -O2 -target x86_64-apple-macos13.0 -framework Foundation \
+  "$PROJECT_ROOT/macos/GPSDRPreferences.m" \
+  -o "$PROJECT_ROOT/build/helpers/darwin-amd64/gpsdr-mac-prefs"
 xcrun clang++ -std=c++17 -O2 -target arm64-apple-macos13.0 \
   "$PROJECT_ROOT/helpers/soapy_capture/main.cpp" \
   -o "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-soapy"
@@ -69,10 +75,9 @@ lipo -create "$BUILD_ROOT/bin/gpsdr-server-darwin-arm64" \
 lipo -create "$BUILD_ROOT/bin/GP-SDR-shell-arm64" \
   "$BUILD_ROOT/bin/GP-SDR-shell-amd64" \
   -output "$BUILD_ROOT/bin/GP-SDR-shell-universal"
-lipo -create "$PROJECT_ROOT/build/helpers/darwin-arm64/gophertrunk" \
-  "$PROJECT_ROOT/build/helpers/darwin-amd64/gophertrunk" \
-  -output "$BUILD_ROOT/bin/gophertrunk-darwin-universal"
-
+lipo -create "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-mac-prefs" \
+  "$PROJECT_ROOT/build/helpers/darwin-amd64/gpsdr-mac-prefs" \
+  -output "$BUILD_ROOT/bin/gpsdr-mac-prefs-darwin-universal"
 if [ -f "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-soapy" ] && \
    [ -f "$PROJECT_ROOT/build/helpers/darwin-amd64/gpsdr-soapy" ]; then
   lipo -create "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-soapy" \
@@ -84,7 +89,6 @@ make_mac_app() {
   architecture=$1
   shell_binary=$2
   server_binary=$3
-  p25_binary=$4
   app_root="$APP_BUILD_ROOT/GP-SDR-$architecture/GP-SDR.app"
   mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources/bin" "$app_root/Contents/Resources/Documentation"
   cp "$PROJECT_ROOT/packaging/macos/Info.plist" "$app_root/Contents/Info.plist"
@@ -92,29 +96,45 @@ make_mac_app() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$app_root/Contents/Info.plist"
   cp "$shell_binary" "$app_root/Contents/MacOS/GP-SDR"
   cp "$server_binary" "$app_root/Contents/Resources/bin/gpsdr-server"
-  cp "$p25_binary" "$app_root/Contents/Resources/bin/gophertrunk"
   cp "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/NOTICE" "$PROJECT_ROOT/THIRD_PARTY.md" "$app_root/Contents/Resources/Documentation/"
-  cp "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-LICENSE" "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-THIRD_PARTY_LICENSES.md" "$app_root/Contents/Resources/Documentation/"
+  cp "$PROJECT_ROOT/build/p25-licenses/"* "$app_root/Contents/Resources/Documentation/"
   helper_tag=$architecture
   if [ "$architecture" = "x86_64" ]; then helper_tag=amd64; fi
   if [ "$architecture" = "universal" ]; then
     helper_path="$BUILD_ROOT/bin/gpsdr-soapy-darwin-universal"
+    prefs_helper_path="$BUILD_ROOT/bin/gpsdr-mac-prefs-darwin-universal"
+    cp -R "$PROJECT_ROOT/build/components/sdrtrunk/darwin-arm64" "$app_root/Contents/Resources/sdrtrunk-arm64"
+    cp -R "$PROJECT_ROOT/build/components/sdrtrunk/darwin-amd64" "$app_root/Contents/Resources/sdrtrunk-amd64"
+    cp -R "$PROJECT_ROOT/build/components/jmbe-creator/darwin-arm64" "$app_root/Contents/Resources/jmbe-creator-arm64"
+    cp -R "$PROJECT_ROOT/build/components/jmbe-creator/darwin-amd64" "$app_root/Contents/Resources/jmbe-creator-amd64"
   else
     helper_path="$PROJECT_ROOT/build/helpers/darwin-$helper_tag/gpsdr-soapy"
+    prefs_helper_path="$PROJECT_ROOT/build/helpers/darwin-$helper_tag/gpsdr-mac-prefs"
+    cp -R "$PROJECT_ROOT/build/components/sdrtrunk/darwin-$helper_tag" "$app_root/Contents/Resources/sdrtrunk-$helper_tag"
+    cp -R "$PROJECT_ROOT/build/components/jmbe-creator/darwin-$helper_tag" "$app_root/Contents/Resources/jmbe-creator-$helper_tag"
   fi
   if [ -f "$helper_path" ]; then
     cp "$helper_path" "$app_root/Contents/Resources/bin/gpsdr-soapy"
     chmod 755 "$app_root/Contents/Resources/bin/gpsdr-soapy"
   fi
-  chmod 755 "$app_root/Contents/MacOS/GP-SDR" "$app_root/Contents/Resources/bin/gpsdr-server" "$app_root/Contents/Resources/bin/gophertrunk"
+  cp "$prefs_helper_path" "$app_root/Contents/Resources/bin/gpsdr-mac-prefs"
+  chmod 755 "$app_root/Contents/Resources/bin/gpsdr-mac-prefs"
+  chmod 755 "$app_root/Contents/MacOS/GP-SDR" "$app_root/Contents/Resources/bin/gpsdr-server"
+  find "$app_root/Contents/Resources" -path '*/bin/*' -type f -exec chmod 755 {} \;
   xattr -cr "$app_root"
+  codesign --force --sign - "$app_root/Contents/MacOS/GP-SDR"
+  codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-server"
+  if [ -f "$app_root/Contents/Resources/bin/gpsdr-soapy" ]; then
+    codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-soapy"
+  fi
+  codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-mac-prefs"
   codesign --force --deep --sign - "$app_root"
   ditto --norsrc -c -k --keepParent "$app_root" "$DIST_ROOT/GP-SDR-$VERSION-macos-$architecture.zip"
 }
 
-make_mac_app arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64" "$BUILD_ROOT/bin/gpsdr-server-darwin-arm64" "$PROJECT_ROOT/build/helpers/darwin-arm64/gophertrunk"
-make_mac_app x86_64 "$BUILD_ROOT/bin/GP-SDR-shell-amd64" "$BUILD_ROOT/bin/gpsdr-server-darwin-amd64" "$PROJECT_ROOT/build/helpers/darwin-amd64/gophertrunk"
-make_mac_app universal "$BUILD_ROOT/bin/GP-SDR-shell-universal" "$BUILD_ROOT/bin/gpsdr-server-darwin-universal" "$BUILD_ROOT/bin/gophertrunk-darwin-universal"
+make_mac_app arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64" "$BUILD_ROOT/bin/gpsdr-server-darwin-arm64"
+make_mac_app x86_64 "$BUILD_ROOT/bin/GP-SDR-shell-amd64" "$BUILD_ROOT/bin/gpsdr-server-darwin-amd64"
+make_mac_app universal "$BUILD_ROOT/bin/GP-SDR-shell-universal" "$BUILD_ROOT/bin/gpsdr-server-darwin-universal"
 
 make_deb() {
   architecture=$1
@@ -122,15 +142,16 @@ make_deb() {
   deb_root="$BUILD_ROOT/deb-$architecture"
   package_root="$deb_root/root"
   control_root="$deb_root/control"
-  mkdir -p "$package_root/usr/bin" "$package_root/lib/systemd/system" "$package_root/usr/share/doc/gp-sdr" "$control_root"
+  mkdir -p "$package_root/usr/bin" "$package_root/usr/lib/gp-sdr" "$package_root/lib/systemd/system" "$package_root/usr/share/doc/gp-sdr" "$control_root"
   cp "$binary" "$package_root/usr/bin/gp-sdr"
   chmod 755 "$package_root/usr/bin/gp-sdr"
-  cp "$PROJECT_ROOT/build/helpers/linux-$architecture/gophertrunk" "$package_root/usr/bin/gophertrunk"
-  chmod 755 "$package_root/usr/bin/gophertrunk"
+  cp -R "$PROJECT_ROOT/build/components/sdrtrunk/linux-$architecture" "$package_root/usr/lib/gp-sdr/sdrtrunk"
+  cp -R "$PROJECT_ROOT/build/components/jmbe-creator/linux-$architecture" "$package_root/usr/lib/gp-sdr/jmbe-creator"
   cp "$PROJECT_ROOT/packaging/linux/gp-sdr.service" "$package_root/lib/systemd/system/gp-sdr.service"
   cp "$PROJECT_ROOT/README.md" "$package_root/usr/share/doc/gp-sdr/README.md"
   cp "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/NOTICE" "$PROJECT_ROOT/THIRD_PARTY.md" "$package_root/usr/share/doc/gp-sdr/"
-  cp "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-LICENSE" "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-THIRD_PARTY_LICENSES.md" "$package_root/usr/share/doc/gp-sdr/"
+  cp "$PROJECT_ROOT/build/p25-licenses/"* "$package_root/usr/share/doc/gp-sdr/"
+  find "$package_root/usr/lib/gp-sdr" -path '*/bin/*' -type f -exec chmod 755 {} \;
   linux_helper="$PROJECT_ROOT/build/helpers/linux-$architecture/gpsdr-soapy"
   if [ -f "$linux_helper" ]; then
     cp "$linux_helper" "$package_root/usr/bin/gpsdr-soapy"
@@ -156,14 +177,21 @@ make_deb arm64 "$BUILD_ROOT/bin/gpsdr-server-linux-arm64"
 windows_root="$BUILD_ROOT/GP-SDR-windows-x86_64"
 mkdir -p "$windows_root"
 cp "$BUILD_ROOT/bin/gpsdr-server-windows-amd64.exe" "$windows_root/GP-SDR.exe"
-cp "$PROJECT_ROOT/build/helpers/windows-amd64/gophertrunk.exe" "$windows_root/gophertrunk.exe"
+cp -R "$PROJECT_ROOT/build/components/sdrtrunk/windows-amd64" "$windows_root/sdrtrunk"
+cp -R "$PROJECT_ROOT/build/components/jmbe-creator/windows-amd64" "$windows_root/jmbe-creator"
 cp "$PROJECT_ROOT/packaging/windows/README.txt" "$windows_root/README.txt"
 cp "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/NOTICE" "$PROJECT_ROOT/THIRD_PARTY.md" "$windows_root/"
-cp "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-LICENSE" "$PROJECT_ROOT/build/p25-licenses/GopherTrunk-THIRD_PARTY_LICENSES.md" "$windows_root/"
+cp "$PROJECT_ROOT/build/p25-licenses/"* "$windows_root/"
 if [ -f "$PROJECT_ROOT/build/helpers/windows-amd64/gpsdr-soapy.exe" ]; then
   cp "$PROJECT_ROOT/build/helpers/windows-amd64/gpsdr-soapy.exe" "$windows_root/gpsdr-soapy.exe"
 fi
 (cd "$windows_root" && zip -q -r "$DIST_ROOT/GP-SDR-$VERSION-windows-x86_64.zip" .)
 
-(cd "$DIST_ROOT" && shasum -a 256 ./* > SHA256SUMS.txt)
+(cd "$DIST_ROOT" && {
+  : > SHA256SUMS.txt
+  for artifact in ./*; do
+    [ "$artifact" = "./SHA256SUMS.txt" ] && continue
+    shasum -a 256 "$artifact" >> SHA256SUMS.txt
+  done
+})
 printf 'Release artifacts created in %s\n' "$DIST_ROOT"

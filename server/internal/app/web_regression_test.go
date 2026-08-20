@@ -61,3 +61,47 @@ func TestLocationImportOffersValidatedCustomRange(t *testing.T) {
 		}
 	}
 }
+
+func TestMapperLocationUsesNativeBridgeWithWebFallback(t *testing.T) {
+	appPath := filepath.Join("..", "..", "web", "app.js")
+	appData, err := os.ReadFile(appPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"gpsdrNativeCapabilities?.includes('location')",
+		"native.postMessage({action:'requestLocation'})",
+		"navigator.geolocation.getCurrentPosition",
+		"window.gpsdrNativeLocationResult",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("Mapper location behavior %q is missing", required)
+		}
+	}
+
+	projectRoot := filepath.Join("..", "..", "..")
+	infoData, err := os.ReadFile(filepath.Join(projectRoot, "packaging", "macos", "Info.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(infoData), "NSLocationWhenInUseUsageDescription") {
+		t.Fatal("the macOS bundle is missing its location usage description")
+	}
+
+	shellData, err := os.ReadFile(filepath.Join(projectRoot, "macos", "GPSDRApp.m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell := string(shellData)
+	for _, required := range []string{
+		"CLLocationManagerDelegate",
+		"requestWhenInUseAuthorization",
+		"window.gpsdrNativeLocationResult",
+		"window.gpsdrNativeCapabilities=['location','localDatabaseFolder']",
+	} {
+		if !strings.Contains(shell, required) {
+			t.Fatalf("native location bridge %q is missing", required)
+		}
+	}
+}

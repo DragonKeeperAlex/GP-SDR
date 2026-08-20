@@ -1,18 +1,23 @@
 import AppKit
+import CoreLocation
 import Darwin
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler, CLLocationManagerDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var serverProcess: Process?
     private var serverPort = 8073
-	private let serverToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    private let serverToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    private let locationManager = CLLocationManager()
+    private var locationRequestPending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         buildMenus()
         buildWindow()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         serverPort = availableLoopbackPort()
         startBundledServer()
         loadConsole(attempt: 0)
@@ -45,9 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let viewMenu = NSMenu(title: "View")
         for (title, key, action) in [
             ("Live", "1", #selector(showLive)), ("Tuner", "2", #selector(showTuner)),
-            ("Activity", "3", #selector(showActivity)), ("Profiles", "4", #selector(showProfiles)),
-            ("Decoders", "5", #selector(showDecoders)), ("Hardware", "6", #selector(showHardware)),
-            ("Settings", "7", #selector(showSettings))
+            ("Activity", "3", #selector(showActivity)), ("Mapper", "4", #selector(showMapper)),
+            ("Profiles", "5", #selector(showProfiles)), ("Decoders", "6", #selector(showDecoders)),
+            ("Hardware", "7", #selector(showHardware)), ("Settings", "8", #selector(showSettings))
         ] {
             viewMenu.addItem(withTitle: title, action: action, keyEquivalent: key)
         }
@@ -69,8 +74,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func buildWindow() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-		configuration.mediaTypesRequiringUserActionForPlayback = []
-		configuration.allowsAirPlayForMediaPlayback = true
+        configuration.userContentController.add(self, name: "gpsdrNative")
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.gpsdrNativeCapabilities=['location','localDatabaseFolder'];",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.allowsAirPlayForMediaPlayback = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
@@ -190,11 +201,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc private func showLive() { show(view: "live") }
     @objc private func showTuner() { show(view: "tuner") }
     @objc private func showActivity() { show(view: "activity") }
+    @objc private func showMapper() { show(view: "mapper") }
     @objc private func showProfiles() { show(view: "profiles") }
     @objc private func showDecoders() { show(view: "decoders") }
     @objc private func showHardware() { show(view: "hardware") }
     @objc private func showSettings() { show(view: "settings") }
     @objc private func reloadInterface() { webView?.reload() }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "gpsdrNative", let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
+        switch action {
+        case "chooseLocalDatabaseFolder":
+            chooseLocalDatabaseFolder()
+        case "requestLocation":
+            requestCurrentLocation()
+        case "openLocationSettings":
+            openLocationSettings()
+        default:
+            break
+        }
+    }
+
+    private func chooseLocalDatabaseFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Local Radio Database Folder"
+        panel.prompt = "Choose"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let path = panel.url?.path,
+              let encoded = try? JSONEncoder().encode(path), let json = String(data: encoded, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.setLocalDatabaseFolder(\(json))")
+    }
+
+    private func requestCurrentLocation() {
+        guard CLLocationManager.locationServicesEnabled() else {
+            sendLocationResult(["status": "error", "message": "Location Services are off. Enable them in System Settings.", "settings": true])
+            return
+        }
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationRequestPending = true
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways:
+            locationRequestPending = true
+            locationManager.requestLocation()
+        case .denied, .restricted:
+            sendLocationResult(["status": "error", "message": "Location access is off for GP-SDR. Enable it in System Settings > Privacy & Security > Location Services.", "settings": true])
+        @unknown default:
+            sendLocationResult(["status": "error", "message": "Location access is unavailable."])
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard locationRequestPending else { return }
+        switch manager.authorizationStatus {
+        case .authorizedAlways:
+            manager.requestLocation()
+        case .denied, .restricted:
+            locationRequestPending = false
+            sendLocationResult(["status": "error", "message": "Location access is off for GP-SDR. Enable it in System Settings > Privacy & Security > Location Services.", "settings": true])
+        case .notDetermined:
+            break
+        @unknown default:
+            locationRequestPending = false
+            sendLocationResult(["status": "error", "message": "Location access is unavailable."])
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard locationRequestPending, let location = locations.last else { return }
+        locationRequestPending = false
+        sendLocationResult([
+            "status": "success",
+            "latitude": location.coordinate.latitude,
+            "longitude": location.coordinate.longitude,
+            "accuracy": location.horizontalAccuracy
+        ])
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        guard locationRequestPending else { return }
+        locationRequestPending = false
+        sendLocationResult(["status": "error", "message": "Could not read the current location: \(error.localizedDescription)"])
+    }
+
+    private func sendLocationResult(_ result: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(result),
+              let data = try? JSONSerialization.data(withJSONObject: result),
+              let json = String(data: data, encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript("window.gpsdrNativeLocationResult(\(json))")
+        }
+    }
+
+    private func openLocationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

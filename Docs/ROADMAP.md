@@ -1,6 +1,6 @@
 # GP-SDR roadmap
 
-## Implemented in 0.3 preview
+## Implemented
 
 - [x] Native macOS app with all seven primary workspaces
 - [x] Responsive desktop/mobile web interface and authenticated headless mode
@@ -12,6 +12,8 @@
 - [x] Bundled P25 Phase 1/2 engine, trunk following, call/talkgroup monitoring,
       per-talkgroup mixer state, and encrypted-call exclusion
 - [x] Persistent activity journal and signal grouping
+- [x] Mapper Discovery/Decipher workflows, occupancy counts, repeated sweeps,
+      optional location tags, and Google Sheets payloads
 - [x] Built-in common bands plus arbitrary custom ranges/channels
 - [x] Versioned profile and single-channel import/export
 - [x] RadioReference ZIP search with preset and custom distance filters
@@ -21,7 +23,9 @@
 
 ## Next hardening work
 
-- [ ] Real-system P25 acceptance captures for several Phase 1 and Phase 2 systems
+- [x] Live HackRF EBRCS control lock with Phase 1/2 grants, traffic channels,
+      NAC/WACN/system identifiers, encryption flags, and JMBE codec loading
+- [ ] Real-system P25 acceptance captures for additional systems
 - [ ] Live multi-SDR P25 soak tests across all packaged operating systems
 - [ ] CTCSS/DCS decode, pan, priority ducking, and improved channelizer rejection
 - [ ] Normalized live event bridges for every optional non-P25 decoder

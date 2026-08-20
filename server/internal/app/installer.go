@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -48,13 +49,14 @@ type installerRecipe struct {
 }
 
 type Installer struct {
-	mu        sync.Mutex
-	job       *InstallJob
-	onRefresh func()
+	mu            sync.Mutex
+	job           *InstallJob
+	onRefresh     func()
+	dataDirectory string
 }
 
-func NewInstaller(onRefresh func()) *Installer {
-	return &Installer{onRefresh: onRefresh}
+func NewInstaller(dataDirectory string, onRefresh func()) *Installer {
+	return &Installer{dataDirectory: dataDirectory, onRefresh: onRefresh}
 }
 
 func setupRecipes() []installerRecipe {
@@ -75,8 +77,11 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs rtl_433 for compatible weather stations, TPMS devices, and ISM-band sensors.",
 			GuideURL: "https://github.com/merbanan/rtl_433"}, tools: []string{"rtl_433"}, formulae: []string{"rtl_433"}},
 		{component: SetupComponent{ID: "p25", Name: "P25 Phase 1/2", Category: "decoder",
-			Guide:    "The complete GopherTrunk P25 Phase 1/2 stack is included in GP-SDR packages. It provides native HackRF and RTL-SDR input, control-channel following, voice decoding, recording, and per-talkgroup audio. If this card is not Ready, reinstall the complete GP-SDR package.",
-			GuideURL: "https://github.com/MattCheramie/GopherTrunk"}, tools: []string{"gophertrunk"}},
+			Guide:    "SDRTrunk is the GP-SDR P25 engine and is included in complete packages. It provides tested HackRF and RTL-SDR input, Phase 1/2 control decoding, trunk following, call logging, and audio. JMBE must be created once to decode voice; GP-SDR detects an existing SDRTrunk JMBE library.",
+			GuideURL: "https://github.com/DSheirer/sdrtrunk"}, tools: []string{"sdr-trunk"}},
+		{component: SetupComponent{ID: "p25-voice", Name: "P25 voice codec", Category: "decoder",
+			Guide:    "Creates the open-source JMBE voice library locally. The creator downloads and compiles the codec after showing the upstream patent notice; check the rules that apply where you use it.",
+			GuideURL: "https://github.com/DSheirer/jmbe"}},
 		{component: SetupComponent{ID: "dsd-fme", Name: "DSD-FME", Category: "decoder",
 			Guide:    "Install DSD-FME from its upstream project, then place dsd-fme on PATH or in GPSDR_HELPERS. Builds and dependencies vary by operating system.",
 			GuideURL: "https://github.com/lwvmobile/dsd-fme"}, tools: []string{"dsd-fme"}},
@@ -93,12 +98,19 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Install AIS-catcher from its upstream releases or package instructions, then place AIS-catcher on PATH.",
 			GuideURL: "https://github.com/jvde-github/AIS-catcher"}, tools: []string{"AIS-catcher", "ais-catcher"}},
 		{component: SetupComponent{ID: "radioreference", Name: "RadioReference", Category: "integration",
-			Guide:    "A Premium subscription and an approved developer API key are required. Set GPSDR_RR_USERNAME, GPSDR_RR_PASSWORD, and GPSDR_RR_APP_KEY before launching GP-SDR. Credentials are never stored in shared profiles.",
-			GuideURL: "https://wiki.radioreference.com/index.php/RadioReference.com_Web_Service"}},
+			Guide:    "A Premium subscription and an approved application API key are required. On macOS, save them to Keychain from Settings. Credentials are never stored in shared profiles or Mapper exports.",
+			GuideURL: "https://www.radioreference.com/account/api/apply"}},
 	}
 }
 
 func recipeReady(recipe installerRecipe) bool {
+	if recipe.component.ID == "p25" {
+		_, err := findSDRTrunk()
+		return err == nil
+	}
+	if recipe.component.ID == "p25-voice" {
+		return findJMBELibrary("", filepath.Join(userHomeDirectory(), "SDRTrunk")) != ""
+	}
 	if len(recipe.tools) == 0 {
 		return false
 	}
@@ -126,11 +138,19 @@ func (installer *Installer) Overview() SetupOverview {
 	}
 	for _, recipe := range setupRecipes() {
 		component := recipe.component
-		if recipeReady(recipe) {
+		ready := recipeReady(recipe)
+		if component.ID == "p25-voice" {
+			ready = findJMBELibrary(installer.dataDirectory, filepath.Join(userHomeDirectory(), "SDRTrunk")) != ""
+		}
+		if ready {
 			component.State, component.Action, component.Note = "ready", "Ready", "Installed and discoverable by GP-SDR."
 		} else {
 			component.State = "setup"
 			component.Installable = runtime.GOOS == "darwin" && brewErr == nil && len(recipe.formulae) > 0
+			if component.ID == "p25-voice" {
+				_, creatorErr := findJMBECreator()
+				component.Installable = creatorErr == nil
+			}
 			if component.Installable {
 				component.Action = "Install"
 				component.Note = "Can be installed with Homebrew from this screen."
@@ -163,8 +183,28 @@ func (installer *Installer) Start(componentID string) (InstallJob, error) {
 	if selected == nil {
 		return InstallJob{}, errors.New("unknown setup component")
 	}
-	if recipeReady(*selected) {
+	ready := recipeReady(*selected)
+	if componentID == "p25-voice" {
+		ready = findJMBELibrary(installer.dataDirectory, filepath.Join(userHomeDirectory(), "SDRTrunk")) != ""
+	}
+	if ready {
 		return InstallJob{}, errors.New("component is already installed")
+	}
+	if componentID == "p25-voice" {
+		creator, creatorErr := findJMBECreator()
+		if creatorErr != nil {
+			return InstallJob{}, errors.New("the JMBE creator is missing; reinstall the complete GP-SDR package")
+		}
+		installer.mu.Lock()
+		if installer.job != nil && installer.job.State == "installing" {
+			installer.mu.Unlock()
+			return InstallJob{}, errors.New("another component is already installing")
+		}
+		job := &InstallJob{ComponentID: componentID, State: "installing", Message: "Creating the P25 voice codec…", StartedAt: time.Now()}
+		installer.job = job
+		installer.mu.Unlock()
+		go installer.runJMBECreator(creator, job)
+		return *job, nil
 	}
 	brew, err := findHomebrew()
 	if runtime.GOOS != "darwin" || err != nil || len(selected.formulae) == 0 {
@@ -181,6 +221,67 @@ func (installer *Installer) Start(componentID string) (InstallJob, error) {
 	go installer.run(*selected, brew, job)
 	copy := *job
 	return copy, nil
+}
+
+func userHomeDirectory() string {
+	home, _ := os.UserHomeDir()
+	return home
+}
+
+func findJMBECreator() (string, error) {
+	if configured := strings.TrimSpace(os.Getenv("GPSDR_JMBE_CREATOR")); configured != "" {
+		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
+			return configured, nil
+		}
+	}
+	name := "creator"
+	if runtime.GOOS == "windows" {
+		name = "creator.bat"
+	}
+	var candidates []string
+	if executable, err := os.Executable(); err == nil {
+		base := filepath.Dir(executable)
+		candidates = append(candidates,
+			filepath.Join(base, "..", "jmbe-creator-"+runtime.GOARCH, "bin", name),
+			filepath.Join(base, "..", "jmbe-creator", "bin", name),
+			filepath.Join(base, "jmbe-creator", "bin", name),
+		)
+	}
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
+		candidates = append(candidates, filepath.Join("/usr/lib/gp-sdr/jmbe-creator/bin", name))
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(filepath.Clean(candidate)); err == nil && !info.IsDir() {
+			return filepath.Clean(candidate), nil
+		}
+	}
+	return "", errors.New("JMBE creator not found")
+}
+
+func (installer *Installer) runJMBECreator(creator string, job *InstallJob) {
+	directory := filepath.Join(installer.dataDirectory, "Components", "JMBE")
+	_ = os.MkdirAll(directory, 0o700)
+	destination := filepath.Join(directory, "jmbe-1.0.9.jar")
+	command := platformCommand(creator, destination)
+	command.Env = os.Environ()
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err := command.Run()
+	finished := time.Now()
+	state, message := "ready", "P25 voice codec created."
+	if err != nil {
+		state, message = "error", fmt.Sprintf("P25 voice setup failed: %v", err)
+	}
+	text := output.String()
+	if len(text) > 24_000 {
+		text = text[len(text)-24_000:]
+	}
+	installer.mu.Lock()
+	job.State, job.Message, job.Output, job.FinishedAt = state, message, text, &finished
+	installer.mu.Unlock()
+	if err == nil && installer.onRefresh != nil {
+		installer.onRefresh()
+	}
 }
 
 func (installer *Installer) run(recipe installerRecipe, brew string, job *InstallJob) {

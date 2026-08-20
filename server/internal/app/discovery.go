@@ -141,7 +141,7 @@ func DiscoverDecoders() []DecoderDescriptor {
 		standards, commands []string
 		missing             string
 	}{
-		{"p25", "P25 Engine", []string{"P25 Phase 1", "P25 Phase 2", "P25 Trunking"}, []string{"gophertrunk", "multi_rx.py"}, "The complete P25 receiver is included with GP-SDR packages."},
+		{"p25", "SDRTrunk", []string{"P25 Phase 1", "P25 Phase 2", "P25 Trunking"}, []string{"sdr-trunk", "sdr-trunk.bat"}, "The SDRTrunk P25 component is included with complete GP-SDR packages."},
 		{"dsd-fme", "DSD-FME", []string{"P25", "DMR", "NXDN", "D-STAR", "YSF", "M17"}, []string{"dsd-fme", "dsd"}, "Optional digital voice decoder is not installed."},
 		{"rtl-433", "rtl_433", []string{"ISM Sensors", "Weather Sensors", "TPMS"}, []string{"rtl_433"}, "Install rtl_433 to decode supported sensor protocols."},
 		{"dump1090", "dump1090", []string{"ADS-B", "Mode S"}, []string{"dump1090", "dump1090-fa"}, "Install dump1090 to decode ADS-B."},
@@ -151,6 +151,13 @@ func DiscoverDecoders() []DecoderDescriptor {
 	}
 	for _, def := range definitions {
 		item := DecoderDescriptor{ID: def.id, Name: def.name, Standards: def.standards, State: "optional", Note: def.missing}
+		if def.id == "p25" {
+			if path, err := findSDRTrunk(); err == nil {
+				item.State, item.Executable, item.Note = "ready", &path, "SDRTrunk headless P25 engine is ready."
+			}
+			items = append(items, item)
+			continue
+		}
 		for _, command := range def.commands {
 			if path, err := findTool(command); err == nil {
 				item.State = "ready"

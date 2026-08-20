@@ -2,44 +2,56 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=0.9.9
-COMMIT=09b00149d289d9db2867a6d166bc4d71ea912503
-SOURCE_URL=https://github.com/MattCheramie/GopherTrunk.git
-HELPER_ROOT="$PROJECT_ROOT/build/helpers"
+SDRTRUNK_VERSION=0.6.1
+JMBE_VERSION=1.0.9
+COMPONENT_ROOT="$PROJECT_ROOT/build/components"
 LICENSE_ROOT="$PROJECT_ROOT/build/p25-licenses"
-PATCH_FILE="$PROJECT_ROOT/third_party/patches/gophertrunk-opensourcesdrlab-offset-binary.patch"
-SOURCE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/gpsdr-gophertrunk.XXXXXX")
-trap 'rm -rf "$SOURCE_ROOT"' EXIT INT TERM
+DOWNLOAD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/gpsdr-sdrtrunk.XXXXXX")
+trap 'rm -rf "$DOWNLOAD_ROOT"' EXIT INT TERM
 
-mkdir -p "$HELPER_ROOT" "$LICENSE_ROOT"
-git clone --quiet --depth 1 --branch "v$VERSION" "$SOURCE_URL" "$SOURCE_ROOT"
-actual_commit=$(git -C "$SOURCE_ROOT" rev-parse HEAD)
-if [ "$actual_commit" != "$COMMIT" ]; then
-  printf 'GopherTrunk source commit mismatch: expected %s, got %s\n' "$COMMIT" "$actual_commit" >&2
-  exit 1
-fi
-git -C "$SOURCE_ROOT" apply --check "$PATCH_FILE"
-git -C "$SOURCE_ROOT" apply "$PATCH_FILE"
-(cd "$SOURCE_ROOT" && go test ./internal/sdr/hackrf)
+mkdir -p "$COMPONENT_ROOT"
+rm -rf "$LICENSE_ROOT"
+mkdir -p "$LICENSE_ROOT"
 
-build_target() {
-  target_os=$1
-  target_arch=$2
-  target_dir=$3
-  binary_name=$4
-  mkdir -p "$HELPER_ROOT/$target_dir"
-  (cd "$SOURCE_ROOT" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" go build -trimpath \
-    -ldflags "-s -w -X github.com/MattCheramie/GopherTrunk/internal/version.Version=v$VERSION-gpsdr1 -X github.com/MattCheramie/GopherTrunk/internal/version.Commit=$COMMIT" \
-    -o "$HELPER_ROOT/$target_dir/$binary_name" ./cmd/gophertrunk)
-  chmod 755 "$HELPER_ROOT/$target_dir/$binary_name"
+fetch_component() {
+  project=$1
+  version=$2
+  asset=$3
+  destination=$4
+  archive="$DOWNLOAD_ROOT/$asset"
+  source="https://github.com/DSheirer/$project/releases/download/v$version/$asset"
+  curl --fail --location --silent --show-error "$source" --output "$archive"
+  unpack="$DOWNLOAD_ROOT/unpack-$(printf '%s' "$asset" | tr '.-' '__')"
+  mkdir -p "$unpack"
+  unzip -q "$archive" -d "$unpack"
+  root=$(find "$unpack" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  if [ -z "$root" ]; then
+    printf 'No component directory found in %s\n' "$asset" >&2
+    exit 1
+  fi
+  rm -rf "$destination"
+  mkdir -p "$(dirname "$destination")"
+  mv "$root" "$destination"
+  (cd "$DOWNLOAD_ROOT" && shasum -a 256 "$asset") >> "$LICENSE_ROOT/COMPONENT_SHA256SUMS.txt"
 }
 
-build_target darwin arm64 darwin-arm64 gophertrunk
-build_target darwin amd64 darwin-amd64 gophertrunk
-build_target linux amd64 linux-amd64 gophertrunk
-build_target linux arm64 linux-arm64 gophertrunk
-build_target windows amd64 windows-amd64 gophertrunk.exe
+: > "$LICENSE_ROOT/COMPONENT_SHA256SUMS.txt"
 
-cp "$SOURCE_ROOT/LICENSE" "$LICENSE_ROOT/GopherTrunk-LICENSE"
-cp "$SOURCE_ROOT/THIRD_PARTY_LICENSES.md" "$LICENSE_ROOT/GopherTrunk-THIRD_PARTY_LICENSES.md"
-printf 'Bundled GopherTrunk P25 stack v%s with GP-SDR OpenSourceSDRLab compatibility patch is ready.\n' "$VERSION"
+fetch_component sdrtrunk "$SDRTRUNK_VERSION" "sdr-trunk-osx-aarch64-v$SDRTRUNK_VERSION.zip" "$COMPONENT_ROOT/sdrtrunk/darwin-arm64"
+fetch_component sdrtrunk "$SDRTRUNK_VERSION" "sdr-trunk-osx-x86_64-v$SDRTRUNK_VERSION.zip" "$COMPONENT_ROOT/sdrtrunk/darwin-amd64"
+fetch_component sdrtrunk "$SDRTRUNK_VERSION" "sdr-trunk-linux-aarch64-v$SDRTRUNK_VERSION.zip" "$COMPONENT_ROOT/sdrtrunk/linux-arm64"
+fetch_component sdrtrunk "$SDRTRUNK_VERSION" "sdr-trunk-linux-x86_64-v$SDRTRUNK_VERSION.zip" "$COMPONENT_ROOT/sdrtrunk/linux-amd64"
+fetch_component sdrtrunk "$SDRTRUNK_VERSION" "sdr-trunk-windows-x86_64-v$SDRTRUNK_VERSION.zip" "$COMPONENT_ROOT/sdrtrunk/windows-amd64"
+
+fetch_component jmbe "$JMBE_VERSION" "jmbe-creator-osx-aarch64-v$JMBE_VERSION.zip" "$COMPONENT_ROOT/jmbe-creator/darwin-arm64"
+fetch_component jmbe "$JMBE_VERSION" "jmbe-creator-osx-x86_64-v$JMBE_VERSION.zip" "$COMPONENT_ROOT/jmbe-creator/darwin-amd64"
+fetch_component jmbe "$JMBE_VERSION" "jmbe-creator-linux-aarch64-v$JMBE_VERSION.zip" "$COMPONENT_ROOT/jmbe-creator/linux-arm64"
+fetch_component jmbe "$JMBE_VERSION" "jmbe-creator-linux-x86_64-v$JMBE_VERSION.zip" "$COMPONENT_ROOT/jmbe-creator/linux-amd64"
+fetch_component jmbe "$JMBE_VERSION" "jmbe-creator-windows-x86_64-v$JMBE_VERSION.zip" "$COMPONENT_ROOT/jmbe-creator/windows-amd64"
+
+curl --fail --location --silent --show-error "https://github.com/DSheirer/sdrtrunk/archive/refs/tags/v$SDRTRUNK_VERSION.tar.gz" --output "$LICENSE_ROOT/SDRTrunk-v$SDRTRUNK_VERSION-source.tar.gz"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/DSheirer/sdrtrunk/v$SDRTRUNK_VERSION/LICENSE" --output "$LICENSE_ROOT/SDRTrunk-LICENSE"
+curl --fail --location --silent --show-error "https://github.com/DSheirer/jmbe/archive/refs/tags/v$JMBE_VERSION.tar.gz" --output "$LICENSE_ROOT/JMBE-v$JMBE_VERSION-source.tar.gz"
+curl --fail --location --silent --show-error "https://raw.githubusercontent.com/DSheirer/jmbe/v$JMBE_VERSION/LICENSE" --output "$LICENSE_ROOT/JMBE-LICENSE"
+
+printf 'SDRTrunk v%s and JMBE Creator v%s components are ready.\n' "$SDRTRUNK_VERSION" "$JMBE_VERSION"

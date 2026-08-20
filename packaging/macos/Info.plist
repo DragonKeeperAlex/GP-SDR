@@ -14,6 +14,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSLocationWhenInUseUsageDescription</key><string>GP-SDR uses your location only when you choose Use current location, to tag Mapper observations and find nearby radio systems.</string>
   <key>NSLocalNetworkUsageDescription</key><string>GP-SDR can provide its receiver console to devices on your local network when you enable server access.</string>
 </dict>
 </plist>

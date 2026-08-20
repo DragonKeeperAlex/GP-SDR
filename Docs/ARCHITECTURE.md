@@ -12,10 +12,10 @@ HackRF / RTL-SDR / Soapy sources
               │          │
               │          └── FFT ── spectrum/waterfall/activity
               │
-              └── bundled P25 engine ── control + voice taps
+              └── bundled SDRTrunk ── control + traffic channels
                                            │
                                            ├── talkgroup metadata/logs
-                                           └── per-talkgroup audio
+                                           └── native decoded audio
                               │
                               ▼
                     runtime + event journal
@@ -35,11 +35,12 @@ stops P25 before returning them. Profiles express desired roles; explicit device
 assignments are honored first and compatible connected devices fill remaining
 roles.
 
-A single P25 receiver uses a wideband configuration with control, signaling, and
-voice taps when the system fits its instantaneous span. Multiple devices can use
-independent control and voice roles. GopherTrunk's loopback HTTP API supplies
-active calls, talkgroup state, and filtered WAV streams; it is never exposed as
-the public GP-SDR API.
+A single P25 receiver can source a control channel and fitting traffic channels
+inside its instantaneous bandwidth. Multiple devices increase available P25
+traffic capacity. GP-SDR generates an isolated SDRTrunk playlist, supervises the
+headless process, and normalizes decoded-message and call-event logs into its
+status, activity, and talkgroup models. SDRTrunk sends decoded P25 audio to the
+native system output.
 
 ## Analog and channel-bank path
 
@@ -64,7 +65,7 @@ access control through a VPN or reverse proxy.
 ## Packaging boundary
 
 The server embeds the web interface and uses only Go's standard library. The
-macOS shell is AppKit/WebKit. Release bundles include architecture-matched server
-and GopherTrunk executables plus license notices. HackRF/RTL analog host tools,
+macOS shell is AppKit/WebKit. Release bundles include architecture-matched server,
+SDRTrunk, and JMBE Creator distributions plus licenses and source archives. HackRF/RTL analog host tools,
 Soapy modules, Whisper models, RadioReference credentials, and optional decoder
 programs are separate and discoverable through the app's setup pages.

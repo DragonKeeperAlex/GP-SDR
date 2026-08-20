@@ -2,6 +2,9 @@ package app
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,5 +50,31 @@ func TestEventAggregation(t *testing.T) {
 	signals := store.Signals(10)
 	if len(signals) != 1 || signals[0].EventCount != 2 {
 		t.Fatalf("unexpected aggregate: %#v", signals)
+	}
+}
+
+func TestEventStorePrunesOnlyLegacyMapperFalsePositives(t *testing.T) {
+	directory := t.TempDir()
+	bad := TransmissionEvent{ID: "bad", StartedAt: time.Now(), DurationSeconds: .2, FrequencyHz: 10e6, SignalDBFS: -26, NoiseDBFS: 0, Modulation: "NFM", Label: ptr("Mapper discovery"), Confidence: .72}
+	good := TransmissionEvent{ID: "good", StartedAt: time.Now(), DurationSeconds: .2, FrequencyHz: 155.25e6, SignalDBFS: -30, NoiseDBFS: -78, Modulation: "NFM", Label: ptr("Measured"), Confidence: .72}
+	badData, _ := json.Marshal(bad)
+	goodData, _ := json.Marshal(good)
+	path := filepath.Join(directory, "events.jsonl")
+	if err := os.WriteFile(path, append(append(badData, '\n'), append(goodData, '\n')...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewEventStore(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Count() != 1 || store.events[0].ID != "good" || len(store.Signals(10)) != 1 {
+		t.Fatalf("legacy event migration kept the wrong rows: %#v", store.events)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"id":"bad"`) || !strings.Contains(string(data), `"id":"good"`) {
+		t.Fatalf("event file was not rewritten correctly: %s", data)
 	}
 }

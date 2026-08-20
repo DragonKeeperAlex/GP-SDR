@@ -13,13 +13,15 @@ browser and is designed for phones and tablets.
 
 - Native macOS app for Apple Silicon, Intel, and Universal Macs
 - Windows 10/11 package and Debian/Ubuntu packages for amd64 and arm64
-- Bundled GopherTrunk v0.9.8 P25 Phase 1/2 trunk-following stack
+- Bundled SDRTrunk v0.6.1 P25 Phase 1/2 trunk-following stack and JMBE Creator
 - Native HackRF and RTL-SDR discovery and live IQ input
 - Concurrent receivers with control, voice, survey, tuner, and channel-bank roles
 - Built-in AM, narrow FM, and broadcast FM DSP, squelch, recording, and live audio
 - Real tuner spectrum and scrolling waterfall
-- Unified per-channel/per-talkgroup mute, solo, volume, and activity controls
+- Unified channel controls plus per-talkgroup mute, solo, identity, and activity
 - Unattended activity logging, signal grouping, recordings, and later review
+- Mapper Discovery and Decipher workflows with occupancy, optional location,
+  transcription, and Google Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
   acarsdec, and AIS-catcher
 - Built-in GMRS, NOAA Weather Radio, MURS, CB, broadcast FM/AM, civil air,
@@ -48,7 +50,8 @@ Download the Universal package for the easiest choice, unzip it, and open
 preview bundles are ad-hoc signed rather than Apple-notarized, so macOS may
 require Control-click → **Open** the first time.
 
-The complete P25 engine is already inside the app. For the built-in analog tuner
+The complete P25 trunking engine is already inside the app. The P25 page can
+create the JMBE voice codec locally on first use. For the built-in analog tuner
 and scanner, open **Hardware** and use each component's **Install** or **How to**
 button. On macOS, HackRF and RTL-SDR use user-space host tools rather than a
 kernel extension.
@@ -63,7 +66,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.2_amd64.deb
+sudo apt install ./gp-sdr_1.0.10_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -92,19 +95,20 @@ Demo activity is clearly labeled and never presented as received RF.
 Bundled regional data, public sources, local-file sanitization, and accepted
 bulk-import columns are documented in [Docs/CHANNEL_DATA.md](Docs/CHANNEL_DATA.md).
 Google Sheets setup and accepted range columns are documented in
-[Docs/GOOGLE_SHEETS_SYNC.md](Docs/GOOGLE_SHEETS_SYNC.md).
+[Docs/GOOGLE_SHEETS_SYNC.md](Docs/GOOGLE_SHEETS_SYNC.md). Mapper CSV exports
+and reviewed writes to a master **Additions Queue** are documented in
+[Docs/MAPPER_SHEET_WRITE.md](Docs/MAPPER_SHEET_WRITE.md).
 
 GP-SDR chooses the standard user configuration directory. `-data /path`
 selects another location.
 
 ## P25 setup
 
-The packaged app contains GopherTrunk; no OP25 installation is required. Create
+The packaged app contains SDRTrunk; no separate trunking app is required. Create
 or import a profile containing the system's control channels and optional
-talkgroup labels, then assign available receivers. A single wideband-capable
-receiver can host the control channel and several voice/signaling taps when the
-system span fits its usable bandwidth. Multiple radios can be assigned
-independently when it does not.
+talkgroup labels, then assign available receivers. A single wideband receiver
+can host the control and fitting traffic channels. Multiple radios increase the
+number of simultaneous traffic channels SDRTrunk can follow.
 
 The example [two-receiver P25 profile](examples/p25-two-receiver.gpsdr.json)
 contains placeholder values, not a real radio system. RadioReference import can
@@ -142,6 +146,16 @@ export GPSDR_RR_APP_KEY='approved developer key'
 Credentials are never included in shared profiles or event logs. A Premium
 subscription and developer API access are separate RadioReference requirements.
 
+For an offline library without API access, open a RadioReference county or
+state **Downloads** page while signed in and save its official CSV files into a
+folder. In GP-SDR, open **Settings → Local database → Choose folder**. GP-SDR
+recursively imports `.csv`, `.tsv`, and GP-SDR `.json` files; large statewide
+CSVs are split into stable 4,000-channel banks so rescans update rather than
+duplicate them. RadioReference provides an official **All Identified
+Frequencies in California** CSV on the California Downloads page, but does not
+document a single whole-US archive. GP-SDR does not scrape or mirror the
+RadioReference database.
+
 ## Headless and mobile use
 
 Local-only mode is the default:
@@ -163,8 +177,9 @@ behind a VPN or authenticated HTTPS reverse proxy; the built-in service is HTTP.
 ## Build from source
 
 Requirements: Go 1.24 or newer. macOS desktop packaging additionally needs the
-Xcode command-line tools. Packaging downloads only the exact, checksum-pinned
-GopherTrunk v0.9.8 release binaries documented in [THIRD_PARTY.md](THIRD_PARTY.md).
+Xcode command-line tools. Packaging downloads official SDRTrunk v0.6.1 and JMBE
+Creator v1.0.9 assets and includes their corresponding source archives as
+documented in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ```bash
 cd server
@@ -177,7 +192,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.2
+Scripts/build_release.sh 1.0.10
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -199,14 +214,14 @@ credentials, which are intentionally not stored in this repository.
 ## Verification scope
 
 Automated tests cover profile validation, API authorization, tuner input,
-spectrum generation, GopherTrunk configuration, and the web application. The
-macOS hardware checks used live HackRF and RTL-SDR input for the tuner and
-verified that the bundled P25 process opens a HackRF, exposes its local API,
-creates wideband voice/signaling taps, and applies talkgroup mixer changes.
-Actual P25 control-channel lock and decoded voice require an active local system
-and remain location-dependent validation, not a simulated pass.
+spectrum generation, SDRTrunk playlist generation, Mapper aggregation, and the
+web application. A live HackRF acceptance capture through GP-SDR decoded EBRCS
+NAC `0x1F5`, WACN `0xBEE00`, system `0x1F1`, Phase 1/2 grants, traffic-channel
+frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
+other systems, and other packaged operating systems remain separate hardware
+acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_0.3.0-preview.1.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.10.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

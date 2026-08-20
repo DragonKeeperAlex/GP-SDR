@@ -1,6 +1,6 @@
 GP-SDR — WINDOWS 10/11
 
-1. Extract the complete ZIP; keep GP-SDR.exe and gophertrunk.exe together.
+1. Extract the complete ZIP; keep GP-SDR.exe, sdrtrunk, and jmbe-creator together.
 2. Double-click GP-SDR.exe, or run:
      GP-SDR.exe -open
 3. If the browser does not open, visit http://127.0.0.1:8073/
@@ -11,8 +11,8 @@ Test the interface without a radio:
 
 The complete P25 Phase 1/2 engine is included. GP-SDR also includes built-in
 AM/NFM/WFM DSP, wideband channel banks, real spectrum/waterfall, recording,
-and live audio. P25 and bank channels have independent mute, solo, volume,
-activity, and logging controls.
+and live audio. P25 talkgroups have independent mute/solo and activity/logging;
+analog bank channels also have independent volume.
 
 Windows may require the correct WinUSB driver for HackRF or RTL-SDR hardware.
 The Hardware page provides an Install or How to action. SoapySDR modules,

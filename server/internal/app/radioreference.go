@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,9 +21,13 @@ import (
 const radioReferenceEndpoint = "https://api.radioreference.com/soap2/index.php"
 
 type RadioReferenceStatus struct {
-	State    string `json:"state"`
-	Endpoint string `json:"endpoint"`
-	Note     string `json:"note"`
+	State            string `json:"state"`
+	Endpoint         string `json:"endpoint"`
+	Note             string `json:"note"`
+	AccountHint      string `json:"accountHint,omitempty"`
+	CredentialSource string `json:"credentialSource"`
+	CanManage        bool   `json:"canManage"`
+	AppKeyConfigured bool   `json:"appKeyConfigured"`
 }
 
 type ReferenceLocation struct {
@@ -114,21 +119,28 @@ func newRadioReferenceClient() *radioReferenceClient {
 	if endpoint == "" {
 		endpoint = radioReferenceEndpoint
 	}
+	credentials := loadRadioReferenceCredentials()
 	return &radioReferenceClient{
-		username: firstEnvironment("GPSDR_RR_USERNAME"),
-		password: firstEnvironment("GPSDR_RR_PASSWORD"),
-		appKey:   firstEnvironment("GPSDR_RR_APP_KEY"),
+		username: credentials.Username,
+		password: credentials.Password,
+		appKey:   credentials.AppKey,
 		endpoint: endpoint,
 		client:   &http.Client{Timeout: 35 * time.Second},
 	}
 }
 
 func (client *radioReferenceClient) Status() RadioReferenceStatus {
+	credentials := RadioReferenceCredentialUpdate{Username: client.username, Password: client.password, AppKey: client.appKey}
+	status := RadioReferenceStatus{Endpoint: client.endpoint, AccountHint: maskedAccount(client.username),
+		CredentialSource: radioReferenceCredentialSource(credentials), CanManage: runtime.GOOS == "darwin", AppKeyConfigured: client.appKey != ""}
 	if client.username == "" || client.password == "" || client.appKey == "" {
-		return RadioReferenceStatus{State: "setup", Endpoint: client.endpoint,
-			Note: "Add a premium account and approved API key through environment variables."}
+		status.State = "setup"
+		status.Note = "Add a premium account and approved application key. On macOS, GP-SDR stores them in Keychain."
+		return status
 	}
-	return RadioReferenceStatus{State: "ready", Endpoint: client.endpoint, Note: "RadioReference location import is configured."}
+	status.State = "ready"
+	status.Note = "RadioReference location import is configured."
+	return status
 }
 
 func (client *radioReferenceClient) Nearby(parent context.Context, zipCode int, radiusMiles float64) (RadioReferenceNearbyResult, error) {

@@ -1,6 +1,9 @@
 package app
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,6 +26,47 @@ func TestBulkChannelImportAcceptsCHIRPCSV(t *testing.T) {
 	}
 	if profile.Channels[1].Mode != "am" {
 		t.Fatalf("expected AM channel, got %#v", profile.Channels[1])
+	}
+}
+
+func TestRadioReferenceStateCSVHeaderAndModes(t *testing.T) {
+	data := []byte("\"Frequency Output\",\"Frequency Input\",Description,\"Alpha Tag\",Mode\n460.575,0,Dispatch,SRM Tac 22,FMN\n148.6625,0,Encrypted,MOTCO MP,P25E\n")
+	channels, err := parseChannelCSV(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 2 || channels[0].FrequencyHz != 460_575_000 || channels[0].Mode != "nfm" {
+		t.Fatalf("unexpected RadioReference analog channel: %#v", channels)
+	}
+	if channels[1].Mode != "digital" || channels[1].Decoder == nil || *channels[1].Decoder != "P25" {
+		t.Fatalf("unexpected RadioReference P25 channel: %#v", channels[1])
+	}
+}
+
+func TestLocalDatabaseSplitsLargeStateCSVIntoStableBanks(t *testing.T) {
+	root := t.TempDir()
+	var data strings.Builder
+	data.WriteString("Frequency Output,Alpha Tag,Mode\n")
+	for index := 0; index < 10_005; index++ {
+		fmt.Fprintf(&data, "%.6f,Channel %d,FMN\n", 30+float64(index)*.0125, index)
+	}
+	file := filepath.Join(root, "California.csv")
+	if err := os.WriteFile(file, []byte(data.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewProfileStore(filepath.Join(t.TempDir(), "Profiles"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &LocalDatabaseManager{profiles: store, status: LocalDatabaseStatus{Folder: root}}
+	first := manager.Scan()
+	if first.Profiles != 3 || first.Channels != 10_005 || first.LastError != "" {
+		t.Fatalf("unexpected first scan: %+v", first)
+	}
+	profileCount := len(store.All())
+	second := manager.Scan()
+	if second.Profiles != 3 || len(store.All()) != profileCount {
+		t.Fatalf("rescan duplicated profiles: before=%d after=%d status=%+v", profileCount, len(store.All()), second)
 	}
 }
 

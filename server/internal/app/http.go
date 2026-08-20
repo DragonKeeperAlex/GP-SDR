@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -147,8 +148,55 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := s.runtime.RadioReferenceNearby(zipCode, radius)
 		writeResult(w, result, err, 200)
+	case r.Method == "PUT" && path == "/api/radioreference/credentials":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "RadioReference credentials can only be changed from the GP-SDR Mac.")
+			return
+		}
+		var credentials RadioReferenceCredentialUpdate
+		if !decodeBody(w, r, &credentials) {
+			return
+		}
+		result, err := s.runtime.SaveRadioReferenceCredentials(credentials)
+		writeResult(w, result, err, 200)
+	case r.Method == "DELETE" && path == "/api/radioreference/credentials":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "RadioReference credentials can only be changed from the GP-SDR Mac.")
+			return
+		}
+		result, err := s.runtime.ClearRadioReferenceCredentials()
+		writeResult(w, result, err, 200)
 	case r.Method == "GET" && path == "/api/range-sync":
 		writeJSON(w, 200, s.runtime.RangeSyncStatus())
+	case r.Method == "GET" && path == "/api/local-database":
+		status := s.runtime.LocalDatabaseStatus()
+		status.CanManage = requestIsLocal(r)
+		if !status.CanManage {
+			status.Folder = ""
+		}
+		writeJSON(w, 200, status)
+	case r.Method == "PUT" && path == "/api/local-database":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "The local database folder can only be changed from the GP-SDR computer.")
+			return
+		}
+		var body struct {
+			Folder string `json:"folder"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		status, err := s.runtime.SetLocalDatabaseFolder(body.Folder)
+		status.CanManage = true
+		writeResult(w, status, err, 200)
+	case r.Method == "POST" && path == "/api/local-database/scan":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "The local database folder can only be scanned from the GP-SDR computer.")
+			return
+		}
+		status := s.runtime.ScanLocalDatabase()
+		status.CanManage = true
+		writeJSON(w, 200, status)
 	case r.Method == "PUT" && path == "/api/range-sync":
 		var config RangeSyncConfig
 		if !decodeBody(w, r, &config) {
@@ -169,6 +217,36 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, result, err, 200)
 	case r.Method == "POST" && path == "/api/mapper/upload":
 		writeJSON(w, 200, s.runtime.UploadMapperNow())
+	case r.Method == "POST" && path == "/api/mapper/upload-one":
+		var body struct {
+			FrequencyHz float64 `json:"frequencyHz"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		writeJSON(w, 200, s.runtime.UploadMapperFrequency(body.FrequencyHz))
+	case r.Method == "POST" && path == "/api/mapper/clear":
+		writeJSON(w, 200, s.runtime.ClearMapperRecords())
+	case r.Method == "GET" && path == "/api/mapper/export.csv":
+		data, _, err := s.runtime.MapperCSV()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Mapper.csv")
+		_, _ = w.Write(data)
+	case r.Method == "GET" && path == "/api/mapper/apps-script.gs":
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Additions-Queue.gs")
+		_, _ = io.WriteString(w, mapperAppsScript)
+	case r.Method == "POST" && path == "/api/mapper/save":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Mapper files can only be saved from the GP-SDR computer. Use Download CSV from a remote browser.")
+			return
+		}
+		result, err := s.runtime.SaveMapperCSV()
+		writeResult(w, result, err, 200)
 	case r.Method == "GET" && path == "/api/profiles":
 		writeJSON(w, 200, s.runtime.Profiles.All())
 	case r.Method == "POST" && path == "/api/profiles":
@@ -194,6 +272,14 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		saved, err := s.runtime.Profiles.ImportChannelCSV(r.URL.Query().Get("filename"), data)
 		writeResult(w, saved, err, 201)
+	case r.Method == "POST" && path == "/api/profiles/import-database":
+		data, err := io.ReadAll(io.LimitReader(r.Body, 5_000_001))
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		saved, err := s.runtime.Profiles.ImportChannelDatabase(r.URL.Query().Get("filename"), data)
+		writeResult(w, map[string]any{"profiles": saved, "profileCount": len(saved)}, err, 201)
 	case r.Method == "POST" && path == "/api/profiles/duplicate":
 		saved, err := s.runtime.Profiles.Duplicate(r.URL.Query().Get("id"))
 		writeResult(w, saved, err, 201)
@@ -254,6 +340,18 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, 404, "Not found.")
 	}
+}
+
+func requestIsLocal(r *http.Request) bool {
+	if r.RemoteAddr == "" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) serveLiveAudio(w http.ResponseWriter, r *http.Request) {

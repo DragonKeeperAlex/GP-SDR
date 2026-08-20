@@ -3,7 +3,9 @@ Copyright 2026 GP-SDR contributors
 
 GP-SDR is distributed under the MIT License in LICENSE.
 
-GP-SDR binary packages include a source-built GopherTrunk v0.9.9-gpsdr1 under
-the Apache License 2.0, with the disclosed OpenSourceSDRLab IQ compatibility patch.
+Complete GP-SDR binary packages aggregate unmodified SDRTrunk v0.6.1 and JMBE
+Creator v1.0.9 under GPL-3.0. Their licenses and corresponding source archives
+are included with each package. The JMBE codec itself is created locally only
+when requested by the user and is not redistributed by GP-SDR.
 Runtime integrations, upstream credits, bundled-component versions, licenses,
 and redistribution details are documented in THIRD_PARTY.md.

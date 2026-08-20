@@ -1,7 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
-  rangeSync: null, calibrations: [], mapper: null, remoteReceivers: [],
+  rangeSync: null, localDatabase: null, calibrations: [], mapper: null, remoteReceivers: [],
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live'
 };
 const serverToken = new URLSearchParams(location.search).get('token') || '';
@@ -90,12 +90,12 @@ function setView(view) {
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, calibrations, mapper, remoteReceivers] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations, mapper, remoteReceivers] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/calibrations'), api('/api/mapper'), api('/api/remote-receivers')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/calibrations'), api('/api/mapper'), api('/api/remote-receivers')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, calibrations: calibrations || [], mapper, remoteReceivers: remoteReceivers || [] });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations: calibrations || [], mapper, remoteReceivers: remoteReceivers || [] });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -111,15 +111,34 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderRangeSync(); renderTuner(); renderDecoders(); renderMapper(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderTuner(); renderDecoders(); renderMapper(); drawSpectrum(); drawWaterfall();
+}
+
+function renderLocalDatabase(){const status=state.localDatabase;if(!status)return;const badge=$('#local-db-state');badge.textContent=status.scanning?'Scanning':status.lastError?'Needs attention':status.lastScan?'Ready':status.folder?'Waiting':'Not configured';badge.className=`chip ${status.lastError?'warning':status.lastScan&&!status.scanning?'ready':''}`;$('#local-db-path').textContent=status.folder||'No folder selected.';$('#local-db-path').title=status.folder||'';if(!$('#local-db-form').contains(document.activeElement))$('#local-db-folder').value=status.folder||'';$('#local-db-detail').textContent=status.scanning?'Scanning supported files…':status.lastError||`${status.files||0} files · ${status.profiles||0} profiles · ${status.channels||0} channels${status.skippedFiles?` · ${status.skippedFiles} skipped`:''}`;$('#local-db-scan').disabled=!status.folder||status.scanning||!status.canManage;$('#local-db-choose').disabled=status.scanning||!status.canManage;if(!status.canManage)$('#local-db-detail').textContent='Open the native GP-SDR app on the server to choose its local folder.';}
+
+window.setLocalDatabaseFolder=async function(folder){try{state.localDatabase=await api('/api/local-database',{method:'PUT',body:JSON.stringify({folder})});renderLocalDatabase();toast('Local database folder saved');setTimeout(refreshAll,800);}catch(error){toast(error.message,true);}};
+
+function setMapperLocation(latitude,longitude){const button=$('#mapper-current-location');$('#mapper-latitude').value=Number(latitude).toFixed(6);$('#mapper-longitude').value=Number(longitude).toFixed(6);$('#mapper-location').checked=true;button.textContent='Location added';button.dataset.locationSettings='';toast('Current location added');}
+function mapperLocationError(message,settings=false){const button=$('#mapper-current-location');button.textContent=settings?'Open Location Settings':'Use current location';button.dataset.locationSettings=settings?'true':'';toast(message||'Could not read location',true);}
+window.gpsdrNativeLocationResult=function(result){if(result?.status==='success')setMapperLocation(result.latitude,result.longitude);else mapperLocationError(result?.message,result?.settings);};
+
+function renderRadioReferenceSettings() {
+  const status=state.integrations?.radioReference, form=$('#rr-credentials-form'); if(!status||!form)return;
+  const ready=status.state==='ready'; $('#rr-state').textContent=ready?'Ready':'Setup'; $('#rr-state').classList.toggle('ready',ready);
+  const account=status.accountHint?` · ${status.accountHint}`:''; $('#rr-detail').textContent=`${status.credentialSource||'Not configured'}${account}${status.appKeyConfigured?' · app key saved':''}`;
+  const local=status.canManage!==false; form.querySelectorAll('input,button').forEach(control=>control.disabled=!local); if(!local)$('#rr-detail').textContent='Open Settings in the native GP-SDR app to change credentials.';
 }
 
 function renderMapper(){
   const body=$('#mapper-body'); if(!body)return; const connected=state.devices.filter(d=>d.connected&&d.kind!=='Simulator'), select=$('#mapper-device'); const sig=connected.map(d=>d.id).join(); if(select.dataset.signature!==sig){select.innerHTML=connected.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(d.name)}</option>`).join('')||'<option value="">No receiver</option>';select.dataset.signature=sig;}
-  body.innerHTML=state.signals.map(s=>`<tr><td>${formatFrequency(s.frequencyHz)}</td><td>${escapeHTML(s.label||s.protocolName||'Unidentified')}</td><td>${escapeHTML(s.protocolName||s.modulation)}</td><td>${s.eventCount}</td><td>${s.strongestDBFS.toFixed(1)} dBFS</td><td>${timeAgo(s.lastSeen)}</td></tr>`).join('')||'<tr><td colspan="6">No mapped activity yet</td></tr>';
-  $('#mapper-count').textContent=state.signals.length?`${state.signals.length} consolidated frequencies`:'No detected activity'; const running=state.status?.running&&state.status?.activeProfileID==='mapper-session'; $('#mapper-state').textContent=running?'Scanning':'Idle'; $('#mapper-start-button').disabled=running||!connected.length; $('#mapper-stop-button').disabled=!running;
-  const m=state.mapper;if(m){if(!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;} $('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off'; $('#mapper-upload-detail').textContent=m.lastError||`${m.uploadedRows||0} rows uploaded${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
+  const m=state.mapper,records=m?.records||[];
+  body.innerHTML=records.map(s=>`<tr><td>${formatFrequency(s.frequencyHz)}</td><td>${escapeHTML(s.name||s.protocolName||'Unidentified')}${s.location?.label?`<small>${escapeHTML(s.location.label)}</small>`:''}</td><td>${escapeHTML(s.protocolName||s.modulation||'Unknown')}</td><td>${s.hits} / ${s.checks} · ${(100*(s.occupancy||0)).toFixed(1)}%</td><td>${Number(s.strongestDBFS).toFixed(1)} dBFS</td><td>${timeAgo(s.lastSeen)}</td><td><button class="mapper-send-one" data-frequency-hz="${s.frequencyHz}" title="Add this observation to the spreadsheet Additions Queue">Queue</button></td></tr>`).join('')||'<tr><td colspan="7">No mapped activity yet</td></tr>';
+  $('#mapper-count').textContent=records.length?`${records.length} active frequencies`:'No detected activity'; const running=state.status?.running&&state.status?.activeProfileID==='mapper-session'; $('#mapper-state').textContent=running?(m?.config?.mode==='decipher'?'Deciphering':'Discovering'):'Idle'; $('#mapper-start-button').disabled=running||!connected.length; $('#mapper-stop-button').disabled=!running;
+  if(m){if(!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-sheet-url').value=m.config.sheetURL||''; $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-contributor').value=m.config.contributor||'GP-SDR'; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;} if(!$('#mapper-form').contains(document.activeElement)){ $('#mapper-workflow').value=m.config.mode||'discovery'; if(m.config.deviceID)$('#mapper-device').value=m.config.deviceID; if(m.config.startHz)$('#mapper-start').value=m.config.startHz/1e6; if(m.config.endHz)$('#mapper-end').value=m.config.endHz/1e6; if(m.config.stepHz)$('#mapper-step').value=m.config.stepHz/1000; if(m.config.dwellMilliseconds)$('#mapper-dwell').value=m.config.dwellMilliseconds; $('#mapper-transcribe').checked=!!m.config.transcribe; $('#mapper-location').checked=!!m.config.includeLocation; $('#mapper-location-precision').value=m.config.locationPrecision||'approximate'; $('#mapper-location-label').value=m.config.locationLabel||''; $('#mapper-latitude').value=m.config.latitude??''; $('#mapper-longitude').value=m.config.longitude??'';} $('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off'; $('#mapper-upload-detail').textContent=m.lastError||`Additions Queue · ${m.uploadedRows||0} rows sent${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
+  updateMapperWorkflow();
 }
+
+function updateMapperWorkflow(){const decipher=$('#mapper-workflow').value==='decipher';['mapper-start','mapper-end','mapper-step'].forEach(id=>$('#'+id).disabled=decipher);$('#mapper-workflow-detail').textContent=decipher?'Decipher revisits the active frequencies already found, records audio, and applies deeper identification.':'Discovery continuously sweeps the selected range, records hit rate, and resumes revisiting it.';}
 
 function renderRangeSync() {
   const sync = state.rangeSync; if (!sync) return;
@@ -209,7 +228,7 @@ function mixerRows(items) {
       <div class="level-meter" title="Current audio level"><i style="width:${Math.round(item.level * 100)}%"></i></div>
       <button class="mini-toggle mixer-mute ${item.muted ? 'on' : ''}" title="Mute this ${item.talkgroupID ? 'talkgroup' : 'channel'}">M</button>
       <button class="mini-toggle mixer-solo ${item.solo ? 'on' : ''}" title="Hear only this ${item.talkgroupID ? 'talkgroup' : 'channel'}">S</button>
-      <input class="mixer-volume" type="range" min="0" max="1" step="0.05" value="${item.volume}" title="Channel volume" aria-label="Volume for ${escapeHTML(item.channel.name)}">
+      ${item.talkgroupID?'<span class="p25-native-audio" title="P25 audio uses the selected system output; use mute or solo per talkgroup">P25</span>':`<input class="mixer-volume" type="range" min="0" max="1" step="0.05" value="${item.volume}" title="Channel volume" aria-label="Volume for ${escapeHTML(item.channel.name)}">`}
     </div>`;
   }).join('');
 }
@@ -358,7 +377,8 @@ function renderP25DecoderWorkspace() {
   const active = talkgroups.filter(item => item.active).length;
   const connected = state.devices.filter(item=>item.connected);
   const calibrated = connected.filter(item=>item.calibration).length;
-  return `<article class="panel p25-overview"><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>
+  const voiceSetup=setupComponent('p25-voice')?.state==='ready'?'':setupActions('p25-voice');
+  return `<article class="panel p25-overview"><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>${voiceSetup}
     <div class="panel-head"><div><h2>Talkgroup mixer</h2><span>Mute, solo, and set volume independently</span></div><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div>
     <div class="mixer-list p25-mixer">${talkgroups.length ? mixerRows(talkgroups) : '<div class="empty-state compact">Start a P25 profile to load talkgroups</div>'}</div></article>`;
 }
@@ -851,6 +871,16 @@ $('#reference-form').addEventListener('submit', async event => {
   } catch (error) { $('#reference-status').textContent = error.message; toast(error.message,true); }
 });
 $('#reference-import').addEventListener('click', importReferenceSelection);
+$('#local-db-choose').addEventListener('click',()=>{const native=window.webkit?.messageHandlers?.gpsdrNative;if(native)native.postMessage({action:'chooseLocalDatabaseFolder'});else $('#local-db-upload').click();});
+$('#local-db-form').addEventListener('submit',event=>{event.preventDefault();window.setLocalDatabaseFolder($('#local-db-folder').value.trim());});
+$('#local-db-scan').addEventListener('click',async()=>{try{state.localDatabase=await api('/api/local-database/scan',{method:'POST',body:'{}'});renderLocalDatabase();toast('Local database scan started');setTimeout(refreshAll,800);}catch(error){toast(error.message,true);}});
+$('#local-db-upload').addEventListener('change',async event=>{const files=[...event.target.files].filter(file=>/\.(csv|tsv|json)$/i.test(file.name));if(!files.length)return;let imported=0,banks=0;try{for(const file of files){const filename=file.webkitRelativePath||file.name;const isJSON=file.name.toLowerCase().endsWith('.json');const endpoint=isJSON?'/api/profiles/import':'/api/profiles/import-database?filename='+encodeURIComponent(filename);const result=await api(endpoint,{method:'POST',body:await file.text()});imported++;banks+=isJSON?1:(result.profileCount||0);}toast(`${imported} files imported · ${banks} channel banks`);await refreshAll();}catch(error){toast(`${imported?`${imported} imported · `:''}${error.message}`,true);}event.target.value='';});
+$('#rr-credentials-form').addEventListener('submit',async event=>{
+  event.preventDefault(); const username=$('#rr-username').value.trim(),password=$('#rr-password').value,appKey=$('#rr-app-key').value.trim();
+  if(!username||!password||!appKey)return toast('Username, password, and approved app key are required',true);
+  try{await api('/api/radioreference/credentials',{method:'PUT',body:JSON.stringify({username,password,appKey})});$('#rr-password').value='';$('#rr-app-key').value='';toast('RadioReference saved to Mac Keychain');await refreshAll();}catch(error){toast(error.message,true);}
+});
+$('#rr-clear').addEventListener('click',async()=>{try{await api('/api/radioreference/credentials',{method:'DELETE'});$('#rr-username').value='';$('#rr-password').value='';$('#rr-app-key').value='';toast('RadioReference credentials cleared');await refreshAll();}catch(error){toast(error.message,true);}});
 $('#import-button').addEventListener('click', () => $('#import-profile').click());
 $('#import-profile').addEventListener('change', async event => {
   const files = [...event.target.files]; if (!files.length) return;
@@ -870,15 +900,26 @@ $('#refresh-hardware').addEventListener('click', async () => {
 });
 $('#remote-form').addEventListener('submit',async event=>{event.preventDefault();try{await api('/api/remote-receivers',{method:'PUT',body:JSON.stringify({name:$('#remote-name').value.trim(),host:$('#remote-host').value.trim(),port:Number($('#remote-port').value),enabled:true})});toast('Remote receiver saved');$('#remote-host').value='';await refreshAll();}catch(error){toast(error.message,true);}});
 $('#mapper-form').addEventListener('submit',async event=>{
-  event.preventDefault(); const start=Number($('#mapper-start').value)*1e6,end=Number($('#mapper-end').value)*1e6,deviceID=$('#mapper-device').value,mode=$('#mapper-mode').value;let step=Number($('#mapper-step').value)*1000;
-  if(!deviceID||!Number.isFinite(start)||!Number.isFinite(end)||end<=start||step<=0)return toast('Select a receiver and enter a valid range',true);
-  if((end-start)/step>20000){step=Math.ceil((end-start)/20000/1000)*1000;toast(`Step increased to ${step/1000} kHz for a responsive scan`);}
-  const profile={schemaVersion:1,id:'mapper-session',name:'Mapper Session',summary:'Temporary wide-range activity map',ranges:[{id:'mapper-range',name:'Mapper range',startHz:start,endHz:end,stepHz:step,dwellMilliseconds:120,preferredMode:mode,enabled:true}],channels:[],deviceAssignments:[{id:'mapper-device',deviceID,role:'survey',target:'Mapper'}],p25Systems:[],settings:{noiseMarginDB:8,revisitSeconds:10,recordAudio:false,recordIQForUnknown:false,transcribeVoice:false,maxRecordingDays:30},builtIn:false};
-  try{if(state.status?.running)await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:'mapper-session'})});toast('Mapper started');await refreshAll();}catch(error){toast(error.message,true);}
+  event.preventDefault(); const workflow=$('#mapper-workflow').value,start=Number($('#mapper-start').value)*1e6,end=Number($('#mapper-end').value)*1e6,deviceID=$('#mapper-device').value,mode=$('#mapper-mode').value,step=Number($('#mapper-step').value)*1000,dwell=Number($('#mapper-dwell').value),includeLocation=$('#mapper-location').checked;
+  const latitude=$('#mapper-latitude').value===''?null:Number($('#mapper-latitude').value),longitude=$('#mapper-longitude').value===''?null:Number($('#mapper-longitude').value);
+  if(!deviceID)return toast('Select a receiver',true); if(workflow==='discovery'&&(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||step<=0))return toast('Enter a valid discovery range',true); if(includeLocation&&(!Number.isFinite(latitude)||!Number.isFinite(longitude)))return toast('Add a valid location or turn location tagging off',true);
+  const config={...(state.mapper?.config||{}),mode:workflow,deviceID,startHz:start,endHz:end,stepHz:step,dwellMilliseconds:dwell,transcribe:$('#mapper-transcribe').checked,includeLocation,locationPrecision:$('#mapper-location-precision').value,locationLabel:$('#mapper-location-label').value.trim(),latitude,longitude};
+  const records=state.mapper?.records||[],channels=workflow==='decipher'?records.slice(0,5000).map((item,index)=>({id:`mapper-found-${index}`,name:item.name||item.protocolName||`Found ${formatFrequency(item.frequencyHz)}`,frequencyHz:item.frequencyHz,bandwidthHz:item.modulation==='WFM'?180000:12500,mode:['AM','NFM','WFM'].includes(String(item.modulation).toUpperCase())?String(item.modulation).toLowerCase():'auto',decoder:item.protocolName||null,enabled:true,priority:5})):[];
+  if(workflow==='decipher'&&!channels.length)return toast('Discovery has not found any active frequencies yet',true);
+  const ranges=workflow==='discovery'?[{id:'mapper-range',name:'Mapper discovery',startHz:start,endHz:end,stepHz:step,dwellMilliseconds:dwell,preferredMode:mode,enabled:true}]:[];
+  const profile={schemaVersion:1,id:'mapper-session',name:'Mapper Session',summary:workflow==='decipher'?'Deep identification of found frequencies':'Rolling wide-range activity discovery',ranges,channels,deviceAssignments:[{id:'mapper-device',deviceID,role:'survey',target:'Mapper'}],p25Systems:[],settings:{noiseMarginDB:8,revisitSeconds:10,recordAudio:workflow==='decipher',recordIQForUnknown:workflow==='decipher',transcribeVoice:workflow==='decipher'&&config.transcribe,maxRecordingDays:30},builtIn:false};
+  try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify(config)});if(state.status?.running)await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:'mapper-session'})});toast(workflow==='decipher'?'Deciphering found frequencies':'Discovery sweep started');await refreshAll();}catch(error){toast(error.message,true);}
 });
 $('#mapper-stop-button').addEventListener('click',async()=>{try{await api('/api/control/stop',{method:'POST',body:'{}'});toast('Mapper stopped');await refreshAll();}catch(error){toast(error.message,true);}});
-$('#mapper-sheet-form').addEventListener('submit',async event=>{event.preventDefault();try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify({webhookURL:$('#mapper-webhook').value.trim(),secret:$('#mapper-secret').value,autoUpload:$('#mapper-auto-upload').checked})});renderMapper();toast('Mapper upload settings saved');}catch(error){toast(error.message,true);}});
+$('#mapper-clear').addEventListener('click',async()=>{if(!confirm('Clear all Mapper results?'))return;try{state.mapper=await api('/api/mapper/clear',{method:'POST',body:'{}'});renderMapper();toast('Mapper results cleared');}catch(error){toast(error.message,true);}});
+$('#mapper-save').addEventListener('click',async()=>{try{const result=await api('/api/mapper/save',{method:'POST',body:'{}'});toast(`${result.rows} rows saved · ${result.path}`);}catch(error){toast(error.message,true);}});
+$('#mapper-download').addEventListener('click',()=>{window.location.href=`/api/mapper/export.csv${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
+$('#mapper-sheet-form').addEventListener('submit',async event=>{event.preventDefault();try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify({...(state.mapper?.config||{}),sheetURL:$('#mapper-sheet-url').value.trim(),webhookURL:$('#mapper-webhook').value.trim(),contributor:$('#mapper-contributor').value.trim()||'GP-SDR',secret:$('#mapper-secret').value,autoUpload:$('#mapper-auto-upload').checked})});renderMapper();toast('Additions Queue settings saved');}catch(error){toast(error.message,true);}});
+$('#mapper-body').addEventListener('click',async event=>{const button=event.target.closest('.mapper-send-one');if(!button)return;button.disabled=true;try{state.mapper=await api('/api/mapper/upload-one',{method:'POST',body:JSON.stringify({frequencyHz:Number(button.dataset.frequencyHz)})});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('Observation added to Additions Queue');}catch(error){toast(error.message,true);button.disabled=false;}});
+$('#mapper-script-download').addEventListener('click',()=>{window.location.href=`/api/mapper/apps-script.gs${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
 $('#mapper-upload-now').addEventListener('click',async()=>{try{state.mapper=await api('/api/mapper/upload',{method:'POST',body:'{}'});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('New Mapper activity uploaded');}catch(error){toast(error.message,true);}});
+$('#mapper-workflow').addEventListener('change',updateMapperWorkflow);
+$('#mapper-current-location').addEventListener('click',()=>{const button=$('#mapper-current-location'),native=window.webkit?.messageHandlers?.gpsdrNative,nativeLocation=window.gpsdrNativeCapabilities?.includes('location');if(button.dataset.locationSettings==='true'&&nativeLocation){native.postMessage({action:'openLocationSettings'});return;}button.textContent='Locating…';button.dataset.locationSettings='';if(nativeLocation){native.postMessage({action:'requestLocation'});return;}if(!navigator.geolocation)return mapperLocationError('Location is unavailable on this device');navigator.geolocation.getCurrentPosition(position=>setMapperLocation(position.coords.latitude,position.coords.longitude),error=>mapperLocationError(error.message||'Could not read location'),{enableHighAccuracy:false,timeout:10000,maximumAge:300000});});
 $('#range-sync-form').addEventListener('submit', async event => {
   event.preventDefault();
   const config = {sheetURL:$('#range-sync-url').value.trim(),intervalMinutes:Number($('#range-sync-interval').value),enabled:$('#range-sync-enabled').checked};

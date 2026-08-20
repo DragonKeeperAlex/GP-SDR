@@ -200,16 +200,25 @@
           <div class="panel-head"><div><h2>Range mapper</h2><span>Detect, identify, and consolidate active frequencies</span></div><span id="mapper-state" class="chip">Idle</span></div>
           <form id="mapper-form" class="mapper-controls">
             <label>Receiver<select id="mapper-device"></select></label>
-            <label>Start · MHz<input id="mapper-start" type="number" min="0.001" step="0.001" value="700"></label>
-            <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="900"></label>
-            <label>Step · kHz<select id="mapper-step"><option value="12.5">12.5</option><option value="25" selected>25</option><option value="100">100</option><option value="500">500</option></select></label>
+            <label>Workflow<select id="mapper-workflow"><option value="discovery">Discovery</option><option value="decipher">Decipher</option></select></label>
+            <label>Start · MHz<input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
+            <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
+            <label>Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
+            <label>Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
             <label>Mode<select id="mapper-mode"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+            <label class="check-line"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
+            <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
+            <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>
+            <label>Location name<input id="mapper-location-label" placeholder="Home, field site…"></label>
+            <label>Latitude<input id="mapper-latitude" type="number" min="-90" max="90" step="0.000001" placeholder="37.000000"></label>
+            <label>Longitude<input id="mapper-longitude" type="number" min="-180" max="180" step="0.000001" placeholder="-122.000000"></label>
+            <button id="mapper-current-location" type="button">Use current location</button>
             <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Start mapping</button><button id="mapper-stop-button" type="button">Stop</button></div>
           </form>
-          <p class="range-sync-detail">Large ranges are scanned in up to 20,000 frequency steps per session. Use a wider step for a fast full-device survey, then remap interesting sections more finely.</p>
+          <p id="mapper-workflow-detail" class="range-sync-detail">Discovery continuously sweeps the range and revisits it. Decipher dwells on the frequencies already found.</p>
         </article>
-        <article class="panel table-panel"><div class="panel-head"><div><h2>Map</h2><span id="mapper-count">No detected activity</span></div><button id="mapper-upload-now">Upload now</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Level</th><th>Last seen</th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>
-        <article class="panel mapper-sheet-panel"><div class="panel-head"><div><h2>Google Sheet</h2><span>Optional Apps Script webhook</span></div><span id="mapper-upload-state" class="chip">Off</span></div><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Webhook URL<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Upload new activity automatically</label><button class="primary" type="submit">Save</button></form><p id="mapper-upload-detail" class="range-sync-detail">Uploads frequency, identity, modulation, confidence, signal level, hit count, and timestamps.</p></article>
+        <article class="panel table-panel"><div class="panel-head"><div><h2>Identify results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-actions"><button id="mapper-clear">Clear results</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download CSV</button><button id="mapper-upload-now">Send all to sheet</button></div></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Level</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>
+        <article class="panel mapper-sheet-panel"><div class="panel-head"><div><h2>Google Sheet</h2><span>Writes discoveries to Additions Queue for review</span></div><span id="mapper-upload-state" class="chip">Off</span></div><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue new activity automatically</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Download setup script</button></form><p id="mapper-upload-detail" class="range-sync-detail">Target: Additions Queue · new observations remain unverified until reviewed.</p></article>
       </section>
 
       <section id="view-profiles" class="view">
@@ -263,6 +272,24 @@
             <div id="range-sync-detail" class="range-sync-detail">Paste a shared sheet link to begin.</div>
             <details class="range-sync-format"><summary>Sheet columns</summary><code>Profile, Name, Start MHz, End MHz, Step kHz, Mode, Dwell ms, Enabled</code></details>
           </article>
+		  <article class="panel settings-card local-database-card">
+		    <div class="settings-card-head"><div><h2>Local database</h2><p>Recursively import CSV, TSV, and GP-SDR JSON files.</p></div><span id="local-db-state" class="chip">Not configured</span></div>
+		    <form id="local-db-form"><label class="local-db-folder-label">Folder path<input id="local-db-folder" autocomplete="off" placeholder="/Users/you/Downloads/Radio Database"></label><div class="local-db-actions"><button id="local-db-choose" type="button">Choose folder</button><button id="local-db-scan" type="button">Rescan</button><button class="primary" type="submit">Use path</button><input id="local-db-upload" type="file" accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" webkitdirectory multiple hidden></div></form>
+		    <div id="local-db-path" class="local-db-path">No folder selected.</div>
+		    <div id="local-db-detail" class="range-sync-detail">Choose a folder containing supported channel files.</div>
+		    <details class="range-sync-format"><summary>RadioReference download steps</summary><ol><li>Open a county, state, or system page while signed in.</li><li>Open <b>Downloads</b> and save its CSV into a folder organized by state or county.</li><li>Choose the top-level folder here. Rescan after adding files.</li></ol><p>RadioReference does not document a single whole-US archive. GP-SDR does not scrape or mirror its database.</p></details>
+		  </article>
+		  <article class="panel settings-card radioreference-card">
+		    <div class="settings-card-head"><div><h2>RadioReference</h2><p>Location-based channels and P25 systems.</p></div><span id="rr-state" class="chip">Not configured</span></div>
+		    <form id="rr-credentials-form" class="rr-credentials-form">
+		      <label>Username<input id="rr-username" autocomplete="username" maxlength="120" required></label>
+		      <label>Password<input id="rr-password" type="password" autocomplete="current-password" required></label>
+		      <label class="rr-key-field">Application key<input id="rr-app-key" type="password" autocomplete="off" required title="Approved RadioReference application API key"></label>
+		      <div class="rr-actions"><button id="rr-clear" type="button">Clear</button><button class="primary" type="submit">Save to Keychain</button></div>
+		    </form>
+		    <div id="rr-detail" class="range-sync-detail">Premium account and approved app key required.</div>
+		    <a class="setup-link" href="https://www.radioreference.com/account/api/apply" target="_blank" rel="noreferrer">Request application key ↗</a>
+		  </article>
 		  <article class="panel settings-card"><h2>Displays</h2><div class="display-settings">
 		    <label>Waterfall rate<select id="display-fps"><option value="5">5 FPS</option><option value="8" selected>8 FPS</option><option value="12">12 FPS</option><option value="20">20 FPS</option></select></label>
 		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option></select></label>
@@ -280,7 +307,7 @@
         <div id="integration-grid" class="card-grid hardware-grid"></div>
         <article class="panel acknowledgements">
           <h2>Acknowledgements</h2>
-          <p>GP-SDR includes the GopherTrunk P25 stack and integrates with SoapySDR, OP25, whisper.cpp, HackRF, and RTL-SDR. Each remains under its own license. Complete credits and bundling details are in <code>THIRD_PARTY.md</code>.</p>
+          <p>GP-SDR includes SDRTrunk and JMBE Creator, and integrates with SoapySDR, whisper.cpp, HackRF, and RTL-SDR. Each remains under its own license. Complete credits and source details are in <code>THIRD_PARTY.md</code>.</p>
         </article>
       </section>
     </main>

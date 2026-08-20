@@ -37,6 +37,7 @@ type Runtime struct {
 	calibrations    *CalibrationStore
 	mapper          *MapperManager
 	remoteReceivers *RemoteReceiverStore
+	localDatabase   *LocalDatabaseManager
 	spectrum        SpectrumSnapshot
 	tuning          bool
 }
@@ -63,8 +64,9 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations}
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
-	runtimeState.installer = NewInstaller(runtimeState.Refresh)
+	runtimeState.installer = NewInstaller(dataDirectory, runtimeState.Refresh)
 	runtimeState.mapper = NewMapperManager(dataDirectory, events)
+	runtimeState.localDatabase = NewLocalDatabaseManager(dataDirectory, profiles)
 	runtimeState.rangeSync, err = NewRangeSyncManager(dataDirectory, profiles)
 	if err != nil {
 		return nil, err
@@ -78,10 +80,45 @@ func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, erro
 }
 func (r *Runtime) SyncRangesNow() RangeSyncStatus { return r.rangeSync.SyncNow() }
 func (r *Runtime) MapperStatus() MapperStatus     { return r.mapper.Status() }
+func (r *Runtime) LocalDatabaseStatus() LocalDatabaseStatus {
+	return r.localDatabase.Status()
+}
+func (r *Runtime) SetLocalDatabaseFolder(folder string) (LocalDatabaseStatus, error) {
+	return r.localDatabase.SetFolder(folder)
+}
+func (r *Runtime) ScanLocalDatabase() LocalDatabaseStatus { return r.localDatabase.Scan() }
 func (r *Runtime) UpdateMapper(config MapperConfig) (MapperStatus, error) {
 	return r.mapper.Update(config)
 }
-func (r *Runtime) UploadMapperNow() MapperStatus     { return r.mapper.UploadNow() }
+func (r *Runtime) UploadMapperNow() MapperStatus { return r.mapper.UploadNow() }
+func (r *Runtime) UploadMapperFrequency(frequencyHz float64) MapperStatus {
+	return r.mapper.UploadFrequency(frequencyHz)
+}
+func (r *Runtime) ClearMapperRecords() MapperStatus { return r.mapper.ClearRecords() }
+func (r *Runtime) MapperCSV() ([]byte, int, error)  { return r.mapper.CSV() }
+func (r *Runtime) SaveMapperCSV() (MapperExportResult, error) {
+	return r.mapper.SaveCSV()
+}
+func (r *Runtime) SaveRadioReferenceCredentials(credentials RadioReferenceCredentialUpdate) (RadioReferenceStatus, error) {
+	if err := saveRadioReferenceCredentials(credentials); err != nil {
+		return RadioReferenceStatus{}, err
+	}
+	client := newRadioReferenceClient()
+	r.mu.Lock()
+	r.radioReference = client
+	r.mu.Unlock()
+	return client.Status(), nil
+}
+func (r *Runtime) ClearRadioReferenceCredentials() (RadioReferenceStatus, error) {
+	if err := clearRadioReferenceCredentials(); err != nil {
+		return RadioReferenceStatus{}, err
+	}
+	client := newRadioReferenceClient()
+	r.mu.Lock()
+	r.radioReference = client
+	r.mu.Unlock()
+	return client.Status(), nil
+}
 func (r *Runtime) RemoteReceivers() []RemoteReceiver { return r.remoteReceivers.List() }
 func (r *Runtime) SaveRemoteReceiver(item RemoteReceiver) (RemoteReceiver, error) {
 	saved, err := r.remoteReceivers.Save(item)
@@ -484,11 +521,22 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 	r.mu.Lock()
 	for i := range r.mixer {
 		if r.mixer[i].ID == id {
+			p25MuteUpdates := make(map[uint32]bool)
 			if muted != nil {
 				r.mixer[i].Muted = *muted
 			}
 			if solo != nil {
 				r.mixer[i].Solo = *solo
+				if r.mixer[i].TalkgroupID != nil {
+					for index := range r.mixer {
+						if r.mixer[index].TalkgroupID == nil {
+							continue
+						}
+						r.mixer[index].Solo = *solo && index == i
+						r.mixer[index].Muted = r.mixer[index].Encrypted || (*solo && index != i)
+						p25MuteUpdates[*r.mixer[index].TalkgroupID] = r.mixer[index].Muted
+					}
+				}
 			}
 			if volume != nil {
 				r.mixer[i].Volume = clamp(*volume, 0, 1)
@@ -501,6 +549,13 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 			if updated.TalkgroupID != nil && muted != nil && r.op25 != nil {
 				if err := r.op25.UpdateTalkgroup(*updated.TalkgroupID, map[string]any{"mute": *muted}); err != nil {
 					return updated, err
+				}
+			}
+			if r.op25 != nil {
+				for talkgroupID, mute := range p25MuteUpdates {
+					if err := r.op25.UpdateTalkgroup(talkgroupID, map[string]any{"mute": mute}); err != nil {
+						return updated, err
+					}
 				}
 			}
 			return updated, nil
