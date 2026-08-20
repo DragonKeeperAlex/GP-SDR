@@ -205,11 +205,11 @@ func startRTLTCPStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
 func (s *IQStream) Close() error {
 	var closeError error
 	s.once.Do(func() {
-		_ = s.Reader.Close()
 		if s.cmd == nil {
 			closeError = s.Reader.Close()
 			return
 		}
+		_ = s.Reader.Close()
 		if s.cmd.Process == nil {
 			return
 		}

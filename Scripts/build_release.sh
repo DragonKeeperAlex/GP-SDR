@@ -2,14 +2,25 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.10-dev}
+VERSION=${1:-1.0.11-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.10; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.11; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
 APP_BUILD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/gpsdr-apps.XXXXXX")
-trap 'rm -rf "$APP_BUILD_ROOT"' EXIT INT TERM
+CONFLICT_LIST=$(mktemp "${TMPDIR:-/tmp}/gpsdr-conflicts.XXXXXX")
+trap 'rm -rf "$APP_BUILD_ROOT"; rm -f "$CONFLICT_LIST"' EXIT INT TERM
+
+find "$PROJECT_ROOT" \
+  \( -path "$PROJECT_ROOT/.git" -o -path "$PROJECT_ROOT/build" -o -path "$PROJECT_ROOT/dist" \) -prune -o \
+  -type f \( -name '* 2.*' -o -name '*.icloud-conflict*' \) -print > "$CONFLICT_LIST"
+if [ -s "$CONFLICT_LIST" ]; then
+  echo "Release stopped: cloud-conflict source copies would make the build ambiguous." >&2
+  cat "$CONFLICT_LIST" >&2
+  echo "Move these copies outside the repository, review them, and run the build again." >&2
+  exit 1
+fi
 
 rm -rf "$BUILD_ROOT" "$DIST_ROOT"
 mkdir -p "$BUILD_ROOT/bin" "$DIST_ROOT"

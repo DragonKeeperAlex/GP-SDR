@@ -33,7 +33,6 @@ func TestRTLTCPStreamHandshakeAndCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stream.Close()
 	buffer := make([]byte, 4)
 	if _, err = io.ReadFull(stream.Reader, buffer); err != nil {
 		t.Fatal(err)
@@ -45,5 +44,8 @@ func TestRTLTCPStreamHandshakeAndCommands(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no rtl_tcp commands")
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("clean rtl_tcp shutdown returned an error: %v", err)
 	}
 }

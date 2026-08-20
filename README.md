@@ -43,6 +43,9 @@ does not attempt to defeat encryption.
 
 ## Install and run
 
+For the complete first-run checklist, receiver-driver steps, P25 setup, LAN
+access, and troubleshooting, see the [installation guide](Docs/INSTALL.md).
+
 ### macOS
 
 Download the Universal package for the easiest choice, unzip it, and open
@@ -66,7 +69,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.10_amd64.deb
+sudo apt install ./gp-sdr_1.0.11_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -192,7 +195,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.10
+Scripts/build_release.sh 1.0.11
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -221,7 +224,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.10.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.11.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

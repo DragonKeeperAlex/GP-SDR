@@ -1,0 +1,175 @@
+# Installing GP-SDR
+
+GP-SDR is receive-only. The release packages contain the GP-SDR interface,
+analog DSP, SDRTrunk P25 Phase 1/2 engine, and JMBE Creator. Hardware access is
+provided by user-space receiver tools or the operating system's USB driver.
+
+## Before installing
+
+1. Download the package for your operating system and `SHA256SUMS.txt` from the
+   same release.
+2. Verify the package checksum before opening it.
+3. Connect one receiver at a time for first setup. Avoid unpowered USB hubs.
+4. A PortaPack must be placed in **HackRF USB mode**. Seeing a PortaPack menu or
+   mass-storage device does not mean the Mac or PC can stream IQ samples.
+
+## macOS 13 or newer
+
+Use `GP-SDR-1.0.11-macos-universal.zip` unless you specifically need the smaller
+Apple Silicon (`arm64`) or Intel (`x86_64`) package.
+
+1. Unzip the package and move **GP-SDR.app** to Applications.
+2. Control-click the app, choose **Open**, then confirm **Open**. The public
+   package is ad-hoc signed but is not Apple-notarized.
+3. Open **Hardware** and press **Refresh**.
+4. If a card says **Driver needed**, use **Install** or **How to**. GP-SDR uses
+   user-space tools; it does not install a macOS kernel extension.
+5. For a PortaPack, enter HackRF USB mode and verify that `hackrf_info` reports
+   one board. For RTL-SDR, verify that `rtl_test -t` can claim the device.
+6. Return to GP-SDR, press **Refresh**, select the receiver, and try the
+   Broadcast FM profile with conservative gain and the amplifier off.
+
+If macOS says the app is damaged after downloading, first download it again and
+verify its checksum. Do not remove quarantine attributes from an unverified file.
+
+### P25 on macOS
+
+SDRTrunk is already inside the app. Open **Decoders → SDRTrunk** or a P25
+profile. Use the JMBE action once if unencrypted P25 voice is silent. JMBE is
+created locally because of its license. Control-channel lock, system/NAC data,
+and grants are the acceptance signals; RF energy alone is not decoded P25.
+
+## Windows 10 or 11
+
+1. Extract the complete ZIP to a normal folder. Keep `GP-SDR.exe`, `sdrtrunk`,
+   and `jmbe-creator` together.
+2. Run `GP-SDR.exe -open`.
+3. Open **Hardware**, connect one receiver, and press **Refresh**.
+4. If the receiver cannot be claimed, follow the in-app **How to** guide. HackRF
+   and many RTL-SDR units use WinUSB. With Zadig, replace the driver only for
+   the exact SDR interface—never an unrelated USB device.
+5. Unplug/reconnect the receiver and refresh GP-SDR.
+
+Windows Firewall permission is needed only if you intentionally enable access
+from another device. Local use does not require a public-network firewall rule.
+
+## Debian and Ubuntu
+
+Choose the package matching the computer:
+
+```bash
+sudo apt install ./gp-sdr_1.0.11_amd64.deb
+# or, on 64-bit ARM:
+sudo apt install ./gp-sdr_1.0.11_arm64.deb
+sudo systemctl enable --now gp-sdr
+```
+
+Open `http://127.0.0.1:8073/`. The system service binds to localhost by default.
+Install the distribution's `hackrf` or `rtl-sdr` package if the Hardware page
+reports missing host tools, then confirm your user has the distribution's SDR
+udev permissions and reconnect the receiver.
+
+To expose the interface on a trusted LAN, override the service with a listen
+address of `0.0.0.0`. Preserve the generated access token and use a VPN or an
+authenticated HTTPS reverse proxy outside a trusted LAN.
+
+## First signal checklist
+
+1. In **Hardware**, confirm the receiver is **Connected**, not merely listed.
+2. In **Tuner**, select the correct receiver and start with the amplifier off.
+3. Choose a known strong local broadcast FM station, WFM, and the Broadcast FM
+   sample rate. Increase LNA/VGA gain gradually.
+4. Confirm the signal rises above the noise floor, the signal indicator changes,
+   squelch opens, and audio is audible.
+5. If every frequency appears active, disable the amplifier, reduce gain, run DC
+   correction, and raise squelch. An antenna overload can look like activity
+   across the entire display.
+6. Save a device calibration only after verifying it against a known reference.
+
+## P25 checklist
+
+1. Import or create a profile with verified control-channel frequencies.
+2. Assign a wideband receiver, or separate control and voice receivers.
+3. Start the profile and wait for **Control channel locked**.
+4. Confirm NAC/WACN/system identifiers and channel grants appear.
+5. Create JMBE if unencrypted calls have no audio.
+6. Use the unified talkgroup mixer to mute, solo, or change each talkgroup level.
+
+Encrypted calls can be identified and logged but are not decrypted. A quiet
+system, wrong control channel, unsuitable antenna, overload, or weak signal can
+all produce no calls even when the software is operating normally.
+
+## Remote and headless receivers
+
+Add an `rtl_tcp` source from **Hardware → Remote receiver**. A remote source has
+reduced hardware-control support because gain, bias tee, calibration, and sample
+rates depend on the remote server. Do not expose unauthenticated `rtl_tcp`
+directly to the internet.
+
+For GP-SDR's mobile web interface, enable LAN listening in Settings or start:
+
+```bash
+gp-sdr -listen 0.0.0.0 -port 8073
+```
+
+Open the displayed tokenized URL from a phone on the same trusted network.
+
+## Optional components
+
+- **Transcription:** install `whisper.cpp`, select `whisper-cli`, and choose a
+  local model. Audio and text remain local unless Mapper upload is enabled.
+- **SoapySDR:** install SoapySDR and the module for the exact receiver. The macOS
+  app already contains GP-SDR's Universal stream bridge.
+- **RadioReference:** use approved API credentials, or download official CSVs
+  while signed in and select their folder under **Settings → Local database**.
+- **Other decoders:** cards show **Install** or **How to** only when GP-SDR can
+  safely automate or explain the platform-specific setup.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| HackRF not listed | Re-enter HackRF USB mode, reconnect the data cable directly, run `hackrf_info`, then Refresh. |
+| RTL-SDR busy | Close SDR++, SDRTrunk, `rtl_tcp`, or any other process claiming it, then reconnect. |
+| Static but no station | Verify antenna band, WFM mode for broadcast FM, gain, sample rate, squelch, and audio output. |
+| Overloaded with antenna removed | Turn amplifier off, reset gains, enable DC removal, restart the receiver, and recalibrate only after the baseline is normal. |
+| P25 energy but no lock | Verify the current control channel, system profile, sample rate, antenna, and frequency calibration. |
+| P25 lock but no voice | Check encryption status, JMBE creation, talkgroup mute/solo, and audio output. |
+| Interface unavailable on phone | Enable LAN binding, use the displayed tokenized URL, allow the private-network firewall rule, and stay on the same LAN/VPN. |
+
+## Verify a download
+
+On macOS or Linux:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+On Windows PowerShell, compare this result with the matching line in
+`SHA256SUMS.txt`:
+
+```powershell
+Get-FileHash .\GP-SDR-1.0.11-windows-x86_64.zip -Algorithm SHA256
+```
+
+## Build from source
+
+Install Go 1.24 or newer. macOS packaging also needs Xcode command-line tools.
+
+```bash
+cd server
+go test ./...
+go build -o gp-sdr .
+./gp-sdr -demo -open
+```
+
+To create all release packages on macOS:
+
+```bash
+chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
+Scripts/build_release.sh 1.0.11
+```
+
+Do not build a source checkout from a cloud-synced folder while it is resolving
+conflicts. The release script stops if duplicate conflict copies are detected.
+All third-party code and licenses are listed in `THIRD_PARTY.md`.

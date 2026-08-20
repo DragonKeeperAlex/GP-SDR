@@ -14,10 +14,17 @@ AM/NFM/WFM DSP, wideband channel banks, real spectrum/waterfall, recording,
 and live audio. P25 talkgroups have independent mute/solo and activity/logging;
 analog bank channels also have independent volume.
 
-Windows may require the correct WinUSB driver for HackRF or RTL-SDR hardware.
-The Hardware page provides an Install or How to action. SoapySDR modules,
-Whisper models, vendor-controlled drivers, and optional non-P25 decoders are
-not included. THIRD_PARTY.md lists every bundled and integrated project.
+Windows may require WinUSB before GP-SDR can claim a HackRF or RTL-SDR. Open
+Hardware and use How to, then use Zadig to replace the driver only for the
+exact SDR interface you selected. Do not replace drivers for unrelated USB
+devices. Unplug/reconnect the receiver and press Refresh afterward. HackRF
+PortaPack units must be placed in HackRF USB mode, not the PortaPack menu mode.
+
+The included SDRTrunk folder is the complete P25 engine. The included JMBE
+Creator builds the optional voice codec locally; its license requires this
+separate creation step. SoapySDR modules, Whisper models, vendor-controlled
+drivers, and optional non-P25 decoders are not included. THIRD_PARTY.md lists
+every bundled and integrated project.
 
 To use the mobile interface on a trusted LAN:
      GP-SDR.exe -listen 0.0.0.0 -port 8073
