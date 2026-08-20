@@ -23,11 +23,19 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 	devices = append(devices, discoverHackRF()...)
 	devices = append(devices, discoverRTLSDR()...)
 	devices = append(devices, discoverSoapy()...)
+	return uniquePhysicalDevices(devices)
+}
+
+func uniquePhysicalDevices(devices []SDRDevice) []SDRDevice {
 	seen := make(map[string]bool)
 	unique := devices[:0]
 	for _, device := range devices {
-		if !seen[device.ID] {
-			seen[device.ID] = true
+		key := device.ID
+		if device.Serial != nil && strings.TrimSpace(*device.Serial) != "" {
+			key = strings.ToLower(device.Kind) + ":" + strings.ToLower(strings.TrimSpace(*device.Serial))
+		}
+		if !seen[key] {
+			seen[key] = true
 			unique = append(unique, device)
 		}
 	}

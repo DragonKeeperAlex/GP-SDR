@@ -8,19 +8,16 @@ user-installed program or service and retains its own license and terms.
 
 | Component | Use | Version and source | License | Packages |
 |---|---|---|---|---|
-| [GopherTrunk](https://github.com/MattCheramie/GopherTrunk) by Matt Cheramie and its contributors | P25 Phase 1/2 control-channel decoding, trunk following, talkgroup audio, and HackRF/RTL-SDR source handling | [v0.9.8](https://github.com/MattCheramie/GopherTrunk/releases/tag/v0.9.8), source commit `20f39dc116c1a29a39992bbdbddd2094e4147107` | [Apache License 2.0](https://github.com/MattCheramie/GopherTrunk/blob/v0.9.8/LICENSE) plus its own third-party notices | macOS arm64/x86_64/universal, Linux arm64/amd64, Windows amd64 |
+| [GopherTrunk](https://github.com/MattCheramie/GopherTrunk) by Matt Cheramie and its contributors | P25 Phase 1/2 control-channel decoding, trunk following, talkgroup audio, and HackRF/RTL-SDR source handling | [v0.9.9](https://github.com/MattCheramie/GopherTrunk/releases/tag/v0.9.9), pinned source commit `09b00149d289d9db2867a6d166bc4d71ea912503` with the documented GP-SDR compatibility patch | [Apache License 2.0](https://github.com/MattCheramie/GopherTrunk/blob/v0.9.9/LICENSE) plus its own third-party notices | macOS arm64/x86_64/universal, Linux arm64/amd64, Windows amd64 |
 
 Each binary package includes `GopherTrunk-LICENSE` and
-`GopherTrunk-THIRD_PARTY_LICENSES.md`. `Scripts/fetch_p25_stack.sh` downloads the
-official release assets and rejects them unless their SHA-256 matches:
-
-| Official asset | SHA-256 |
-|---|---|
-| `gophertrunk-v0.9.8-darwin-amd64.tar.gz` | `413220e6591ad606ac6f9cee702b367cb4f19cbd7a1d334ea7883f041d390014` |
-| `gophertrunk-v0.9.8-darwin-arm64.tar.gz` | `0ea913ab233e86573b260d5a087eae6458e8327727ad341405ef1c152b2f4ec8` |
-| `gophertrunk-v0.9.8-linux-amd64.tar.gz` | `e63bc3c7f6e22be02c8cbce36d26c5beedb2456bbc2be00ceda9d870200b4673` |
-| `gophertrunk-v0.9.8-linux-arm64.tar.gz` | `bdefc7dc0bdca9134021b7d7639da8fb5cd80b2a537f73a57a7e9431671b68fb` |
-| `gophertrunk-v0.9.8-windows-amd64.zip` | `b8e5e0cf7799b76ad4645c49eca417cbc2bf97ca87f10292ab931ad52df04db7` |
+`GopherTrunk-THIRD_PARTY_LICENSES.md`. `Scripts/fetch_p25_stack.sh` clones the
+exact pinned upstream commit, verifies it, applies
+`third_party/patches/gophertrunk-opensourcesdrlab-offset-binary.patch`, runs the
+upstream HackRF tests, and cross-compiles each bundled platform. The small
+GP-SDR patch detects the offset-binary IQ stream produced by the tested
+OpenSourceSDRLab HackRF One/PortaPack H2 reproduction; standard signed HackRF
+streams remain unchanged. The patch source and test ship in this repository.
 
 GopherTrunk displays an upstream notice about the AMBE+2 voice codec's patent
 status. Inclusion of the decoder is not legal advice or permission to monitor,

@@ -27,6 +27,9 @@
         <button class="nav-item" data-view="activity" title="Recorded activity and discovered signals">
           <span class="nav-icon">≋</span><span>Activity</span>
         </button>
+        <button class="nav-item" data-view="mapper" title="Sweep a receiver range and map detected activity">
+          <span class="nav-icon">⌘</span><span>Mapper</span>
+        </button>
         <button class="nav-item" data-view="profiles" title="Scan ranges, channels, and receiver assignments">
           <span class="nav-icon">▤</span><span>Profiles</span>
         </button>
@@ -75,6 +78,27 @@
           <article class="metric"><span>Session</span><strong id="metric-session">—</strong><small id="metric-mode">idle</small></article>
         </div>
 
+        <article class="panel receiver-controls-panel">
+          <div class="panel-head"><div><h2>Receiver controls</h2><span id="audio-state">Ready</span></div><div class="signal-state"><i id="live-signal-light"></i><span id="live-signal-text">No signal</span></div><button id="audio-monitor" title="Enable or resume receiver audio">Audio</button><button id="live-apply-radio" class="primary" title="Controls apply automatically; click to retry now">Applied</button></div>
+          <div class="receiver-control-grid">
+            <label>Receiver<select id="live-radio-device" title="Receiver to control"></select></label>
+            <label>LNA · dB<select id="live-lna" title="HackRF RF LNA gain"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
+            <label>VGA · dB<input id="live-vga" type="number" min="0" max="62" step="2" value="20" title="HackRF baseband VGA gain"></label>
+            <label>PPM<input id="live-ppm" type="number" min="-200" max="200" value="0" title="Frequency correction"></label>
+            <label class="check-line"><input id="live-amp" type="checkbox"> RF amp</label>
+            <label class="check-line"><input id="live-bias" type="checkbox"> Antenna power</label>
+            <label class="check-line"><input id="live-dc" type="checkbox" checked> DC removal</label>
+            <label>Q balance<input id="live-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label>
+            <label>IQ phase · °<input id="live-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label>
+            <label class="check-line"><input id="live-iq-swap" type="checkbox"> Swap I/Q</label>
+            <label class="check-line"><input id="live-agc" type="checkbox" checked> AGC</label>
+            <label>Squelch · dB<input id="live-squelch" type="number" min="0" max="60" step="1" value="8"></label>
+            <label class="check-line"><input id="live-monitor-open" type="checkbox"> Open squelch</label>
+			<label class="check-line"><input id="live-use-calibration" type="checkbox" checked> Calibration</label>
+          </div>
+          <p class="control-warning">RF amp and antenna power default off. Antenna power is only for compatible powered accessories.</p>
+        </article>
+
         <article class="panel spectrum-panel">
           <div class="panel-head">
             <div><h2>Spectrum</h2><span id="spectrum-label">Waiting for receiver</span></div>
@@ -82,6 +106,11 @@
           </div>
           <canvas id="spectrum" height="220" aria-label="Live spectrum display"></canvas>
         </article>
+		<article class="panel waterfall-panel live-waterfall-panel">
+		  <div class="panel-head"><div><h2>Waterfall</h2><span>Live RF activity</span></div><div class="waterfall-scale"><i></i><span>−110</span><span>−20 dBFS</span></div></div>
+		  <canvas id="live-waterfall" height="220" aria-label="Live waterfall display"></canvas>
+		  <div class="frequency-axis"><span id="live-waterfall-start">—</span><span id="live-waterfall-mid">—</span><span id="live-waterfall-end">—</span></div>
+		</article>
 
         <div class="two-column">
           <article class="panel">
@@ -102,7 +131,7 @@
         <div class="tuner-layout">
           <article class="panel tuner-controls">
             <form id="tuner-form">
-              <div class="tuner-readout"><span>Frequency</span><strong id="tuner-readout">462.6750</strong><small>MHz</small></div>
+              <div class="tuner-readout"><span>Frequency</span><strong id="tuner-readout">462.6750</strong><small>MHz</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
               <label>Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
               <label>Frequency · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Center frequency in MHz"></label>
               <div class="form-grid two">
@@ -113,6 +142,17 @@
                 <label>Sample rate<select id="tuner-rate" title="Receiver sample rate; Auto chooses a safe value"><option value="0">Auto</option><option value="1000000">1.0 MS/s</option><option value="2000000">2.0 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8.0 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
                 <label>Gain · dB<input id="tuner-gain" type="number" min="0" max="62" step="1" value="20" title="Receiver gain"></label>
               </div>
+              <details class="advanced-radio"><summary>RF and IQ controls</summary>
+                <div class="form-grid two">
+                  <label>LNA · dB<select id="tuner-lna"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
+                  <label>VGA · dB<input id="tuner-vga" type="number" min="0" max="62" step="2" value="20"></label>
+                  <label>PPM<input id="tuner-ppm" type="number" min="-200" max="200" value="0"></label>
+                  <label>Q balance<input id="tuner-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label>
+                  <label>IQ phase · °<input id="tuner-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label>
+                </div>
+                <div class="form-grid two"><label>Squelch · dB<input id="tuner-squelch" type="number" min="0" max="60" step="1" value="8"></label><label>Noise reduction<select id="tuner-noise" title="Local low-latency speech noise reduction"><option value="off">Off</option><option value="voice" selected>Voice</option><option value="strong">Strong</option></select></label></div>
+                <div class="toggle-grid"><label><input id="tuner-amp" type="checkbox"> RF amp</label><label><input id="tuner-bias" type="checkbox"> Antenna power</label><label><input id="tuner-dc" type="checkbox" checked> DC removal</label><label><input id="tuner-iq-swap" type="checkbox"> Swap I/Q</label><label><input id="tuner-agc" type="checkbox" checked> AGC</label><label><input id="tuner-monitor-open" type="checkbox"> Open squelch</label><label><input id="tuner-use-calibration" type="checkbox" checked> Apply saved calibration</label></div>
+              </details>
               <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Tune</button><button id="tuner-stop" type="button">Stop</button></div>
               <p id="tuner-status">Choose a receiver and frequency.</p>
             </form>
@@ -155,6 +195,23 @@
         </article>
       </section>
 
+      <section id="view-mapper" class="view">
+        <article class="panel mapper-control-panel">
+          <div class="panel-head"><div><h2>Range mapper</h2><span>Detect, identify, and consolidate active frequencies</span></div><span id="mapper-state" class="chip">Idle</span></div>
+          <form id="mapper-form" class="mapper-controls">
+            <label>Receiver<select id="mapper-device"></select></label>
+            <label>Start · MHz<input id="mapper-start" type="number" min="0.001" step="0.001" value="700"></label>
+            <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="900"></label>
+            <label>Step · kHz<select id="mapper-step"><option value="12.5">12.5</option><option value="25" selected>25</option><option value="100">100</option><option value="500">500</option></select></label>
+            <label>Mode<select id="mapper-mode"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+            <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Start mapping</button><button id="mapper-stop-button" type="button">Stop</button></div>
+          </form>
+          <p class="range-sync-detail">Large ranges are scanned in up to 20,000 frequency steps per session. Use a wider step for a fast full-device survey, then remap interesting sections more finely.</p>
+        </article>
+        <article class="panel table-panel"><div class="panel-head"><div><h2>Map</h2><span id="mapper-count">No detected activity</span></div><button id="mapper-upload-now">Upload now</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Level</th><th>Last seen</th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>
+        <article class="panel mapper-sheet-panel"><div class="panel-head"><div><h2>Google Sheet</h2><span>Optional Apps Script webhook</span></div><span id="mapper-upload-state" class="chip">Off</span></div><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Webhook URL<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Upload new activity automatically</label><button class="primary" type="submit">Save</button></form><p id="mapper-upload-detail" class="range-sync-detail">Uploads frequency, identity, modulation, confidence, signal level, hit count, and timestamps.</p></article>
+      </section>
+
       <section id="view-profiles" class="view">
         <div class="section-actions">
           <div><h2>Scan profiles</h2><p>Portable ranges, channels, and receiver roles.</p></div>
@@ -175,6 +232,11 @@
         </div>
         <div id="setup-job" class="setup-job hidden" role="status"></div>
         <div id="device-grid" class="card-grid hardware-grid"></div>
+        <article class="panel remote-panel">
+          <div class="panel-head"><div><h2>Remote RTL-SDR</h2><span>Connect to an rtl_tcp server on your network</span></div></div>
+          <form id="remote-form" class="remote-form"><label>Name<input id="remote-name" value="Remote RTL-SDR"></label><label>Host<input id="remote-host" placeholder="192.168.1.50" required></label><label>Port<input id="remote-port" type="number" min="1" max="65535" value="1234" required></label><button class="primary" type="submit">Add</button></form>
+          <div id="remote-list" class="remote-list"></div>
+        </article>
         <div class="section-actions lower"><div><h2>Decoders</h2><p>Optional tools appear only when actually available.</p></div></div>
         <div id="decoder-grid" class="card-grid hardware-grid"></div>
       </section>
@@ -201,10 +263,17 @@
             <div id="range-sync-detail" class="range-sync-detail">Paste a shared sheet link to begin.</div>
             <details class="range-sync-format"><summary>Sheet columns</summary><code>Profile, Name, Start MHz, End MHz, Step kHz, Mode, Dwell ms, Enabled</code></details>
           </article>
-          <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd id="setting-address">—</dd><dt>Access</dt><dd>Local by default</dd></dl></article>
+		  <article class="panel settings-card"><h2>Displays</h2><div class="display-settings">
+		    <label>Waterfall rate<select id="display-fps"><option value="5">5 FPS</option><option value="8" selected>8 FPS</option><option value="12">12 FPS</option><option value="20">20 FPS</option></select></label>
+		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option></select></label>
+		    <label>Spectrum detail<select id="display-detail"><option value="256">Fast</option><option value="512" selected>Detailed</option><option value="1024">Maximum</option></select></label>
+		    <label>Trace smoothing<input id="display-smoothing" type="range" min="0" max="90" step="5" value="20"><output id="display-smoothing-value">20%</output></label>
+		  </div><p class="range-sync-detail">Changes apply immediately and are saved on this device.</p></article>
+          <article class="panel settings-card"><h2>Controls</h2><div class="display-settings"><label>Interface mode<select id="interface-mode"><option value="beginner">Beginner</option><option value="advanced">Advanced</option></select></label></div><p class="range-sync-detail">Beginner uses saved calibration and automatic receiver settings. Advanced exposes manual RF and I/Q controls.</p></article>
+          <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd></dl></article>
           <article class="panel settings-card"><h2>Data</h2><dl><dt>Format</dt><dd>Portable JSON profiles</dd><dt>Journal</dt><dd>Local event history</dd></dl></article>
           <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>
-          <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. Remote access is off unless the server is explicitly bound to the network.</p></article>
+          <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. The companion web app is available to devices on the same network through its private access link.</p></article>
           <article class="panel settings-card"><h2>Radio references</h2><div class="settings-links"><a href="/reference/GMRS_Repeater_Rev3_Accurate_Schematic.svg" target="_blank" rel="noreferrer">Repeater schematic ↗</a><a href="/reference/GMRS_Repeater_Rev3_Exact_Solder_Map_v2.svg" target="_blank" rel="noreferrer">Solder map ↗</a></div></article>
         </div>
         <div class="section-actions lower"><div><h2>Integrations</h2><p>Optional components never block the interface.</p></div></div>

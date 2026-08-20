@@ -109,6 +109,11 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 			}
 			rate := liveSampleRate(device, target)
 			spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(target.FrequencyHz)), SampleRateHz: rate, GainDB: 20}
+			if calibration := device.Calibration; calibration != nil {
+				spec.PPMCorrection = calibration.PPMCorrection
+				spec.LNAGainDB, spec.VGAGainDB = calibration.LNAGainDB, calibration.VGAGainDB
+				spec.AmpEnabled = calibration.AmpEnabled
+			}
 			data, format, err := captureWindow(device, spec, target.Dwell, stop)
 			if err != nil {
 				select {
@@ -119,6 +124,10 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 				r.setRuntimeError(err.Error())
 				time.Sleep(350 * time.Millisecond)
 				continue
+			}
+			format = DetectSampleFormat(data, format)
+			if calibration := device.Calibration; calibration != nil {
+				ApplyIQCorrection(data, format, calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap)
 			}
 			r.updateSpectrum(spec, data, format)
 			result, err := DemodulateIQ(data, format, rate, 0, target.Mode)
@@ -259,7 +268,13 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 		return CaptureSpec{}, nil, false
 	}
 	center := (minimum + maximum) / 2
-	return CaptureSpec{CenterFrequencyHz: int64(math.Round(center)), SampleRateHz: selectedRate, GainDB: 20}, channels, true
+	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(center)), SampleRateHz: selectedRate, GainDB: 20}
+	if calibration := device.Calibration; calibration != nil {
+		spec.PPMCorrection = calibration.PPMCorrection
+		spec.LNAGainDB, spec.VGAGainDB = calibration.LNAGainDB, calibration.VGAGainDB
+		spec.AmpEnabled = calibration.AmpEnabled
+	}
+	return spec, channels, true
 }
 
 func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, device SDRDevice) {
@@ -304,8 +319,12 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 				return
 			}
 		}
-		r.updateSpectrum(spec, data, stream.Format)
-		levels, err := MeasureChannelSpectrum(data, stream.Format, spec.SampleRateHz, float64(spec.CenterFrequencyHz), channels)
+		format := DetectSampleFormat(data, stream.Format)
+		if calibration := device.Calibration; calibration != nil {
+			ApplyIQCorrection(data, format, calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap)
+		}
+		r.updateSpectrum(spec, data, format)
+		levels, err := MeasureChannelSpectrum(data, format, spec.SampleRateHz, float64(spec.CenterFrequencyHz), channels)
 		if err != nil {
 			r.setRuntimeError(err.Error())
 			continue
@@ -322,7 +341,7 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 				}
 				continue
 			}
-			result, err := DemodulateIQ(data, stream.Format, spec.SampleRateHz,
+			result, err := DemodulateIQ(data, format, spec.SampleRateHz,
 				channel.FrequencyHz-float64(spec.CenterFrequencyHz), channel.Mode)
 			if err != nil {
 				r.setRuntimeError(err.Error())
@@ -364,7 +383,9 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") && (rate < 225_000 || rate > 3_200_000) {
 		rate = 1_000_000
 	}
-	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(request.FrequencyHz)), SampleRateHz: rate, GainDB: request.GainDB}
+	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(request.FrequencyHz)), SampleRateHz: rate, GainDB: request.GainDB,
+		PPMCorrection: request.PPMCorrection, LNAGainDB: request.LNAGainDB, VGAGainDB: request.VGAGainDB,
+		AmpEnabled: request.AmpEnabled, AntennaPower: request.AntennaPower, AutoGain: request.AutoGain}
 	stream, err := StartIQStream(device, spec)
 	if err != nil {
 		r.setRuntimeError(err.Error())
@@ -380,7 +401,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		case <-closed:
 		}
 	}()
-	const frameDuration = 200 * time.Millisecond
+	const frameDuration = 50 * time.Millisecond
 	frameBytes := int(float64(spec.SampleRateHz*2) * frameDuration.Seconds())
 	noiseFloor := -150.0
 	for {
@@ -394,8 +415,10 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 				return
 			}
 		}
-		r.updateSpectrum(spec, data, stream.Format)
-		result, err := DemodulateIQ(data, stream.Format, spec.SampleRateHz, 0, request.Mode)
+		format := DetectSampleFormat(data, stream.Format)
+		ApplyIQCorrection(data, format, request.IQDCRemoval, request.IQGain, request.IQPhase, request.IQSwap)
+		r.updateSpectrum(spec, data, format)
+		result, err := DemodulateIQ(data, format, spec.SampleRateHz, 0, request.Mode)
 		if err != nil {
 			r.setRuntimeError(err.Error())
 			continue
@@ -403,7 +426,11 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		if noiseFloor <= -149 {
 			noiseFloor = result.SignalDBFS
 		}
-		active := result.SignalDBFS >= noiseFloor+profile.Settings.NoiseMarginDB || result.PeakDBFS-result.NoiseDBFS >= profile.Settings.NoiseMarginDB+6
+		squelch := request.SquelchDB
+		if squelch == 0 {
+			squelch = profile.Settings.NoiseMarginDB
+		}
+		active := request.MonitorOpen || result.SignalDBFS >= noiseFloor+squelch || result.PeakDBFS-result.NoiseDBFS >= squelch+6
 		if !active {
 			noiseFloor = noiseFloor*.96 + result.SignalDBFS*.04
 			r.updateMixerActivity(request.FrequencyHz, 0, false)
@@ -411,10 +438,88 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		}
 		r.clearRuntimeError()
 		level := clamp((result.SignalDBFS-noiseFloor)/25, .08, 1)
+		if request.AutoGain {
+			applyAudioAGC(result.Audio)
+		}
+		applyNoiseReduction(result.Audio, result.AudioRateHz, request.NoiseReduction)
 		r.updateMixerActivity(request.FrequencyHz, level, true)
 		if r.audioHub != nil {
 			r.audioHub.Publish(AudioFrame{ChannelID: "quick-tune-channel", SampleRate: result.AudioRateHz, Samples: result.Audio})
 		}
+	}
+}
+
+// applyNoiseReduction is an entirely local, low-latency speech filter. It uses
+// a gentle voice-band filter and downward expansion rather than a heavyweight
+// ML runtime, so it remains responsive on both Intel and Apple Silicon Macs.
+func applyNoiseReduction(samples []int16, sampleRate int, mode string) {
+	if len(samples) == 0 || sampleRate <= 0 || mode == "" || mode == "off" {
+		return
+	}
+	strength := 0.45
+	if mode == "strong" {
+		strength = 0.68
+	}
+	mean := 0.0
+	for _, sample := range samples {
+		mean += float64(sample)
+	}
+	mean /= float64(len(samples))
+	rms := 0.0
+	for _, sample := range samples {
+		v := float64(sample) - mean
+		rms += v * v
+	}
+	rms = math.Sqrt(rms / float64(len(samples)))
+	gate := math.Max(90, rms*.18)
+	alpha := math.Exp(-2 * math.Pi * 4200 / float64(sampleRate))
+	low := 0.0
+	for index, sample := range samples {
+		v := float64(sample) - mean
+		low = (1-alpha)*v + alpha*low
+		if math.Abs(low) < gate {
+			low *= 1 - strength
+		}
+		if low > 32767 {
+			low = 32767
+		}
+		if low < -32768 {
+			low = -32768
+		}
+		samples[index] = int16(low)
+	}
+}
+
+func applyAudioAGC(samples []int16) {
+	peak := 0
+	for _, sample := range samples {
+		value := int(sample)
+		if value < 0 {
+			value = -value
+		}
+		if value > peak {
+			peak = value
+		}
+	}
+	if peak < 256 {
+		return
+	}
+	gain := 24000.0 / float64(peak)
+	if gain > 8 {
+		gain = 8
+	}
+	if gain < .25 {
+		gain = .25
+	}
+	for index, sample := range samples {
+		value := float64(sample) * gain
+		if value > 32767 {
+			value = 32767
+		}
+		if value < -32768 {
+			value = -32768
+		}
+		samples[index] = int16(value)
 	}
 }
 

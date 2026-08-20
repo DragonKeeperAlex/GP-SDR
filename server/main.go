@@ -91,6 +91,20 @@ func isLoopback(host string) bool {
 }
 func displayHost(host string) string {
 	if host == "0.0.0.0" || host == "::" || host == "[::]" {
+		if interfaces, err := net.Interfaces(); err == nil {
+			for _, iface := range interfaces {
+				if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+					continue
+				}
+				addresses, _ := iface.Addrs()
+				for _, address := range addresses {
+					ip, _, err := net.ParseCIDR(address.String())
+					if err == nil && ip.To4() != nil && ip.IsPrivate() {
+						return ip.String()
+					}
+				}
+			}
+		}
 		if name, err := os.Hostname(); err == nil && name != "" {
 			return name
 		}

@@ -7,19 +7,57 @@ import (
 	"time"
 )
 
-var Version = "1.0.2-dev"
+var Version = "1.0.8"
 
 type SDRDevice struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	Kind               string   `json:"kind"`
-	Serial             *string  `json:"serial"`
-	Driver             string   `json:"driver"`
-	Connected          bool     `json:"connected"`
-	Available          bool     `json:"available"`
-	SampleRateLimit    *float64 `json:"sampleRateLimit"`
-	HelperArchitecture *string  `json:"helperArchitecture"`
-	Note               *string  `json:"note"`
+	ID                 string             `json:"id"`
+	Name               string             `json:"name"`
+	Kind               string             `json:"kind"`
+	Serial             *string            `json:"serial"`
+	Driver             string             `json:"driver"`
+	Connected          bool               `json:"connected"`
+	Available          bool               `json:"available"`
+	SampleRateLimit    *float64           `json:"sampleRateLimit"`
+	HelperArchitecture *string            `json:"helperArchitecture"`
+	Note               *string            `json:"note"`
+	Calibration        *DeviceCalibration `json:"calibration,omitempty"`
+	Host               string             `json:"host,omitempty"`
+	Port               int                `json:"port,omitempty"`
+}
+
+type RemoteReceiver struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Enabled bool   `json:"enabled"`
+}
+
+type DeviceCalibration struct {
+	DeviceID        string    `json:"deviceID"`
+	DeviceKind      string    `json:"deviceKind"`
+	Serial          string    `json:"serial,omitempty"`
+	ReferenceHz     float64   `json:"referenceHz"`
+	PPMCorrection   int       `json:"ppmCorrection"`
+	IQGain          float64   `json:"iqGain"`
+	IQPhase         float64   `json:"iqPhase"`
+	IQSwap          bool      `json:"iqSwap"`
+	DCRemoval       bool      `json:"dcRemoval"`
+	LNAGainDB       int       `json:"lnaGainDB"`
+	VGAGainDB       int       `json:"vgaGainDB"`
+	AmpEnabled      bool      `json:"ampEnabled"`
+	Confidence      float64   `json:"confidence"`
+	SignalToNoiseDB float64   `json:"signalToNoiseDB"`
+	MeasuredAt      time.Time `json:"measuredAt"`
+	Source          string    `json:"source"`
+}
+
+type CalibrationRequest struct {
+	DeviceID     string  `json:"deviceID"`
+	ReferenceHz  float64 `json:"referenceHz"`
+	SampleRateHz int     `json:"sampleRateHz"`
+	LNAGainDB    int     `json:"lnaGainDB"`
+	VGAGainDB    int     `json:"vgaGainDB"`
 }
 
 type ScanRange struct {
@@ -176,12 +214,26 @@ type RuntimeStatus struct {
 }
 
 type TunerRequest struct {
-	DeviceID     string  `json:"deviceID"`
-	FrequencyHz  float64 `json:"frequencyHz"`
-	Mode         string  `json:"mode"`
-	BandwidthHz  float64 `json:"bandwidthHz"`
-	SampleRateHz int     `json:"sampleRateHz"`
-	GainDB       float64 `json:"gainDB"`
+	DeviceID       string  `json:"deviceID"`
+	FrequencyHz    float64 `json:"frequencyHz"`
+	Mode           string  `json:"mode"`
+	BandwidthHz    float64 `json:"bandwidthHz"`
+	SampleRateHz   int     `json:"sampleRateHz"`
+	GainDB         float64 `json:"gainDB"`
+	LNAGainDB      int     `json:"lnaGainDB"`
+	VGAGainDB      int     `json:"vgaGainDB"`
+	PPMCorrection  int     `json:"ppmCorrection"`
+	AmpEnabled     bool    `json:"ampEnabled"`
+	AntennaPower   bool    `json:"antennaPower"`
+	IQDCRemoval    bool    `json:"iqDCRemoval"`
+	IQGain         float64 `json:"iqGain"`
+	IQPhase        float64 `json:"iqPhase"`
+	IQSwap         bool    `json:"iqSwap"`
+	AutoGain       bool    `json:"autoGain"`
+	SquelchDB      float64 `json:"squelchDB"`
+	MonitorOpen    bool    `json:"monitorOpen"`
+	NoiseReduction string  `json:"noiseReduction"`
+	UseCalibration bool    `json:"useCalibration"`
 }
 
 type SpectrumSnapshot struct {
@@ -216,8 +268,13 @@ func builtInProfiles() []ScanProfile {
 		SchemaVersion: 1, ID: "2cc07614-d89a-4a3c-be11-e5f344e478a3", Name: "Local Discovery",
 		Summary: "Common nearby VHF and UHF activity", BuiltIn: true, Settings: defaultSettings(),
 		Ranges: []ScanRange{
-			{ID: NewID(), Name: "VHF", StartHz: 136e6, EndHz: 174e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
-			{ID: NewID(), Name: "UHF", StartHz: 400e6, EndHz: 500e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "VHF Low", StartHz: 136e6, EndHz: 155e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "VHF High", StartHz: 155e6, EndHz: 174e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "UHF 400–420", StartHz: 400e6, EndHz: 420e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "UHF 420–440", StartHz: 420e6, EndHz: 440e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "UHF 440–460", StartHz: 440e6, EndHz: 460e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "UHF 460–480", StartHz: 460e6, EndHz: 480e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+			{ID: NewID(), Name: "UHF 480–500", StartHz: 480e6, EndHz: 500e6, StepHz: 12500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
 		},
 		Channels:          []ChannelDefinition{},
 		DeviceAssignments: []DeviceAssignment{{ID: NewID(), Role: "discovery"}},
@@ -251,8 +308,11 @@ func builtInProfiles() []ScanProfile {
 	}
 	cb := rangeProfile("b4a86f73-bce9-4605-94a8-a44d7f19d379", "CB · 40 Channels", "US citizens-band voice channels", "CB",
 		ScanRange{ID: NewID(), Name: "CB", StartHz: 26.965e6, EndHz: 27.405e6, StepHz: 10_000, DwellMilliseconds: 180, PreferredMode: "am", Enabled: true})
-	fm := rangeProfile("0836ac3e-d346-4d63-8fd2-17dddf3b5b68", "Broadcast FM", "88–108 MHz wideband FM", "Broadcast FM",
-		ScanRange{ID: NewID(), Name: "FM broadcast", StartHz: 88e6, EndHz: 108e6, StepHz: 200_000, DwellMilliseconds: 220, PreferredMode: "wfm", Enabled: true})
+	fm := fixedChannelProfile("0836ac3e-d346-4d63-8fd2-17dddf3b5b68", "US FM Broadcast · 100 Channels", "Every standard US FM channel from 88.1 through 107.9 MHz", "Broadcast FM")
+	for index := 0; index < 100; index++ {
+		mhz := 88.1 + float64(index)*0.2
+		fm.Channels = append(fm.Channels, channel(fmt.Sprintf("FM %.1f", mhz), mhz, 180_000, "wfm"))
+	}
 	am := rangeProfile("72d352ba-ed66-420a-9843-0130afca6469", "Broadcast AM", "530–1710 kHz medium-wave AM", "Broadcast AM",
 		ScanRange{ID: NewID(), Name: "AM broadcast", StartHz: 530e3, EndHz: 1710e3, StepHz: 10_000, DwellMilliseconds: 220, PreferredMode: "am", Enabled: true})
 	airband := rangeProfile("766bb943-a674-43b3-a446-1bc32706b672", "Civil Airband", "118–136.975 MHz AM voice", "Airband",
@@ -261,7 +321,8 @@ func builtInProfiles() []ScanProfile {
 		ScanRange{ID: NewID(), Name: "Marine VHF", StartHz: 156.025e6, EndHz: 162.025e6, StepHz: 25_000, DwellMilliseconds: 160, PreferredMode: "nfm", Enabled: true})
 	ham := rangeProfile("c0fe39a5-3c5c-4a34-8488-d20e85c6c9ec", "Amateur VHF/UHF", "2 m and 70 cm amateur bands", "Amateur",
 		ScanRange{ID: NewID(), Name: "2 m", StartHz: 144e6, EndHz: 148e6, StepHz: 12_500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
-		ScanRange{ID: NewID(), Name: "70 cm", StartHz: 420e6, EndHz: 450e6, StepHz: 12_500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true})
+		ScanRange{ID: NewID(), Name: "70 cm Low", StartHz: 420e6, EndHz: 435e6, StepHz: 12_500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true},
+		ScanRange{ID: NewID(), Name: "70 cm High", StartHz: 435e6, EndHz: 450e6, StepHz: 12_500, DwellMilliseconds: 160, PreferredMode: "auto", Enabled: true})
 	publicSafety := rangeProfile("5fdcfc10-2b76-43aa-b8e6-4b7c7831f3a4", "Public Safety Discovery", "Common 700 and 800 MHz receive segments", "Public safety",
 		ScanRange{ID: NewID(), Name: "700 MHz", StartHz: 769e6, EndHz: 775e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true},
 		ScanRange{ID: NewID(), Name: "800 MHz", StartHz: 851e6, EndHz: 869e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true})

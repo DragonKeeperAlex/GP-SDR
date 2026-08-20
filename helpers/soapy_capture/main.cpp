@@ -77,7 +77,9 @@ public:
             "/usr/local/lib/libSoapySDR.0.8.dylib", "/usr/local/lib/libSoapySDR.dylib"
         };
         for (const char *candidate : candidates) {
-            handle = dlopen(candidate, RTLD_NOW | RTLD_LOCAL);
+            // Soapy hardware modules are loaded later by libSoapySDR and
+            // resolve the C API from the process-wide symbol table.
+            handle = dlopen(candidate, RTLD_NOW | RTLD_GLOBAL);
             if (handle) break;
         }
 #else

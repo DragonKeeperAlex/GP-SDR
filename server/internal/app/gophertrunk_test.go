@@ -25,7 +25,7 @@ func TestGopherTrunkSingleHackRFUsesWidebandVoiceTaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(configuration)
-	for _, expected := range []string{"role: wideband", "sample_rate: 8000000", "gain: \"0\"", "voice_taps: 6", "signalling_taps: 4", "protocol: p25"} {
+	for _, expected := range []string{"role: wideband", "sample_rate: 4000000", "gain: \"auto\"", "dc_avoid: true", "rf_amp: false", "voice_taps: 6", "signalling_taps: 4", "protocol: p25"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, text)
 		}
@@ -36,6 +36,23 @@ func TestGopherTrunkSingleHackRFUsesWidebandVoiceTaps(t *testing.T) {
 	}
 	if !strings.Contains(string(csvData), "101,Dispatch") || !strings.Contains(string(csvData), "102,Encrypted") {
 		t.Fatalf("talkgroup CSV is incomplete: %s", csvData)
+	}
+}
+
+func TestGopherTrunkAppliesSavedCalibration(t *testing.T) {
+	serial := "calibrated"
+	device := SDRDevice{ID: "hackrf-calibrated", Kind: "HackRF", Serial: &serial, Calibration: &DeviceCalibration{
+		DeviceID: "hackrf-calibrated", PPMCorrection: -4, LNAGainDB: 24, VGAGainDB: 20, AmpEnabled: true, IQGain: 1,
+	}}
+	configuration, err := BuildGopherTrunkConfiguration(p25TestProfile(), []p25AssignedDevice{{Device: device, Role: "wideband"}}, t.TempDir(), 61010, 61011)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(configuration)
+	for _, expected := range []string{"ppm: -4", "gain: \"440\"", "rf_amp: true"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing calibrated P25 setting %q in:\n%s", expected, text)
+		}
 	}
 }
 

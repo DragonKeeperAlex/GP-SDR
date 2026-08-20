@@ -19,6 +19,18 @@ func TestNFMDemodulatesToneWithFrequencyOffset(t *testing.T) {
 	}
 }
 
+func TestWFMDemodulatesBroadcastToneAtHackRFRate(t *testing.T) {
+	const inputRate = 2_000_000
+	data := syntheticFM(inputRate, 0.2, 0, 1_000, 75_000)
+	result, err := DemodulateIQ(data, ComplexSigned8, inputRate, 0, "wfm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frequency := zeroCrossingFrequency(result.Audio[len(result.Audio)/4:], result.AudioRateHz); frequency < 850 || frequency > 1150 {
+		t.Fatalf("expected 1 kHz WFM audio, got %.1f Hz", frequency)
+	}
+}
+
 func TestAMDemodulatesTone(t *testing.T) {
 	const inputRate = 192_000
 	samples := int(0.35 * inputRate)

@@ -49,7 +49,7 @@ func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.StartFrequencyHz != 99_500_000 || snapshot.EndFrequencyHz != 100_500_000 || len(snapshot.BinsDBFS) != 512 {
+	if snapshot.StartFrequencyHz != 99_500_000 || snapshot.EndFrequencyHz != 100_500_000 || len(snapshot.BinsDBFS) != 1024 {
 		t.Fatalf("unexpected spectrum metadata: %#v", snapshot)
 	}
 	peak := 0
@@ -58,7 +58,7 @@ func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 			peak = index
 		}
 	}
-	expected := int((offset + rate/2) * 512 / rate)
+	expected := int((offset + rate/2) * 1024 / rate)
 	if peak < expected-2 || peak > expected+2 {
 		t.Fatalf("expected peak near bin %d, got %d", expected, peak)
 	}

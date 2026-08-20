@@ -66,9 +66,46 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Status())
 	case r.Method == "GET" && path == "/api/devices":
 		writeJSON(w, 200, s.runtime.Devices())
+	case r.Method == "GET" && path == "/api/calibrations":
+		writeJSON(w, 200, s.runtime.Calibrations())
+	case r.Method == "POST" && path == "/api/calibrations/auto":
+		var request CalibrationRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.AutoCalibrate(request)
+		writeResult(w, result, err, 200)
+	case r.Method == "PUT" && path == "/api/calibrations":
+		var calibration DeviceCalibration
+		if !decodeBody(w, r, &calibration) {
+			return
+		}
+		result, err := s.runtime.SaveCalibration(calibration)
+		writeResult(w, result, err, 200)
+	case r.Method == "DELETE" && path == "/api/calibrations":
+		if err := s.runtime.DeleteCalibration(r.URL.Query().Get("deviceID")); err != nil {
+			writeError(w, 400, err.Error())
+		} else {
+			writeJSON(w, 200, map[string]bool{"ok": true})
+		}
 	case r.Method == "POST" && path == "/api/devices/refresh":
 		s.runtime.Refresh()
 		writeJSON(w, 200, s.runtime.Devices())
+	case r.Method == "GET" && path == "/api/remote-receivers":
+		writeJSON(w, 200, s.runtime.RemoteReceivers())
+	case r.Method == "PUT" && path == "/api/remote-receivers":
+		var receiver RemoteReceiver
+		if !decodeBody(w, r, &receiver) {
+			return
+		}
+		result, err := s.runtime.SaveRemoteReceiver(receiver)
+		writeResult(w, result, err, 200)
+	case r.Method == "DELETE" && path == "/api/remote-receivers":
+		if err := s.runtime.DeleteRemoteReceiver(r.URL.Query().Get("id")); err != nil {
+			writeError(w, 400, err.Error())
+		} else {
+			writeJSON(w, 200, map[string]bool{"ok": true})
+		}
 	case r.Method == "GET" && path == "/api/decoders":
 		writeJSON(w, 200, s.runtime.Decoders())
 	case r.Method == "GET" && path == "/api/integrations":
@@ -87,7 +124,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && path == "/api/p25/status":
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":
-		writeJSON(w, 200, s.runtime.Spectrum())
+		writeJSON(w, 200, s.runtime.Spectrum(intQuery(r, "bins", 512)))
 	case r.Method == "POST" && path == "/api/tuner/start":
 		var request TunerRequest
 		if !decodeBody(w, r, &request) {
@@ -121,6 +158,17 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, status, err, 200)
 	case r.Method == "POST" && path == "/api/range-sync/now":
 		writeJSON(w, 200, s.runtime.SyncRangesNow())
+	case r.Method == "GET" && path == "/api/mapper":
+		writeJSON(w, 200, s.runtime.MapperStatus())
+	case r.Method == "PUT" && path == "/api/mapper":
+		var config MapperConfig
+		if !decodeBody(w, r, &config) {
+			return
+		}
+		result, err := s.runtime.UpdateMapper(config)
+		writeResult(w, result, err, 200)
+	case r.Method == "POST" && path == "/api/mapper/upload":
+		writeJSON(w, 200, s.runtime.UploadMapperNow())
 	case r.Method == "GET" && path == "/api/profiles":
 		writeJSON(w, 200, s.runtime.Profiles.All())
 	case r.Method == "POST" && path == "/api/profiles":

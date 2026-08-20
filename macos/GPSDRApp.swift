@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var webView: WKWebView!
     private var serverProcess: Process?
     private var serverPort = 8073
+	private let serverToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -68,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func buildWindow() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+		configuration.mediaTypesRequiringUserActionForPlayback = []
+		configuration.allowsAirPlayForMediaPlayback = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
@@ -100,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-listen", "127.0.0.1", "-port", String(serverPort)]
+        process.arguments = ["-listen", "0.0.0.0", "-port", String(serverPort), "-token", serverToken]
         process.standardInput = FileHandle.nullDevice
         var environment = ProcessInfo.processInfo.environment
         if let helperDirectory = Bundle.main.resourceURL?.appendingPathComponent("bin").path {
@@ -155,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func loadConsole(attempt: Int) {
-        guard let url = URL(string: "http://127.0.0.1:\(serverPort)/") else { return }
+		guard let url = URL(string: "http://127.0.0.1:\(serverPort)/?token=\(serverToken)") else { return }
         URLSession.shared.dataTask(with: url) { [weak self] _, response, _ in
             let ready = (response as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async {

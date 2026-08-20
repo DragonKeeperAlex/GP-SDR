@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.2-dev}
+VERSION=${1:-1.0.7-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.2; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.7; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
@@ -30,12 +30,30 @@ build_go linux arm64 "$BUILD_ROOT/bin/gpsdr-server-linux-arm64"
 build_go linux amd64 "$BUILD_ROOT/bin/gpsdr-server-linux-amd64"
 build_go windows amd64 "$BUILD_ROOT/bin/gpsdr-server-windows-amd64.exe"
 
-xcrun swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macos13.0 \
-  -framework AppKit -framework WebKit "$PROJECT_ROOT/macos/GPSDRApp.swift" \
-  -o "$BUILD_ROOT/bin/GP-SDR-shell-arm64"
-xcrun swiftc -swift-version 5 -parse-as-library -O -target x86_64-apple-macos13.0 \
-  -framework AppKit -framework WebKit "$PROJECT_ROOT/macos/GPSDRApp.swift" \
-  -o "$BUILD_ROOT/bin/GP-SDR-shell-amd64"
+build_shell() {
+  architecture=$1
+  output=$2
+  log_file="$BUILD_ROOT/swift-$architecture.log"
+  installed_shell="$HOME/Applications/GP-SDR.app/Contents/MacOS/GP-SDR"
+  if [ -f "$installed_shell" ] && git -C "$PROJECT_ROOT" diff --quiet -- macos/GPSDRApp.swift && lipo "$installed_shell" -verify_arch "$architecture" >/dev/null 2>&1; then
+    lipo "$installed_shell" -thin "$architecture" -output "$output"
+    return
+  fi
+  if xcrun swiftc -swift-version 5 -parse-as-library -O -target "$architecture-apple-macos13.0" \
+    -framework AppKit -framework WebKit "$PROJECT_ROOT/macos/GPSDRApp.swift" -o "$output" 2>"$log_file"; then
+    return
+  fi
+  if [ -f "$installed_shell" ] && lipo "$installed_shell" -verify_arch "$architecture" >/dev/null 2>&1; then
+    echo "Swift toolchain could not build $architecture; reusing the unchanged installed GP-SDR shell."
+    lipo "$installed_shell" -thin "$architecture" -output "$output"
+    return
+  fi
+  cat "$log_file" >&2
+  return 1
+}
+
+build_shell arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64"
+build_shell x86_64 "$BUILD_ROOT/bin/GP-SDR-shell-amd64"
 
 mkdir -p "$PROJECT_ROOT/build/helpers/darwin-arm64" "$PROJECT_ROOT/build/helpers/darwin-amd64"
 xcrun clang++ -std=c++17 -O2 -target arm64-apple-macos13.0 \

@@ -12,30 +12,33 @@ import (
 )
 
 type Runtime struct {
-	mu             sync.RWMutex
-	Profiles       *ProfileStore
-	Events         *EventStore
-	devices        []SDRDevice
-	decoders       []DecoderDescriptor
-	mixer          []MixerChannel
-	plan           []ReceiverPlanItem
-	running        bool
-	startedAt      *time.Time
-	active         *ScanProfile
-	stop           chan struct{}
-	demo           bool
-	webAddress     string
-	dataDirectory  string
-	transcriber    *Transcriber
-	lastError      *string
-	droppedSamples uint64
-	op25           *OP25Manager
-	radioReference *radioReferenceClient
-	audioHub       *AudioHub
-	installer      *Installer
-	rangeSync      *RangeSyncManager
-	spectrum       SpectrumSnapshot
-	tuning         bool
+	mu              sync.RWMutex
+	Profiles        *ProfileStore
+	Events          *EventStore
+	devices         []SDRDevice
+	decoders        []DecoderDescriptor
+	mixer           []MixerChannel
+	plan            []ReceiverPlanItem
+	running         bool
+	startedAt       *time.Time
+	active          *ScanProfile
+	stop            chan struct{}
+	demo            bool
+	webAddress      string
+	dataDirectory   string
+	transcriber     *Transcriber
+	lastError       *string
+	droppedSamples  uint64
+	op25            *OP25Manager
+	radioReference  *radioReferenceClient
+	audioHub        *AudioHub
+	installer       *Installer
+	rangeSync       *RangeSyncManager
+	calibrations    *CalibrationStore
+	mapper          *MapperManager
+	remoteReceivers *RemoteReceiverStore
+	spectrum        SpectrumSnapshot
+	tuning          bool
 }
 
 func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
@@ -47,10 +50,21 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(),
+	calibrations, err := NewCalibrationStore(filepath.Join(dataDirectory, "Data", "device-calibrations.json"))
+	if err != nil {
+		return nil, err
+	}
+	remoteReceivers, err := NewRemoteReceiverStore(filepath.Join(dataDirectory, "Data", "remote-receivers.json"))
+	if err != nil {
+		return nil, err
+	}
+	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(), op25: &OP25Manager{},
-		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub()}
+		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations}
+	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
+	runtimeState.attachCalibrations()
 	runtimeState.installer = NewInstaller(runtimeState.Refresh)
+	runtimeState.mapper = NewMapperManager(dataDirectory, events)
 	runtimeState.rangeSync, err = NewRangeSyncManager(dataDirectory, profiles)
 	if err != nil {
 		return nil, err
@@ -63,9 +77,30 @@ func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, erro
 	return r.rangeSync.Update(config)
 }
 func (r *Runtime) SyncRangesNow() RangeSyncStatus { return r.rangeSync.SyncNow() }
+func (r *Runtime) MapperStatus() MapperStatus     { return r.mapper.Status() }
+func (r *Runtime) UpdateMapper(config MapperConfig) (MapperStatus, error) {
+	return r.mapper.Update(config)
+}
+func (r *Runtime) UploadMapperNow() MapperStatus     { return r.mapper.UploadNow() }
+func (r *Runtime) RemoteReceivers() []RemoteReceiver { return r.remoteReceivers.List() }
+func (r *Runtime) SaveRemoteReceiver(item RemoteReceiver) (RemoteReceiver, error) {
+	saved, err := r.remoteReceivers.Save(item)
+	if err == nil {
+		r.Refresh()
+	}
+	return saved, err
+}
+func (r *Runtime) DeleteRemoteReceiver(id string) error {
+	err := r.remoteReceivers.Delete(id)
+	if err == nil {
+		r.Refresh()
+	}
+	return err
+}
 
 func (r *Runtime) Refresh() {
 	devices := DiscoverDevices(r.demo)
+	devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
 	decoders := DiscoverDecoders()
 	transcriber := NewTranscriber()
 	radioReference := newRadioReferenceClient()
@@ -75,6 +110,20 @@ func (r *Runtime) Refresh() {
 	r.transcriber = transcriber
 	r.radioReference = radioReference
 	r.mu.Unlock()
+	r.attachCalibrations()
+}
+
+func (r *Runtime) attachCalibrations() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for index := range r.devices {
+		if calibration, ok := r.calibrations.Get(r.devices[index].ID); ok {
+			copy := calibration
+			r.devices[index].Calibration = &copy
+		} else {
+			r.devices[index].Calibration = nil
+		}
+	}
 }
 func (r *Runtime) Devices() []SDRDevice {
 	r.mu.RLock()
@@ -171,10 +220,47 @@ func (r *Runtime) Tune(request TunerRequest) error {
 			request.BandwidthHz = 12_500
 		}
 	}
+	deviceID := strings.TrimSpace(request.DeviceID)
+	if request.IQGain == 0 {
+		request.IQGain = 1
+	}
+	if request.UseCalibration && deviceID != "" {
+		if calibration, ok := r.calibrations.Get(deviceID); ok {
+			request.PPMCorrection += calibration.PPMCorrection
+			request.IQGain *= calibration.IQGain
+			request.IQPhase += calibration.IQPhase
+			request.IQSwap = request.IQSwap != calibration.IQSwap
+			request.IQDCRemoval = request.IQDCRemoval || calibration.DCRemoval
+			if request.LNAGainDB == 0 {
+				request.LNAGainDB = calibration.LNAGainDB
+			}
+			if request.VGAGainDB == 0 {
+				request.VGAGainDB = calibration.VGAGainDB
+			}
+			request.AmpEnabled = request.AmpEnabled || calibration.AmpEnabled
+		}
+	}
 	if request.GainDB < 0 || request.GainDB > 62 {
 		return errors.New("Tuner gain must be between 0 and 62 dB.")
 	}
-	deviceID := strings.TrimSpace(request.DeviceID)
+	if request.LNAGainDB < 0 || request.LNAGainDB > 40 || request.LNAGainDB%8 != 0 {
+		return errors.New("HackRF LNA gain must be 0 to 40 dB in 8 dB steps.")
+	}
+	if request.VGAGainDB < 0 || request.VGAGainDB > 62 || request.VGAGainDB%2 != 0 {
+		return errors.New("HackRF VGA gain must be 0 to 62 dB in 2 dB steps.")
+	}
+	if request.PPMCorrection < -200 || request.PPMCorrection > 200 {
+		return errors.New("Frequency correction must be between -200 and 200 PPM.")
+	}
+	if request.IQGain < .5 || request.IQGain > 1.5 || request.IQPhase < -20 || request.IQPhase > 20 {
+		return errors.New("IQ gain or phase correction is outside the supported range.")
+	}
+	if request.SquelchDB < 0 || request.SquelchDB > 60 {
+		return errors.New("Squelch must be between 0 and 60 dB above the noise floor.")
+	}
+	if request.NoiseReduction != "" && request.NoiseReduction != "off" && request.NoiseReduction != "voice" && request.NoiseReduction != "strong" {
+		return errors.New("Noise reduction must be Off, Voice, or Strong.")
+	}
 	assignment := DeviceAssignment{ID: NewID(), Role: "tuner", Target: ptr("Quick Tune")}
 	if deviceID != "" {
 		assignment.DeviceID = &deviceID
@@ -191,11 +277,23 @@ func isFinitePositive(value float64) bool {
 	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
-func (r *Runtime) Spectrum() SpectrumSnapshot {
+func (r *Runtime) Spectrum(maxBins int) SpectrumSnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	snapshot := r.spectrum
 	snapshot.BinsDBFS = append([]float64(nil), snapshot.BinsDBFS...)
+	if maxBins >= 64 && maxBins < len(snapshot.BinsDBFS) {
+		group := len(snapshot.BinsDBFS) / maxBins
+		bins := make([]float64, maxBins)
+		for index := range bins {
+			total := 0.0
+			for offset := 0; offset < group; offset++ {
+				total += snapshot.BinsDBFS[index*group+offset]
+			}
+			bins[index] = total / float64(group)
+		}
+		snapshot.BinsDBFS = bins
+	}
 	return snapshot
 }
 

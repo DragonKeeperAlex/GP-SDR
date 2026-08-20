@@ -22,6 +22,7 @@ type P25Status struct {
 	ConfigPath *string `json:"configPath"`
 	APIURL     *string `json:"apiURL,omitempty"`
 	Note       string  `json:"note"`
+	Reception  string  `json:"reception,omitempty"`
 }
 
 type OP25Manager struct {

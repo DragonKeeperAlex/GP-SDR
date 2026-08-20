@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const bundledP25Version = "0.9.8"
+const bundledP25Version = "0.9.9-gpsdr1"
 
 type P25TalkgroupState struct {
 	ID          uint32 `json:"id"`
@@ -111,8 +111,25 @@ func (m *OP25Manager) Status() P25Status {
 			}
 			return P25Status{State: "error", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath, APIURL: apiURL, Note: note}
 		default:
-			return P25Status{State: "running", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath, APIURL: apiURL,
-				Note: "P25 Phase 1/2 trunk following, voice decoding, recording, and talkgroup control are running."}
+			status := P25Status{State: "running", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath, APIURL: apiURL,
+				Reception: "searching", Note: "P25 engine is running and searching for a control channel."}
+			if configPath != nil {
+				if data, err := os.ReadFile(filepath.Join(filepath.Dir(*configPath), "p25-engine.log")); err == nil {
+					if len(data) > 256_000 {
+						data = data[len(data)-256_000:]
+					}
+					logText := string(data)
+					switch {
+					case strings.Contains(logText, "wideband front end overloaded"):
+						status.Reception = "overloaded"
+						status.Note = "Receiver input is clipping; reduce gain or add attenuation. P25 control lock is not confirmed."
+					case strings.Contains(logText, "control channel locked"), strings.Contains(logText, "control decode activity"):
+						status.Reception = "locked"
+						status.Note = "P25 control channel locked; trunk following and voice decoding are active."
+					}
+				}
+			}
+			return status
 		}
 	}
 	if engine == "OP25" {
@@ -154,7 +171,9 @@ func (m *OP25Manager) startGopherTrunk(executable string, profile ScanProfile, p
 		return err
 	}
 	logPath := filepath.Join(runtimeDirectory, "p25-engine.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	// Status diagnostics must describe this receiver session. Appending leaves
+	// stale overload warnings behind after hardware or compatibility fixes.
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -258,7 +277,7 @@ func BuildGopherTrunkConfiguration(profile ScanProfile, devices []p25AssignedDev
 	}
 	sampleRate := uint32(2_400_000)
 	if len(devices) == 1 && devices[0].Device.Kind == "HackRF" {
-		sampleRate = 8_000_000
+		sampleRate = 4_000_000
 	}
 	var text strings.Builder
 	fmt.Fprintf(&text, "log:\n  level: info\n  format: json\napi:\n  http_addr: %s\n  grpc_addr: %s\n  auth:\n    mode: auto\nmetrics:\n  enabled: false\nstorage:\n  path: %s\n  cc_cache_file: %s\nrecordings:\n  dir: %s\n  sample_rate: 8000\n  skip_encrypted: true\n  write_raw: true\nretention:\n  call_log_days: %d\n  files_days: %d\naudio:\n  enabled: false\n  device: %s\n  sample_rate: 8000\nscanner:\n  scan_mode: all\nsdr:\n  sample_rate: %d\n  autotune: true\n  devices:\n",
@@ -287,14 +306,22 @@ func BuildGopherTrunkConfiguration(profile ScanProfile, devices []p25AssignedDev
 			serial = *assigned.Device.Serial
 		}
 		gain := "auto"
-		if assigned.Device.Kind == "HackRF" {
-			// GopherTrunk gain values are tenths of a dB. A conservative
-			// fixed setting avoids the HackRF auto preset overloading near
-			// strong 700/800 MHz transmitters; the UI can expose calibration
-			// after it has measured a real control channel.
-			gain = "0"
+		ppm := 0
+		rfAmp := false
+		if calibration := assigned.Device.Calibration; calibration != nil {
+			ppm = calibration.PPMCorrection
+			rfAmp = calibration.AmpEnabled
+			if totalGain := calibration.LNAGainDB + calibration.VGAGainDB; totalGain > 0 {
+				if totalGain > 62 {
+					totalGain = 62
+				}
+				gain = fmt.Sprintf("%d", totalGain*10)
+			}
 		}
-		fmt.Fprintf(&text, "    - serial: %s\n      role: %s\n      ppm: 0\n      gain: %s\n      bias_tee: false\n", yamlString(serial), role, yamlString(gain))
+		fmt.Fprintf(&text, "    - serial: %s\n      role: %s\n      ppm: %d\n      gain: %s\n      bias_tee: false\n", yamlString(serial), role, ppm, yamlString(gain))
+		if assigned.Device.Kind == "HackRF" {
+			fmt.Fprintf(&text, "      dc_avoid: true\n      rf_amp: %t\n", rfAmp)
+		}
 		if role == "wideband" {
 			center := allControl[0]
 			if len(allControl) > 1 {

@@ -1,7 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
-  rangeSync: null,
+  rangeSync: null, calibrations: [], mapper: null, remoteReceivers: [],
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live'
 };
 const serverToken = new URLSearchParams(location.search).get('token') || '';
@@ -14,6 +14,9 @@ let setupPollTimer;
 let lastWaterfallFrame = '';
 const recordingPlayer = new Audio();
 const liveAudio = { context:null, controller:null, gains:new Map(), nextTimes:new Map() };
+let receiverApplyTimer, receiverApplying = false;
+const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20}}})();
+const spectrumHistory = new WeakMap();
 
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -73,6 +76,7 @@ function setView(view) {
     live: ['Live', 'Receiver and channel mixer'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
     activity: ['Activity', 'Signals and transmission history'],
+    mapper: ['Mapper', 'Wide-range activity survey'],
     profiles: ['Profiles', 'Scan ranges and channel sets'],
     decoders: ['Decoders', 'Dedicated decoder workspaces'],
     hardware: ['Hardware', 'Receivers and decoder tools'],
@@ -86,12 +90,12 @@ function setView(view) {
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, calibrations, mapper, remoteReceivers] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/calibrations'), api('/api/mapper'), api('/api/remote-receivers')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, calibrations: calibrations || [], mapper, remoteReceivers: remoteReceivers || [] });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -107,7 +111,14 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderRangeSync(); renderTuner(); renderDecoders(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderIntegrations(); renderRangeSync(); renderTuner(); renderDecoders(); renderMapper(); drawSpectrum(); drawWaterfall();
+}
+
+function renderMapper(){
+  const body=$('#mapper-body'); if(!body)return; const connected=state.devices.filter(d=>d.connected&&d.kind!=='Simulator'), select=$('#mapper-device'); const sig=connected.map(d=>d.id).join(); if(select.dataset.signature!==sig){select.innerHTML=connected.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(d.name)}</option>`).join('')||'<option value="">No receiver</option>';select.dataset.signature=sig;}
+  body.innerHTML=state.signals.map(s=>`<tr><td>${formatFrequency(s.frequencyHz)}</td><td>${escapeHTML(s.label||s.protocolName||'Unidentified')}</td><td>${escapeHTML(s.protocolName||s.modulation)}</td><td>${s.eventCount}</td><td>${s.strongestDBFS.toFixed(1)} dBFS</td><td>${timeAgo(s.lastSeen)}</td></tr>`).join('')||'<tr><td colspan="6">No mapped activity yet</td></tr>';
+  $('#mapper-count').textContent=state.signals.length?`${state.signals.length} consolidated frequencies`:'No detected activity'; const running=state.status?.running&&state.status?.activeProfileID==='mapper-session'; $('#mapper-state').textContent=running?'Scanning':'Idle'; $('#mapper-start-button').disabled=running||!connected.length; $('#mapper-stop-button').disabled=!running;
+  const m=state.mapper;if(m){if(!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;} $('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off'; $('#mapper-upload-detail').textContent=m.lastError||`${m.uploadedRows||0} rows uploaded${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
 }
 
 function renderRangeSync() {
@@ -140,7 +151,7 @@ function renderStatus() {
   $('#metric-events').textContent = status.eventCount;
   $('#metric-session').textContent = durationSince(status.startedAt);
   $('#metric-mode').textContent = status.running ? status.activeProfileName || status.mode : 'idle';
-  $('#setting-address').textContent = status.webAddress;
+	const address=$('#setting-address'); address.textContent=status.webAddress; address.href=status.webAddress;
   $('#setting-version').textContent = status.version;
   $('#demo-banner').classList.toggle('hidden', !(status.running && status.simulatorEnabled));
   const runtimeError = $('#runtime-error');
@@ -242,8 +253,10 @@ function renderProfiles() {
 function renderHardware() {
   $('#device-grid').innerHTML = state.devices.map(device => `
     <article class="hardware-card"><div class="hardware-title"><i class="${device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
-      <p>${escapeHTML(device.note || 'Connected and ready for assignment.')}</p>
+		<p>${escapeHTML(device.connected && state.status?.running ? `Streaming · ${state.status.mode}` : device.note || 'Connected and ready for assignment.')}</p>
+      <div class="hardware-detail">${device.kind === 'HackRF' ? 'LNA 0–40 dB · VGA 0–62 dB · RF amp · antenna power · 2–20 MS/s' : device.kind === 'RTL-SDR' ? 'Tuner AGC/manual gain · PPM correction · 0.225–3.2 MS/s' : 'SoapySDR gain · PPM and device-specific controls'}<br>${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
       <footer><span>${escapeHTML(device.kind)}</span><span>${device.connected ? 'Connected' : device.available ? 'Driver ready' : 'Driver needed'}</span></footer>
+      ${device.connected ? calibrationControls(device) : ''}
       ${device.connected || device.available ? '' : setupActions(device.kind === 'HackRF' ? 'hackrf' : device.kind === 'RTL-SDR' ? 'rtlsdr' : 'soapysdr')}</article>`).join('');
   $('#decoder-grid').innerHTML = state.decoders.map(decoder => `
     <article class="hardware-card"><div class="hardware-title"><i class="${decoder.state}"></i><h3>${escapeHTML(decoder.name)}</h3></div>
@@ -251,18 +264,34 @@ function renderHardware() {
       <div class="card-actions decoder-card-actions"><button class="open-decoder" data-decoder-id="${escapeHTML(decoder.id)}" title="Open the ${escapeHTML(decoder.name)} workspace">Open</button></div>
       ${decoder.state === 'ready' || decoder.id === 'analog' ? '' : setupActions(decoder.id)}</article>`).join('');
   renderSetupJob();
+  const remoteList=$('#remote-list'); if(remoteList) remoteList.innerHTML=state.remoteReceivers.map(item=>`<div class="remote-row"><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.host)}:${item.port}</small></span><button class="remove-remote" data-remote-id="${escapeHTML(item.id)}" title="Remove this remote receiver">Remove</button></div>`).join('')||'<span class="empty-state compact">No remote receivers saved</span>';
+}
+
+function calibrationControls(device) {
+  const c = device.calibration;
+  const reference = c?.referenceHz ? c.referenceHz / 1e6 : state.spectrum?.centerFrequencyHz ? state.spectrum.centerFrequencyHz / 1e6 : 98.1;
+  const status = c ? `${c.ppmCorrection >= 0 ? '+' : ''}${c.ppmCorrection} PPM · Q ${c.iqGain.toFixed(3)} · ${c.iqPhase >= 0 ? '+' : ''}${c.iqPhase.toFixed(1)}° · ${Math.round(c.confidence*100)}%` : 'Not calibrated';
+  return `<div class="calibration-box" data-calibration-device="${escapeHTML(device.id)}">
+    <div><strong>Calibration</strong><span>${escapeHTML(status)}</span></div>
+    <label>Reference · MHz<input class="calibration-reference" type="number" min="0.001" step="0.000001" value="${reference}" title="Known active carrier used to measure frequency and I/Q error"></label>
+    <div class="calibration-actions"><button class="auto-calibration" title="Measure, save, and apply calibration for this receiver">Auto calibrate</button><button class="edit-calibration" title="Save the displayed tuner PPM and I/Q controls for this receiver">Save current</button>${c ? '<button class="reset-calibration" title="Remove saved calibration">Reset</button>' : ''}</div>
+  </div>`;
 }
 
 function renderTuner() {
   const select = $('#tuner-device');
+	const liveSelect = $('#live-radio-device');
   if (!select) return;
   const connected = state.devices.filter(device => device.connected && device.kind !== 'Simulator');
   const signature = connected.map(device => device.id).join();
   if (select.dataset.signature !== signature) {
     select.innerHTML = connected.length ? connected.map(device => `<option value="${escapeHTML(device.id)}">${escapeHTML(device.name)}</option>`).join('') : '<option value="">No receiver</option>';
+		if (liveSelect) liveSelect.innerHTML = select.innerHTML;
     select.dataset.signature = signature;
   }
   const tuning = state.status?.running && state.status?.activeProfileID === 'quick-tune';
+	const receiving = state.mixer.some(item => item.active);
+	for (const prefix of ['live','tuner']) { const light=$('#'+prefix+'-signal-light')?.parentElement; if(light) light.classList.toggle('active',receiving); const label=$('#'+prefix+'-signal-text'); if(label) label.textContent=receiving?'Signal':'No signal'; }
   $('#tuner-start').disabled = !connected.length || tuning;
   $('#tuner-stop').disabled = !tuning;
   $('#tuner-status').textContent = tuning ? `${state.status.mode} · ${state.status.activeProfileName}` : connected.length ? 'Ready to tune.' : 'Connect a receiver, then refresh Hardware.';
@@ -273,7 +302,20 @@ function renderTuner() {
     $('#waterfall-start').textContent = formatFrequency(snapshot.startFrequencyHz);
     $('#waterfall-mid').textContent = formatFrequency(snapshot.centerFrequencyHz);
     $('#waterfall-end').textContent = formatFrequency(snapshot.endFrequencyHz);
+		$('#live-waterfall-start').textContent = formatFrequency(snapshot.startFrequencyHz);
+		$('#live-waterfall-mid').textContent = formatFrequency(snapshot.centerFrequencyHz);
+		$('#live-waterfall-end').textContent = formatFrequency(snapshot.endFrequencyHz);
   }
+}
+
+function tunerRequest() {
+  return {deviceID:$('#tuner-device').value,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
+    bandwidthHz:Number($('#tuner-bandwidth').value)*1000,sampleRateHz:Number($('#tuner-rate').value),gainDB:Number($('#tuner-gain').value),
+    lnaGainDB:Number($('#tuner-lna').value),vgaGainDB:Number($('#tuner-vga').value),ppmCorrection:Number($('#tuner-ppm').value),
+    ampEnabled:$('#tuner-amp').checked,antennaPower:$('#tuner-bias').checked,iqDCRemoval:$('#tuner-dc').checked,
+    iqGain:Number($('#tuner-iq-gain').value),iqPhase:Number($('#tuner-iq-phase').value),iqSwap:$('#tuner-iq-swap').checked,
+    autoGain:$('#tuner-agc').checked,squelchDB:Number($('#tuner-squelch').value),monitorOpen:$('#tuner-monitor-open').checked,
+    noiseReduction:$('#tuner-noise').value,useCalibration:$('#tuner-use-calibration').checked};
 }
 
 function decoderMatchesEvent(decoder, event) {
@@ -314,7 +356,9 @@ function renderP25DecoderWorkspace() {
   const status = state.p25Status || {};
   const talkgroups = state.mixer.filter(item => item.talkgroupID);
   const active = talkgroups.filter(item => item.active).length;
-  return `<article class="panel p25-overview"><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>State</span><strong>${escapeHTML(status.state || 'setup')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Active</span><strong>${active}</strong></div></div>
+  const connected = state.devices.filter(item=>item.connected);
+  const calibrated = connected.filter(item=>item.calibration).length;
+  return `<article class="panel p25-overview"><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>
     <div class="panel-head"><div><h2>Talkgroup mixer</h2><span>Mute, solo, and set volume independently</span></div><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div>
     <div class="mixer-list p25-mixer">${talkgroups.length ? mixerRows(talkgroups) : '<div class="empty-state compact">Start a P25 profile to load talkgroups</div>'}</div></article>`;
 }
@@ -387,7 +431,7 @@ function scheduleAudioFrame(channelID, sampleRate, pcm) {
   for (let index=0; index<pcm.length; index++) output[index] = pcm[index] / 32768;
   const source = liveAudio.context.createBufferSource(); source.buffer = buffer; source.connect(channelGain(channelID));
   const now = liveAudio.context.currentTime, previous = liveAudio.nextTimes.get(channelID) || now;
-  const start = previous < now || previous > now + 1 ? now + .025 : previous;
+	const start = previous < now - .02 || previous > now + .12 ? now + .015 : previous;
   source.start(start); liveAudio.nextTimes.set(channelID, start + buffer.duration);
 }
 
@@ -396,6 +440,7 @@ async function startLiveAudio() {
   if (!AudioContextClass) return;
   if (!liveAudio.context) liveAudio.context = new AudioContextClass({latencyHint:'interactive'});
   await liveAudio.context.resume();
+	const audioState=$('#audio-state'); if(audioState) audioState.textContent=liveAudio.context.state==='running'?'Audio ready':'Audio blocked';
   if (liveAudio.controller) return;
   const controller = new AbortController(); liveAudio.controller = controller;
   const headers = serverToken ? {'X-GP-SDR-Token':serverToken} : {};
@@ -438,8 +483,11 @@ function drawSpectrumCanvas(canvas) {
   for (let x = 0; x <= width; x += width / 10) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke(); }
   const gridStepY = height / 5;
   for (let y = 0; y <= height; y += gridStepY) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke(); }
-  const bins = state.spectrum?.binsDBFS || [];
-  const points = bins.length || 180;
+	const sourceBins = state.spectrum?.binsDBFS || [];
+	const desired=Math.min(displayPrefs.detail,sourceBins.length), stride=Math.max(1,Math.floor(sourceBins.length/Math.max(1,desired)));
+	let bins=sourceBins.filter((_,index)=>index%stride===0).slice(0,desired);
+	const old=spectrumHistory.get(canvas); if(old?.length===bins.length && displayPrefs.smoothing>0){const weight=displayPrefs.smoothing/100;bins=bins.map((value,index)=>value*(1-weight)+old[index]*weight);} spectrumHistory.set(canvas,bins);
+	const points = bins.length || 180;
   ctx.beginPath();
   for (let i = 0; i < points; i++) {
     const x = i / (points - 1) * width;
@@ -468,19 +516,24 @@ function waterfallColor(db) {
 }
 
 function drawWaterfall() {
-  const canvas = $('#waterfall'), snapshot = state.spectrum;
-  if (!canvas || canvas.offsetParent === null || !snapshot?.binsDBFS?.length || snapshot.capturedAt === lastWaterfallFrame) return;
-  const ratio = window.devicePixelRatio || 1, width = Math.max(600, Math.floor(canvas.clientWidth * ratio)), height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
-  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; lastWaterfallFrame = ''; }
+	for(const canvas of [$('#live-waterfall'),$('#waterfall')]) drawWaterfallCanvas(canvas);
+}
+
+function drawWaterfallCanvas(canvas) {
+	const snapshot = state.spectrum;
+	if (!canvas || canvas.offsetParent === null || !snapshot?.binsDBFS?.length || snapshot.capturedAt === canvas.dataset.lastFrame) return;
+	const ratio = (window.devicePixelRatio || 1)*displayPrefs.quality, width = Math.max(450, Math.floor(canvas.clientWidth * ratio)), height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
+	if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; canvas.dataset.lastFrame = ''; }
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(canvas, 0, 0, width, height - ratio, 0, ratio, width, height - ratio);
-  const image = ctx.createImageData(width, Math.ceil(ratio));
+	const rowHeight=Math.max(2,Math.ceil(ratio*2));
+	ctx.drawImage(canvas, 0, 0, width, height - rowHeight, 0, rowHeight, width, height - rowHeight);
+	const image = ctx.createImageData(width, rowHeight);
   for (let x=0; x<width; x++) {
     const index = Math.min(snapshot.binsDBFS.length-1, Math.floor(x / width * snapshot.binsDBFS.length));
     const [red,green,blue] = waterfallColor(snapshot.binsDBFS[index]);
     for (let row=0; row<image.height; row++) { const offset=(row*width+x)*4; image.data[offset]=red; image.data[offset+1]=green; image.data[offset+2]=blue; image.data[offset+3]=255; }
   }
-  ctx.putImageData(image,0,0); lastWaterfallFrame = snapshot.capturedAt;
+	ctx.putImageData(image,0,0); canvas.dataset.lastFrame = snapshot.capturedAt;
 }
 
 function emptyProfile() {
@@ -668,6 +721,7 @@ document.addEventListener('click', async event => {
     return;
   }
   const nav = event.target.closest('.nav-item'); if (nav) return setView(nav.dataset.view);
+  const removeRemote=event.target.closest('.remove-remote'); if(removeRemote){try{await api('/api/remote-receivers?id='+encodeURIComponent(removeRemote.dataset.remoteId),{method:'DELETE'});toast('Remote receiver removed');await refreshAll();}catch(error){toast(error.message,true);}return;}
   const decoderLink = event.target.closest('[data-decoder-id]');
   if (decoderLink) {
     state.selectedDecoderID = decoderLink.dataset.decoderId; setView('decoders'); renderDecoders();
@@ -676,6 +730,30 @@ document.addEventListener('click', async event => {
   const tab = event.target.closest('[data-activity-tab]'); if (tab) {
     state.activityTab = tab.dataset.activityTab; $$('.segmented button').forEach(b=>b.classList.toggle('active',b===tab));
     $('#activity-signals').classList.toggle('hidden',state.activityTab!=='signals'); $('#activity-events').classList.toggle('hidden',state.activityTab!=='events'); return;
+  }
+  const calibrationBox = event.target.closest('[data-calibration-device]');
+  if (calibrationBox) {
+    const deviceID = calibrationBox.dataset.calibrationDevice;
+    const device = state.devices.find(item => item.id === deviceID);
+    const referenceHz = Number(calibrationBox.querySelector('.calibration-reference').value) * 1e6;
+    const button = event.target.closest('button');
+    if (!button) return;
+    button.disabled = true;
+    try {
+      if (button.classList.contains('auto-calibration')) {
+        button.textContent = 'Measuring…';
+        const result = await api('/api/calibrations/auto',{method:'POST',body:JSON.stringify({deviceID,referenceHz,sampleRateHz:2400000,lnaGainDB:Number($('#tuner-lna').value),vgaGainDB:Number($('#tuner-vga').value)})});
+        toast(`Calibration saved · ${result.ppmCorrection >= 0 ? '+' : ''}${result.ppmCorrection} PPM`);
+      } else if (button.classList.contains('edit-calibration')) {
+        await api('/api/calibrations',{method:'PUT',body:JSON.stringify({deviceID,deviceKind:device.kind,serial:device.serial||'',referenceHz,ppmCorrection:Number($('#tuner-ppm').value),iqGain:Number($('#tuner-iq-gain').value),iqPhase:Number($('#tuner-iq-phase').value),iqSwap:$('#tuner-iq-swap').checked,dcRemoval:$('#tuner-dc').checked,lnaGainDB:Number($('#tuner-lna').value),vgaGainDB:Number($('#tuner-vga').value),ampEnabled:$('#tuner-amp').checked,confidence:1,signalToNoiseDB:0,source:'manual'})});
+        toast('Calibration saved and enabled');
+      } else if (button.classList.contains('reset-calibration')) {
+        await api('/api/calibrations?deviceID='+encodeURIComponent(deviceID),{method:'DELETE'});
+        toast('Calibration reset');
+      }
+      await refreshAll();
+    } catch (error) { toast(error.message,true); button.disabled=false; if(button.classList.contains('auto-calibration'))button.textContent='Auto calibrate'; }
+    return;
   }
   const card = event.target.closest('[data-profile-id]');
   try {
@@ -716,13 +794,42 @@ $('#survey-toggle').addEventListener('click', async () => {
   } catch (error) { stopLiveAudio(); toast(error.message,true); }
 });
 $('#tuner-frequency').addEventListener('input', event => $('#tuner-readout').textContent = Number(event.target.value || 0).toFixed(4));
-$('#tuner-mode').addEventListener('change', event => { $('#tuner-bandwidth').value = event.target.value === 'wfm' ? '180' : event.target.value === 'am' ? '10' : '12.5'; });
+$('#tuner-mode').addEventListener('change', event => {
+	$('#tuner-bandwidth').value = event.target.value === 'wfm' ? '180' : event.target.value === 'am' ? '10' : '12.5';
+	if(event.target.value==='wfm'){ $('#tuner-lna').value='32'; $('#tuner-vga').value='24'; $('#tuner-squelch').value='4'; $('#tuner-agc').checked=true; $('#tuner-monitor-open').checked=true; }
+	queueReceiverControls();
+});
+
+async function applyReceiverControls() {
+	if(receiverApplying) return;
+	receiverApplying=true; const panel=$('.receiver-controls-panel'), button=$('#live-apply-radio'); panel?.classList.add('applying'); panel?.classList.remove('applied'); button.disabled=true; button.textContent='Applying…'; $('#audio-state').textContent='Applying settings';
+	try { await startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(tunerRequest())}); button.textContent='Applied'; panel?.classList.add('applied'); $('#audio-state').textContent='Settings applied'; $('#tuner-status').textContent='Settings applied'; }
+	catch(error) { button.textContent='Retry'; $('#audio-state').textContent='Apply failed'; $('#tuner-status').textContent='Apply failed'; toast(error.message,true); }
+	finally { receiverApplying=false; button.disabled=false; panel?.classList.remove('applying'); }
+}
+
+function queueReceiverControls() { if(!state.status?.running || state.status?.activeProfileID!=='quick-tune') return; clearTimeout(receiverApplyTimer); $('#live-apply-radio').textContent='Pending…'; $('#audio-state').textContent='Settings pending'; $('#tuner-status').textContent='Applying settings…'; receiverApplyTimer=setTimeout(applyReceiverControls,250); }
+
+$$('#view-live .receiver-control-grid input, #view-live .receiver-control-grid select').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',()=>{
+	const map={'live-radio-device':'tuner-device','live-lna':'tuner-lna','live-vga':'tuner-vga','live-ppm':'tuner-ppm','live-iq-gain':'tuner-iq-gain','live-iq-phase':'tuner-iq-phase','live-squelch':'tuner-squelch','live-amp':'tuner-amp','live-bias':'tuner-bias','live-dc':'tuner-dc','live-iq-swap':'tuner-iq-swap','live-agc':'tuner-agc','live-monitor-open':'tuner-monitor-open','live-use-calibration':'tuner-use-calibration'};
+	const target=$('#'+map[control.id]); if(target){if(control.type==='checkbox')target.checked=control.checked;else target.value=control.value;} queueReceiverControls();
+}));
+$$('#view-tuner .advanced-radio input, #view-tuner .advanced-radio select, #tuner-gain, #tuner-rate').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',queueReceiverControls));
 $('#tuner-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const request = {deviceID:$('#tuner-device').value,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
-    bandwidthHz:Number($('#tuner-bandwidth').value)*1000,sampleRateHz:Number($('#tuner-rate').value),gainDB:Number($('#tuner-gain').value)};
+	const request = tunerRequest();
   try { void startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(request)}); toast('Tuner started'); await refreshAll(); }
   catch(error) { stopLiveAudio(); toast(error.message,true); }
+});
+$('#live-apply-radio').addEventListener('click', async () => {
+  [['live-radio-device','tuner-device'],['live-lna','tuner-lna'],['live-vga','tuner-vga'],['live-ppm','tuner-ppm'],['live-iq-gain','tuner-iq-gain'],['live-iq-phase','tuner-iq-phase'],['live-squelch','tuner-squelch']].forEach(([from,to])=>$('#'+to).value=$('#'+from).value);
+  [['live-amp','tuner-amp'],['live-bias','tuner-bias'],['live-dc','tuner-dc'],['live-iq-swap','tuner-iq-swap'],['live-agc','tuner-agc'],['live-monitor-open','tuner-monitor-open'],['live-use-calibration','tuner-use-calibration']].forEach(([from,to])=>$('#'+to).checked=$('#'+from).checked);
+	try { await applyReceiverControls(); }
+  catch(error) { stopLiveAudio(); toast(error.message,true); }
+});
+$('#audio-monitor').addEventListener('click', async () => {
+  try { await startLiveAudio(); toast(liveAudio.context?.state === 'running' ? 'Audio monitor ready' : 'Audio output is blocked'); }
+  catch(error) { toast(error.message,true); }
 });
 $('#tuner-stop').addEventListener('click', async () => {
   try { await api('/api/tuner/stop',{method:'POST',body:'{}'}); stopLiveAudio(); await refreshAll(); }
@@ -761,6 +868,17 @@ $('#refresh-hardware').addEventListener('click', async () => {
   try { await api('/api/devices/refresh',{method:'POST',body:'{}'}); toast('Hardware refreshed'); await refreshAll(); }
   catch(error){toast(error.message,true);}
 });
+$('#remote-form').addEventListener('submit',async event=>{event.preventDefault();try{await api('/api/remote-receivers',{method:'PUT',body:JSON.stringify({name:$('#remote-name').value.trim(),host:$('#remote-host').value.trim(),port:Number($('#remote-port').value),enabled:true})});toast('Remote receiver saved');$('#remote-host').value='';await refreshAll();}catch(error){toast(error.message,true);}});
+$('#mapper-form').addEventListener('submit',async event=>{
+  event.preventDefault(); const start=Number($('#mapper-start').value)*1e6,end=Number($('#mapper-end').value)*1e6,deviceID=$('#mapper-device').value,mode=$('#mapper-mode').value;let step=Number($('#mapper-step').value)*1000;
+  if(!deviceID||!Number.isFinite(start)||!Number.isFinite(end)||end<=start||step<=0)return toast('Select a receiver and enter a valid range',true);
+  if((end-start)/step>20000){step=Math.ceil((end-start)/20000/1000)*1000;toast(`Step increased to ${step/1000} kHz for a responsive scan`);}
+  const profile={schemaVersion:1,id:'mapper-session',name:'Mapper Session',summary:'Temporary wide-range activity map',ranges:[{id:'mapper-range',name:'Mapper range',startHz:start,endHz:end,stepHz:step,dwellMilliseconds:120,preferredMode:mode,enabled:true}],channels:[],deviceAssignments:[{id:'mapper-device',deviceID,role:'survey',target:'Mapper'}],p25Systems:[],settings:{noiseMarginDB:8,revisitSeconds:10,recordAudio:false,recordIQForUnknown:false,transcribeVoice:false,maxRecordingDays:30},builtIn:false};
+  try{if(state.status?.running)await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:'mapper-session'})});toast('Mapper started');await refreshAll();}catch(error){toast(error.message,true);}
+});
+$('#mapper-stop-button').addEventListener('click',async()=>{try{await api('/api/control/stop',{method:'POST',body:'{}'});toast('Mapper stopped');await refreshAll();}catch(error){toast(error.message,true);}});
+$('#mapper-sheet-form').addEventListener('submit',async event=>{event.preventDefault();try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify({webhookURL:$('#mapper-webhook').value.trim(),secret:$('#mapper-secret').value,autoUpload:$('#mapper-auto-upload').checked})});renderMapper();toast('Mapper upload settings saved');}catch(error){toast(error.message,true);}});
+$('#mapper-upload-now').addEventListener('click',async()=>{try{state.mapper=await api('/api/mapper/upload',{method:'POST',body:'{}'});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('New Mapper activity uploaded');}catch(error){toast(error.message,true);}});
 $('#range-sync-form').addEventListener('submit', async event => {
   event.preventDefault();
   const config = {sheetURL:$('#range-sync-url').value.trim(),intervalMinutes:Number($('#range-sync-interval').value),enabled:$('#range-sync-enabled').checked};
@@ -796,12 +914,24 @@ $('#profile-form').addEventListener('submit',async event=>{
 window.addEventListener('resize',()=>{drawSpectrum();drawWaterfall();});
 const decoderHash = location.hash.match(/^#decoder\/(.+)$/);
 if (decoderHash) { state.selectedDecoderID = decodeURIComponent(decoderHash[1]); setView('decoders'); }
+const interfaceMode=localStorage.getItem('gpsdr-interface-mode')||'beginner';
+$('#interface-mode').value=interfaceMode;document.body.classList.toggle('advanced-mode',interfaceMode==='advanced');
+$('#interface-mode').addEventListener('change',event=>{const advanced=event.target.value==='advanced';document.body.classList.toggle('advanced-mode',advanced);localStorage.setItem('gpsdr-interface-mode',event.target.value);toast(advanced?'Advanced controls enabled':'Automatic controls enabled');});
 refreshAll();
 setInterval(async()=>{
   if(document.hidden)return;
-  try{const [status,events,signals,mixer,p25Status]=await Promise.all([api('/api/status'),api('/api/events?limit=300'),api('/api/signals?limit=1000'),api('/api/mixer'),api('/api/p25/status')]);Object.assign(state,{status,events,signals,mixer,p25Status});renderStatus();renderLatest();renderMixer();renderSignals();renderEvents();renderTuner();renderDecoders();drawSpectrum();}catch(_){ }
-},1800);
+	try{const [status,mixer,p25Status]=await Promise.all([api('/api/status'),api('/api/mixer'),api('/api/p25/status')]);Object.assign(state,{status,mixer,p25Status});renderStatus();renderMixer();renderTuner();if(state.view==='decoders')renderDecoders();}catch(_){ }
+},750);
 setInterval(async()=>{
-  if(document.hidden || !state.status?.running)return;
-  try{state.spectrum=await api('/api/spectrum');renderTuner();drawSpectrum();drawWaterfall();}catch(_){ }
-},300);
+	if(document.hidden)return;
+	try{const [events,signals]=await Promise.all([api('/api/events?limit=150'),api('/api/signals?limit=400')]);Object.assign(state,{events,signals});renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}}catch(_){ }
+},5000);
+async function pollSpectrum() {
+	if(!document.hidden && state.status?.running && (state.view==='live'||state.view==='tuner')){try{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);renderTuner();drawSpectrum();drawWaterfall();}catch(_){ }}
+	setTimeout(pollSpectrum,Math.max(40,1000/displayPrefs.fps));
+}
+pollSpectrum();
+
+function saveDisplayPrefs(){localStorage.setItem('gpsdr-display-v2',JSON.stringify(displayPrefs));$('#display-smoothing-value').textContent=displayPrefs.smoothing+'%';$$('#live-waterfall,#waterfall').forEach(canvas=>{canvas.dataset.lastFrame='';canvas.width=0;});drawSpectrum();drawWaterfall();}
+for(const [id,key,number] of [['display-fps','fps',true],['display-quality','quality',true],['display-detail','detail',true],['display-smoothing','smoothing',true]]){const control=$('#'+id);control.value=displayPrefs[key];control.addEventListener('input',()=>{displayPrefs[key]=number?Number(control.value):control.value;saveDisplayPrefs();});}
+saveDisplayPrefs();

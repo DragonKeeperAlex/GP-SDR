@@ -44,23 +44,39 @@ func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz floa
 	}
 
 	samples := len(data) / 2
-	decimation := inputRate / outputRate
-	if decimation < 1 {
-		decimation = 1
-		outputRate = inputRate
+	// Filter and decimate complex IQ before the discriminator. Discriminating the
+	// full HackRF bandwidth first folds roughly 2 MHz of noise into a 48 kHz WFM
+	// stream and can make even a strong broadcast sound like clipped static.
+	channelRate := 80_000
+	if mode == "wfm" || mode == "fm" {
+		channelRate = 240_000
+	} else if mode == "am" {
+		channelRate = 64_000
 	}
-	audio := make([]int16, 0, samples/decimation+1)
+	iqDecimation := inputRate / channelRate
+	if iqDecimation < 1 {
+		iqDecimation = 1
+	}
+	actualChannelRate := inputRate / iqDecimation
+	audioDecimation := actualChannelRate / outputRate
+	if audioDecimation < 1 {
+		audioDecimation = 1
+	}
+	outputRate = actualChannelRate / audioDecimation
+	audio := make([]int16, 0, samples/(iqDecimation*audioDecimation)+1)
 	phaseStep := -2 * math.Pi * offsetHz / float64(inputRate)
 	oscillatorI, oscillatorQ := 1.0, 0.0
 	stepI, stepQ := math.Cos(phaseStep), math.Sin(phaseStep)
 	previousI, previousQ := 0.0, 0.0
 	havePrevious := false
 	dc := 0.0
-	dcAlpha := 1.0 / math.Max(float64(inputRate)*0.25, 1)
+	dcAlpha := 1.0 / math.Max(float64(actualChannelRate)*0.25, 1)
 	deemphasisAlpha := (1 / float64(outputRate)) / (deemphasis + 1/float64(outputRate))
 	filtered := 0.0
-	accumulator := 0.0
-	count := 0
+	iqAccumulatorI, iqAccumulatorQ := 0.0, 0.0
+	iqCount := 0
+	audioAccumulator := 0.0
+	audioCount := 0
 	power := 0.0
 	blockPower := 0.0
 	blockCount := 0
@@ -94,27 +110,37 @@ func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz floa
 			}
 		}
 
+		iqAccumulatorI += mixedI
+		iqAccumulatorQ += mixedQ
+		iqCount++
+		if iqCount < iqDecimation {
+			continue
+		}
+		filteredI := iqAccumulatorI / float64(iqCount)
+		filteredQ := iqAccumulatorQ / float64(iqCount)
+		iqAccumulatorI, iqAccumulatorQ, iqCount = 0, 0, 0
+
 		value := 0.0
 		if mode == "am" {
-			magnitude := math.Hypot(mixedI, mixedQ)
+			magnitude := math.Hypot(filteredI, filteredQ)
 			dc += (magnitude - dc) * dcAlpha
 			value = magnitude - dc
 		} else if havePrevious {
-			realPart := mixedI*previousI + mixedQ*previousQ
-			imagPart := mixedQ*previousI - mixedI*previousQ
-			value = math.Atan2(imagPart, realPart) * float64(inputRate) / (2 * math.Pi * deviation)
+			realPart := filteredI*previousI + filteredQ*previousQ
+			imagPart := filteredQ*previousI - filteredI*previousQ
+			value = math.Atan2(imagPart, realPart) * float64(actualChannelRate) / (2 * math.Pi * deviation)
 		}
-		previousI, previousQ, havePrevious = mixedI, mixedQ, true
-		accumulator += value
-		count++
-		if count >= decimation {
-			sample := accumulator / float64(count)
+		previousI, previousQ, havePrevious = filteredI, filteredQ, true
+		audioAccumulator += value
+		audioCount++
+		if audioCount >= audioDecimation {
+			sample := audioAccumulator / float64(audioCount)
 			if mode != "am" {
 				filtered += deemphasisAlpha * (sample - filtered)
 				sample = filtered
 			}
 			audio = append(audio, floatPCM(sample))
-			accumulator, count = 0, 0
+			audioAccumulator, audioCount = 0, 0
 		}
 	}
 	if blockCount > 0 {
