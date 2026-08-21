@@ -31,6 +31,8 @@ button:active:not(:disabled) { transform:scale(.97); filter:brightness(1.12); }
 button:disabled { cursor:not-allowed; opacity:.55; }
 button.primary { border-color: var(--accent); color: #06110e; background: var(--accent); font-weight: 650; }
 button.primary:hover { background: #65dfba; }
+button.danger { border-color: rgba(239,106,117,.7); color: #fff; background: rgba(239,106,117,.82); font-weight: 650; }
+button.danger:hover { border-color: var(--danger); background: var(--danger); }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 21px; letter-spacing: -.02em; }
 h2 { font-size: 15px; letter-spacing: -.01em; }
@@ -306,6 +308,9 @@ dt, dd { padding: 7px 0; border-bottom: 1px solid var(--line-soft); }dt { color:
 .setup-job { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 9px 11px; color: var(--muted); background: var(--accent-soft); border: 1px solid rgba(73,213,170,.25); border-radius: 8px; font-size: 11px; }
 .setup-job.error { color: var(--danger); background: rgba(239,106,117,.08); border-color: rgba(239,106,117,.25); }
 .missing-components-dialog { width: min(650px, calc(100vw - 40px)); }
+.confirm-dialog { width: min(430px, calc(100vw - 32px)); }
+.confirm-dialog .dialog-body { min-height: 78px; }
+.confirm-dialog .dialog-body p { color: var(--text); font-size: 12px; }
 .missing-components-list { display: grid; gap: 8px; }
 .missing-component-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 10px 11px; background: #10141a; border: 1px solid var(--line-soft); border-radius: 9px; }
 .missing-component-row strong, .missing-component-row small { display: block; }

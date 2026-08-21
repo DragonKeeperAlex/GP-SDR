@@ -48,6 +48,21 @@ function toast(message, error = false) {
   toastTimer = setTimeout(() => element.className = '', 2600);
 }
 
+function confirmAction({title='Confirm action',message,confirmLabel='Continue'}={}) {
+  const dialog=$('#confirm-dialog'),accept=$('#confirm-dialog-accept');
+  if(!dialog||typeof dialog.showModal!=='function')return Promise.resolve(false);
+  if(dialog.open)dialog.close('cancel');
+  $('#confirm-dialog-title').textContent=title;
+  $('#confirm-dialog-message').textContent=message||'Continue with this action?';
+  accept.textContent=confirmLabel;
+  dialog.returnValue='cancel';
+  return new Promise(resolve=>{
+    dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});
+    dialog.showModal();
+    requestAnimationFrame(()=>$('#confirm-dialog-cancel').focus());
+  });
+}
+
 function escapeHTML(value = '') {
   return String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
@@ -1130,9 +1145,9 @@ $('#mapper-new-job').addEventListener('click',resetMapperJob);
 $('#mapper-import-jobs').addEventListener('click',()=>$('#mapper-job-files').click());
 $('#mapper-job-files').addEventListener('change',async event=>{let imported=0;try{for(const file of event.target.files){const job=JSON.parse(await file.text());job.id='';job.state='idle';job.progress={};await api('/api/mapper/jobs',{method:'POST',body:JSON.stringify(job)});imported++;}toast(`${imported} Mapper ${imported===1?'job':'jobs'} imported`);await refreshAll();}catch(error){toast(`${imported?`${imported} imported · `:''}${error.message}`,true);}event.target.value='';});
 $('#mapper-stop-button').addEventListener('click',async()=>{try{state.mapper=await api('/api/mapper/jobs/stop-all',{method:'POST',body:'{}'});toast('All Mapper jobs stopping');await refreshAll();}catch(error){toast(error.message,true);}});
-$('#mapper-job-grid').addEventListener('click',async event=>{const button=event.target.closest('[data-job-action]'),card=event.target.closest('[data-job-id]');if(!button||!card)return;const job=state.mapper?.jobs?.find(item=>item.id===card.dataset.jobId);if(!job)return;try{if(button.dataset.jobAction==='edit'){loadMapperJob(job);return;}if(button.dataset.jobAction==='duplicate'){loadMapperJob(job,true);return;}if(button.dataset.jobAction==='export'){window.location.href=`/api/mapper/jobs/export?id=${encodeURIComponent(job.id)}${serverToken?`&token=${encodeURIComponent(serverToken)}`:''}`;return;}if(button.dataset.jobAction==='delete'){if(!confirm(`Delete ${job.name}?`))return;state.mapper=await api(`/api/mapper/jobs?id=${encodeURIComponent(job.id)}`,{method:'DELETE'});toast('Mapper job deleted');}if(button.dataset.jobAction==='start'){state.mapper=await api('/api/mapper/jobs/start',{method:'POST',body:JSON.stringify({id:job.id})});toast(`${job.name} started`);}if(button.dataset.jobAction==='stop'){state.mapper=await api('/api/mapper/jobs/stop',{method:'POST',body:JSON.stringify({id:job.id})});toast(`${job.name} stopping`);}await refreshAll();}catch(error){toast(error.message,true);}});
+$('#mapper-job-grid').addEventListener('click',async event=>{const button=event.target.closest('[data-job-action]'),card=event.target.closest('[data-job-id]');if(!button||!card)return;const job=state.mapper?.jobs?.find(item=>item.id===card.dataset.jobId);if(!job)return;try{if(button.dataset.jobAction==='edit'){loadMapperJob(job);return;}if(button.dataset.jobAction==='duplicate'){loadMapperJob(job,true);return;}if(button.dataset.jobAction==='export'){window.location.href=`/api/mapper/jobs/export?id=${encodeURIComponent(job.id)}${serverToken?`&token=${encodeURIComponent(serverToken)}`:''}`;return;}if(button.dataset.jobAction==='delete'){if(!await confirmAction({title:'Delete Mapper job?',message:`Delete ${job.name}? Its saved settings will be removed; mapped results are kept.`,confirmLabel:'Delete job'}))return;state.mapper=await api(`/api/mapper/jobs?id=${encodeURIComponent(job.id)}`,{method:'DELETE'});toast('Mapper job deleted');}if(button.dataset.jobAction==='start'){state.mapper=await api('/api/mapper/jobs/start',{method:'POST',body:JSON.stringify({id:job.id})});toast(`${job.name} started`);}if(button.dataset.jobAction==='stop'){state.mapper=await api('/api/mapper/jobs/stop',{method:'POST',body:JSON.stringify({id:job.id})});toast(`${job.name} stopping`);}await refreshAll();}catch(error){toast(error.message,true);}});
 for(const id of ['mapper-filter-job','mapper-filter-device','mapper-filter-search'])$('#'+id).addEventListener(id==='mapper-filter-search'?'input':'change',renderMapper);
-$('#mapper-clear').addEventListener('click',async()=>{if(!confirm('Clear all Mapper results?'))return;try{state.mapper=await api('/api/mapper/clear',{method:'POST',body:'{}'});renderMapper();toast('Mapper results cleared');}catch(error){toast(error.message,true);}});
+$('#mapper-clear').addEventListener('click',async()=>{if(!await confirmAction({title:'Clear Mapper results?',message:'Remove every recorded Mapper frequency and its activity history? Saved jobs and settings are kept.',confirmLabel:'Clear results'}))return;try{state.mapper=await api('/api/mapper/clear',{method:'POST',body:'{}'});renderMapper();toast('Mapper results cleared');}catch(error){toast(error.message,true);}});
 $('#mapper-save').addEventListener('click',async()=>{try{const result=await api('/api/mapper/save',{method:'POST',body:'{}'});toast(`${result.rows} rows saved · ${result.path}`);}catch(error){toast(error.message,true);}});
 $('#mapper-download').addEventListener('click',()=>{window.location.href=`/api/mapper/export.csv${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
 $('#mapper-sheet-form').addEventListener('submit',async event=>{event.preventDefault();try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify({...(state.mapper?.config||{}),sheetURL:$('#mapper-sheet-url').value.trim(),webhookURL:$('#mapper-webhook').value.trim(),contributor:$('#mapper-contributor').value.trim()||'GP-SDR',secret:$('#mapper-secret').value,autoUpload:$('#mapper-auto-upload').checked})});renderMapper();toast('Additions Queue settings saved');}catch(error){toast(error.message,true);}});

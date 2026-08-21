@@ -424,6 +424,14 @@
     </form>
   </dialog>
 
+  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+    <form method="dialog">
+      <header><div><h2 id="confirm-dialog-title">Confirm action</h2><p>This change cannot be undone.</p></div><button value="cancel" class="dialog-close" title="Cancel">×</button></header>
+      <div class="dialog-body"><p id="confirm-dialog-message"></p></div>
+      <footer><button id="confirm-dialog-cancel" value="cancel">Cancel</button><button id="confirm-dialog-accept" class="danger" value="confirm">Continue</button></footer>
+    </form>
+  </dialog>
+
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>
 </body>

@@ -120,6 +120,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-eta"`, `id="mapper-eta-time"`,
 		`id="mapper-workflow"`, `name="mapper-workflow" value="discovery"`, `name="mapper-workflow" value="decipher"`, `>Identify</span>`,
 		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
+		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("Mapper status or Identify control %q is missing", required)
@@ -130,9 +131,12 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := string(appData)
+	if strings.Contains(app, "confirm(") {
+		t.Fatal("Mapper still depends on the native browser confirmation API")
+	}
 	for _, required := range []string{
 		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
-		"decipherListenSeconds", "expandedMapperFrequencies",
+		"decipherListenSeconds", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)
