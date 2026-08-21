@@ -17,9 +17,9 @@ verify the source, identity, and current assignment.
 ## Connect an Additions Queue
 
 1. Create or open the target Google Sheet. Add a tab named `Additions Queue`.
-2. Put these exact headers in row 4, columns A through O:
+2. Put these exact headers in row 4, columns A through P:
 
-   `Date Added`, `Contributor`, `Type`, `Name/Label`, `RX MHz`, `TX MHz`,
+   `Date Added`, `Confirmed Contact`, `Contributor`, `Type`, `Name/Label`, `RX MHz`, `TX MHz`,
    `Mode`, `Tone/Code`, `Location/System`, `What Was Heard`,
    `Date/Time Heard`, `Source URL/File`, `Confidence`, `Review Status`, and
    `Reviewer Notes`.
@@ -37,7 +37,7 @@ verify the source, identity, and current assignment.
 Use **Queue** beside one Identify result, **Send all to sheet** for pending
 results, or enable automatic queuing. New rows are deliberately marked `New`;
 GP-SDR never marks its own observations verified. The included receiver checks
-the exact 15-column layout, uses a document lock for simultaneous submissions,
+the exact 16-column layout, uses a document lock for simultaneous submissions,
 and neutralizes spreadsheet-formula prefixes in decoded text.
 
 The webhook grants a URL holder the ability to append review rows through the
