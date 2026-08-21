@@ -27,9 +27,24 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 }
 
 func uniquePhysicalDevices(devices []SDRDevice) []SDRDevice {
+	nativeConnected := make(map[string]int)
+	for _, device := range devices {
+		if device.Connected && !strings.HasPrefix(device.Driver, "SoapySDR:") {
+			nativeConnected[strings.ToLower(device.Kind)]++
+		}
+	}
+	soapySeen := make(map[string]int)
 	seen := make(map[string]bool)
 	unique := devices[:0]
 	for _, device := range devices {
+		kind := strings.ToLower(device.Kind)
+		if strings.HasPrefix(device.Driver, "SoapySDR:") {
+			ordinal := soapySeen[kind]
+			soapySeen[kind]++
+			if ordinal < nativeConnected[kind] {
+				continue
+			}
+		}
 		key := device.ID
 		if device.Serial != nil && strings.TrimSpace(*device.Serial) != "" {
 			key = strings.ToLower(device.Kind) + ":" + strings.ToLower(strings.TrimSpace(*device.Serial))
@@ -57,9 +72,15 @@ func discoverHackRF() []SDRDevice {
 		return []SDRDevice{{ID: "hackrf-driver", Name: "HackRF", Kind: "HackRF", Driver: tool, Available: true, Connected: false, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH), Note: ptr("Driver ready; no HackRF is currently detected.")}}
 	}
 	items := make([]SDRDevice, 0, len(serials))
-	for _, serial := range serials {
+	for index, serial := range serials {
+		serial = validHackRFSerial(serial)
 		s := serial
-		items = append(items, SDRDevice{ID: "hackrf-" + serial, Name: "HackRF One", Kind: "HackRF", Serial: &s, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)})
+		id := fmt.Sprintf("hackrf-%d", index)
+		var serialPointer *string
+		if serial != "" {
+			id, serialPointer = "hackrf-"+serial, &s
+		}
+		items = append(items, SDRDevice{ID: id, Name: "HackRF One", Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)})
 	}
 	return items
 }
@@ -123,6 +144,9 @@ func discoverSoapy() []SDRDevice {
 			label = "SoapySDR " + driver
 		}
 		serial := firstValue("serial =", block)
+		if strings.EqualFold(driver, "hackrf") {
+			serial = validHackRFSerial(serial)
+		}
 		id := fmt.Sprintf("soapy-%s-%d", driver, index)
 		var serialPtr *string
 		if serial != "" {
@@ -132,6 +156,14 @@ func discoverSoapy() []SDRDevice {
 		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, Connected: true, Available: true, HelperArchitecture: ptr(runtime.GOARCH)})
 	}
 	return items
+}
+
+func validHackRFSerial(value string) string {
+	value = strings.TrimSpace(value)
+	if matched, _ := regexp.MatchString(`(?i)^[0-9a-f]{32}$`, value); !matched || strings.Trim(value, "0") == "" {
+		return ""
+	}
+	return strings.ToLower(value)
 }
 
 func DiscoverDecoders() []DecoderDescriptor {

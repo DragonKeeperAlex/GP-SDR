@@ -365,6 +365,11 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	for index := range s.events {
 		if s.events[index].ID == id {
 			s.events[index].Transcript = ptr(transcript)
+			callsigns := ExtractCallsigns(transcript)
+			s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, callsigns)
+			if s.events[index].Analysis != nil {
+				s.events[index].Analysis.Callsigns = mergeUniqueStrings(s.events[index].Analysis.Callsigns, callsigns)
+			}
 			found = true
 			break
 		}
@@ -373,6 +378,39 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 		return ErrNotFound
 	}
 	return writeEventFile(s.path, s.events)
+}
+
+func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.events {
+		if s.events[index].ID != id {
+			continue
+		}
+		s.events[index].DecoderMessages = append([]DecoderMessage(nil), messages...)
+		s.events[index].ProtocolName = ptr(messages[0].Protocol)
+		s.events[index].Confidence = maxFloat(s.events[index].Confidence, messages[0].Confidence)
+		for _, message := range messages {
+			s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, message.Callsigns)
+		}
+		return writeEventFile(s.path, s.events)
+	}
+	return ErrNotFound
+}
+
+func (s *EventStore) UpdateAudioPath(id, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.events {
+		if s.events[index].ID == id {
+			s.events[index].AudioPath = ptr(path)
+			return writeEventFile(s.path, s.events)
+		}
+	}
+	return ErrNotFound
 }
 
 func (s *EventStore) Signals(limit int) []SignalSummary {

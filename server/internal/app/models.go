@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.0.12"
+var Version = "1.0.13"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -68,6 +68,7 @@ type ScanRange struct {
 	StepHz            float64 `json:"stepHz"`
 	DwellMilliseconds int     `json:"dwellMilliseconds"`
 	PreferredMode     string  `json:"preferredMode"`
+	Decoder           *string `json:"decoder,omitempty"`
 	Enabled           bool    `json:"enabled"`
 }
 
@@ -116,6 +117,7 @@ type SurveySettings struct {
 	RecordIQForUnknown bool    `json:"recordIQForUnknown"`
 	TranscribeVoice    bool    `json:"transcribeVoice"`
 	MaxRecordingDays   int     `json:"maxRecordingDays"`
+	P25SampleRateHz    int     `json:"p25SampleRateHz,omitempty"`
 }
 
 type ScanProfile struct {
@@ -143,12 +145,36 @@ type TransmissionEvent struct {
 	ProtocolName    *string              `json:"protocolName"`
 	Label           *string              `json:"label"`
 	DeviceID        string               `json:"deviceID"`
+	SystemName      *string              `json:"systemName,omitempty"`
+	TalkgroupID     *uint32              `json:"talkgroupID,omitempty"`
+	SourceRadioID   *uint32              `json:"sourceRadioID,omitempty"`
+	Encrypted       bool                 `json:"encrypted,omitempty"`
 	Transcript      *string              `json:"transcript"`
+	Callsigns       []string             `json:"callsigns,omitempty"`
+	Analysis        *SignalIntelligence  `json:"analysis,omitempty"`
+	DecoderMessages []DecoderMessage     `json:"decoderMessages,omitempty"`
 	Confidence      float64              `json:"confidence"`
 	AudioPath       *string              `json:"audioPath"`
 	IQPath          *string              `json:"iqPath"`
 	Simulated       bool                 `json:"simulated"`
 	Location        *ObservationLocation `json:"location,omitempty"`
+}
+
+// SignalIntelligence records locally-derived evidence. It deliberately keeps
+// waveform classification separate from authoritative protocol decoding: a
+// likely digital waveform is useful, but it is not proof of P25, DMR, or any
+// other specific protocol until a decoder produces frames.
+type SignalIntelligence struct {
+	Engine               string   `json:"engine"`
+	Modulation           string   `json:"modulation"`
+	SignalFamily         string   `json:"signalFamily"`
+	Confidence           float64  `json:"confidence"`
+	EstimatedDeviationHz float64  `json:"estimatedDeviationHz,omitempty"`
+	AmplitudeVariation   float64  `json:"amplitudeVariation,omitempty"`
+	PhaseClusterScore    float64  `json:"phaseClusterScore,omitempty"`
+	Callsigns            []string `json:"callsigns,omitempty"`
+	Evidence             []string `json:"evidence,omitempty"`
+	Summary              string   `json:"summary"`
 }
 
 type ObservationLocation struct {
@@ -189,6 +215,8 @@ type MixerChannel struct {
 	TalkgroupID *uint32           `json:"talkgroupID,omitempty"`
 	Encrypted   bool              `json:"encrypted,omitempty"`
 	Discovered  bool              `json:"discovered,omitempty"`
+	EventCount  int               `json:"eventCount,omitempty"`
+	LastHeardAt *time.Time        `json:"lastHeardAt,omitempty"`
 	Muted       bool              `json:"muted"`
 	Solo        bool              `json:"solo"`
 	Volume      float64           `json:"volume"`
@@ -208,41 +236,62 @@ type ReceiverPlanItem struct {
 }
 
 type RuntimeStatus struct {
-	Running              bool       `json:"running"`
-	Mode                 string     `json:"mode"`
-	StartedAt            *time.Time `json:"startedAt"`
-	ActiveProfileID      *string    `json:"activeProfileID"`
-	ActiveProfileName    *string    `json:"activeProfileName"`
-	ConnectedDeviceCount int        `json:"connectedDeviceCount"`
-	EventCount           int        `json:"eventCount"`
-	WebAddress           string     `json:"webAddress"`
-	SimulatorEnabled     bool       `json:"simulatorEnabled"`
-	Version              string     `json:"version"`
-	LastError            *string    `json:"lastError"`
-	DroppedSamples       uint64     `json:"droppedSamples"`
+	Running              bool                `json:"running"`
+	Mode                 string              `json:"mode"`
+	StartedAt            *time.Time          `json:"startedAt"`
+	ActiveProfileID      *string             `json:"activeProfileID"`
+	ActiveProfileName    *string             `json:"activeProfileName"`
+	ConnectedDeviceCount int                 `json:"connectedDeviceCount"`
+	EventCount           int                 `json:"eventCount"`
+	WebAddress           string              `json:"webAddress"`
+	SimulatorEnabled     bool                `json:"simulatorEnabled"`
+	Version              string              `json:"version"`
+	LastError            *string             `json:"lastError"`
+	DroppedSamples       uint64              `json:"droppedSamples"`
+	SignalAnalysis       *SignalIntelligence `json:"signalAnalysis,omitempty"`
+	ReceiverTelemetry    *ReceiverTelemetry  `json:"receiverTelemetry,omitempty"`
+}
+
+type ReceiverTelemetry struct {
+	DeviceID          string  `json:"deviceID"`
+	HardwareCenterHz  float64 `json:"hardwareCenterHz"`
+	ListenFrequencyHz float64 `json:"listenFrequencyHz"`
+	SampleRateHz      int     `json:"sampleRateHz"`
+	SignalDBFS        float64 `json:"signalDBFS"`
+	NoiseDBFS         float64 `json:"noiseDBFS"`
+	PeakDBFS          float64 `json:"peakDBFS"`
+	ClippedPercent    float64 `json:"clippedPercent"`
+	Overloaded        bool    `json:"overloaded"`
+	SignalDetected    bool    `json:"signalDetected"`
+	SquelchOpen       bool    `json:"squelchOpen"`
+	LNAGainDB         int     `json:"lnaGainDB"`
+	VGAGainDB         int     `json:"vgaGainDB"`
+	AmpEnabled        bool    `json:"ampEnabled"`
 }
 
 type TunerRequest struct {
-	DeviceID       string  `json:"deviceID"`
-	FrequencyHz    float64 `json:"frequencyHz"`
-	Mode           string  `json:"mode"`
-	BandwidthHz    float64 `json:"bandwidthHz"`
-	SampleRateHz   int     `json:"sampleRateHz"`
-	GainDB         float64 `json:"gainDB"`
-	LNAGainDB      int     `json:"lnaGainDB"`
-	VGAGainDB      int     `json:"vgaGainDB"`
-	PPMCorrection  int     `json:"ppmCorrection"`
-	AmpEnabled     bool    `json:"ampEnabled"`
-	AntennaPower   bool    `json:"antennaPower"`
-	IQDCRemoval    bool    `json:"iqDCRemoval"`
-	IQGain         float64 `json:"iqGain"`
-	IQPhase        float64 `json:"iqPhase"`
-	IQSwap         bool    `json:"iqSwap"`
-	AutoGain       bool    `json:"autoGain"`
-	SquelchDB      float64 `json:"squelchDB"`
-	MonitorOpen    bool    `json:"monitorOpen"`
-	NoiseReduction string  `json:"noiseReduction"`
-	UseCalibration bool    `json:"useCalibration"`
+	DeviceID         string  `json:"deviceID"`
+	FrequencyHz      float64 `json:"frequencyHz"`
+	Mode             string  `json:"mode"`
+	BandwidthHz      float64 `json:"bandwidthHz"`
+	SampleRateHz     int     `json:"sampleRateHz"`
+	GainDB           float64 `json:"gainDB"`
+	LNAGainDB        int     `json:"lnaGainDB"`
+	VGAGainDB        int     `json:"vgaGainDB"`
+	PPMCorrection    int     `json:"ppmCorrection"`
+	AmpEnabled       bool    `json:"ampEnabled"`
+	AntennaPower     bool    `json:"antennaPower"`
+	IQDCRemoval      bool    `json:"iqDCRemoval"`
+	IQGain           float64 `json:"iqGain"`
+	IQPhase          float64 `json:"iqPhase"`
+	IQSwap           bool    `json:"iqSwap"`
+	AutoGain         bool    `json:"autoGain"`
+	SquelchDB        float64 `json:"squelchDB"`
+	MonitorOpen      bool    `json:"monitorOpen"`
+	NoiseReduction   string  `json:"noiseReduction"`
+	UseCalibration   bool    `json:"useCalibration"`
+	LockCenter       bool    `json:"lockCenter"`
+	HardwareCenterHz float64 `json:"hardwareCenterHz,omitempty"`
 }
 
 type SpectrumSnapshot struct {
@@ -336,6 +385,7 @@ func builtInProfiles() []ScanProfile {
 		ScanRange{ID: NewID(), Name: "700 MHz", StartHz: 769e6, EndHz: 775e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true},
 		ScanRange{ID: NewID(), Name: "800 MHz", StartHz: 851e6, EndHz: 869e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true})
 	profiles := []ScanProfile{discovery, gmrs, weather, murs, cb, fm, am, airband, marine, ham, publicSafety}
+	profiles = append(profiles, decoderScanProfiles()...)
 	profiles = append(profiles, handheldProfiles()...)
 	profiles = append(profiles, regionalConventionalProfiles()...)
 	profiles = append(profiles, regionalP25Profiles()...)

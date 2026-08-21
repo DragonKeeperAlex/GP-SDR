@@ -12,34 +12,38 @@ import (
 )
 
 type Runtime struct {
-	mu              sync.RWMutex
-	Profiles        *ProfileStore
-	Events          *EventStore
-	devices         []SDRDevice
-	decoders        []DecoderDescriptor
-	mixer           []MixerChannel
-	plan            []ReceiverPlanItem
-	running         bool
-	startedAt       *time.Time
-	active          *ScanProfile
-	stop            chan struct{}
-	demo            bool
-	webAddress      string
-	dataDirectory   string
-	transcriber     *Transcriber
-	lastError       *string
-	droppedSamples  uint64
-	op25            *OP25Manager
-	radioReference  *radioReferenceClient
-	audioHub        *AudioHub
-	installer       *Installer
-	rangeSync       *RangeSyncManager
-	calibrations    *CalibrationStore
-	mapper          *MapperManager
-	remoteReceivers *RemoteReceiverStore
-	localDatabase   *LocalDatabaseManager
-	spectrum        SpectrumSnapshot
-	tuning          bool
+	mu                sync.RWMutex
+	Profiles          *ProfileStore
+	Events            *EventStore
+	devices           []SDRDevice
+	decoders          []DecoderDescriptor
+	mixer             []MixerChannel
+	plan              []ReceiverPlanItem
+	running           bool
+	startedAt         *time.Time
+	active            *ScanProfile
+	stop              chan struct{}
+	demo              bool
+	webAddress        string
+	dataDirectory     string
+	transcriber       *Transcriber
+	lastError         *string
+	droppedSamples    uint64
+	op25              *OP25Manager
+	radioReference    *radioReferenceClient
+	audioHub          *AudioHub
+	installer         *Installer
+	rangeSync         *RangeSyncManager
+	calibrations      *CalibrationStore
+	mapper            *MapperManager
+	remoteReceivers   *RemoteReceiverStore
+	localDatabase     *LocalDatabaseManager
+	spectrum          SpectrumSnapshot
+	tuning            bool
+	tunerUpdates      chan TunerRequest
+	tunerHardware     *TunerRequest
+	lastAnalysis      *SignalIntelligence
+	receiverTelemetry *ReceiverTelemetry
 }
 
 func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
@@ -60,7 +64,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		return nil, err
 	}
 	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
-		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(), op25: &OP25Manager{},
+		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{},
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations}
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
@@ -137,10 +141,19 @@ func (r *Runtime) DeleteRemoteReceiver(id string) error {
 }
 
 func (r *Runtime) Refresh() {
-	devices := DiscoverDevices(r.demo)
-	devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
+	r.mu.RLock()
+	running := r.running
+	devices := append([]SDRDevice(nil), r.devices...)
+	r.mu.RUnlock()
+	// Hardware enumeration tools open USB devices briefly. Keep the last known
+	// inventory while receiving so a Hardware refresh cannot contend with the
+	// active DSP or trunking engine.
+	if !running {
+		devices = DiscoverDevices(r.demo)
+		devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
+	}
 	decoders := DiscoverDecoders()
-	transcriber := NewTranscriber()
+	transcriber := NewTranscriber(r.dataDirectory)
 	radioReference := newRadioReferenceClient()
 	r.mu.Lock()
 	r.devices = devices
@@ -201,7 +214,7 @@ func (r *Runtime) Status() RuntimeStatus {
 	defer r.mu.RUnlock()
 	status := RuntimeStatus{Running: r.running, Mode: "Idle", StartedAt: r.startedAt, ConnectedDeviceCount: 0,
 		EventCount: r.Events.Count(), WebAddress: r.webAddress, SimulatorEnabled: r.demo, Version: Version,
-		LastError: r.lastError, DroppedSamples: r.droppedSamples}
+		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry}
 	for _, d := range r.devices {
 		if d.Connected && d.Kind != "Simulator" {
 			status.ConnectedDeviceCount++
@@ -245,8 +258,8 @@ func (r *Runtime) Tune(request TunerRequest) error {
 	if request.Mode == "fm" {
 		request.Mode = "wfm"
 	}
-	if request.Mode != "am" && request.Mode != "nfm" && request.Mode != "wfm" {
-		return errors.New("Tuner mode must be AM, NFM, or WFM.")
+	if request.Mode != "auto" && request.Mode != "am" && request.Mode != "nfm" && request.Mode != "wfm" {
+		return errors.New("Tuner mode must be Auto, AM, NFM, or WFM.")
 	}
 	if !isFinitePositive(request.FrequencyHz) {
 		return errors.New("Enter a valid positive tuner frequency.")
@@ -299,6 +312,15 @@ func (r *Runtime) Tune(request TunerRequest) error {
 	if request.NoiseReduction != "" && request.NoiseReduction != "off" && request.NoiseReduction != "voice" && request.NoiseReduction != "strong" {
 		return errors.New("Noise reduction must be Off, Voice, or Strong.")
 	}
+	if request.LockCenter {
+		updated, err := r.trySoftwareTune(request)
+		if err != nil {
+			return err
+		}
+		if updated {
+			return nil
+		}
+	}
 	assignment := DeviceAssignment{ID: NewID(), Role: "tuner", Target: ptr("Quick Tune")}
 	if deviceID != "" {
 		assignment.DeviceID = &deviceID
@@ -337,34 +359,39 @@ func (r *Runtime) Spectrum(maxBins int) SpectrumSnapshot {
 
 func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 	r.Stop()
+	if profile.Settings.MaxRecordingDays > 0 {
+		go func(days int) {
+			if _, err := pruneExpiredRecordings(r.dataDirectory, days, time.Now()); err != nil {
+				r.setRuntimeError("Recording cleanup: " + err.Error())
+			}
+		}(profile.Settings.MaxRecordingDays)
+	}
 	plan := r.buildPlan(profile)
-	var liveDevice *SDRDevice
+	liveDevices := make([]SDRDevice, 0)
 	useP25 := len(enabledP25Systems(profile)) > 0
 	useWideband := false
 	if !r.demo {
+		seenDevices := make(map[string]bool)
 		for _, item := range plan {
 			if item.DeviceID == nil || item.State != "assigned" {
 				continue
 			}
 			for index := range r.devices {
-				if r.devices[index].ID == *item.DeviceID && r.devices[index].Connected {
-					device := r.devices[index]
-					liveDevice = &device
+				if r.devices[index].ID == *item.DeviceID && r.devices[index].Connected && !seenDevices[r.devices[index].ID] {
+					liveDevices = append(liveDevices, r.devices[index])
+					seenDevices[r.devices[index].ID] = true
 					break
 				}
 			}
-			if liveDevice != nil {
-				break
-			}
 		}
-		if liveDevice == nil {
+		if len(liveDevices) == 0 {
 			return errors.New("No SDR is connected. Connect a receiver and press Refresh, or launch with --demo.")
 		}
 		if !useP25 && len(surveyTargets(profile)) == 0 {
 			return errors.New("This profile has no AM, NFM, WFM, or automatic scan targets.")
 		}
 		if !useP25 && hasReceiverRole(profile, "channelBank") {
-			_, _, useWideband = widebandSpec(profile, *liveDevice)
+			_, _, useWideband = widebandSpec(profile, liveDevices[0])
 		}
 		if useP25 {
 			if err := r.op25.Start(profile, plan, r.devices, r.dataDirectory); err != nil {
@@ -388,8 +415,19 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 	r.plan = plan
 	r.stop = make(chan struct{})
 	r.lastError = nil
+	r.lastAnalysis = nil
+	r.receiverTelemetry = nil
 	r.tuning = tuner != nil
+	if tuner != nil {
+		r.tunerUpdates = make(chan TunerRequest, 1)
+		tunerCopy := *tuner
+		r.tunerHardware = &tunerCopy
+	} else {
+		r.tunerUpdates = nil
+		r.tunerHardware = nil
+	}
 	stop := r.stop
+	tunerUpdates := r.tunerUpdates
 	demo := r.demo
 	r.mu.Unlock()
 	if demo {
@@ -397,13 +435,58 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 	} else if useP25 {
 		go r.p25MonitorLoop(stop, profile)
 	} else if tuner != nil {
-		go r.tunerLoop(stop, profile, *liveDevice, *tuner)
+		go r.tunerLoop(stop, profile, liveDevices[0], *tuner, tunerUpdates)
+	} else if !useP25 && len(liveDevices) > 1 {
+		for index, device := range liveDevices {
+			partition := partitionScanProfile(profile, index, len(liveDevices))
+			if _, _, wide := widebandSpec(partition, device); useWideband && wide {
+				go r.widebandBankLoop(stop, partition, device)
+			} else {
+				go r.liveSurveyLoop(stop, partition, device)
+			}
+		}
 	} else if !useP25 && useWideband {
-		go r.widebandBankLoop(stop, profile, *liveDevice)
+		go r.widebandBankLoop(stop, profile, liveDevices[0])
 	} else if !useP25 {
-		go r.liveSurveyLoop(stop, profile, *liveDevice)
+		go r.liveSurveyLoop(stop, profile, liveDevices[0])
 	}
 	return nil
+}
+
+func partitionScanProfile(profile ScanProfile, index, total int) ScanProfile {
+	if total <= 1 {
+		return profile
+	}
+	partition := profile
+	partition.ID = fmt.Sprintf("%s-receiver-%d", profile.ID, index+1)
+	partition.Channels = nil
+	partition.Ranges = nil
+	if len(profile.Channels) > 0 {
+		start := index * len(profile.Channels) / total
+		end := (index + 1) * len(profile.Channels) / total
+		partition.Channels = append([]ChannelDefinition(nil), profile.Channels[start:end]...)
+	}
+	for _, scanRange := range profile.Ranges {
+		if scanRange.StepHz <= 0 {
+			continue
+		}
+		steps := int(math.Floor((scanRange.EndHz-scanRange.StartHz)/scanRange.StepHz)) + 1
+		if steps <= 0 {
+			continue
+		}
+		startStep := index * steps / total
+		endStep := (index+1)*steps/total - 1
+		if endStep < startStep {
+			continue
+		}
+		piece := scanRange
+		piece.ID = fmt.Sprintf("%s-part-%d", scanRange.ID, index+1)
+		piece.StartHz = scanRange.StartHz + float64(startStep)*scanRange.StepHz
+		piece.EndHz = scanRange.StartHz + float64(endStep)*scanRange.StepHz
+		partition.Ranges = append(partition.Ranges, piece)
+	}
+	partition.DeviceAssignments = nil
+	return partition
 }
 
 func (r *Runtime) setRuntimeError(message string) {
@@ -450,6 +533,10 @@ func (r *Runtime) Stop() {
 	}
 	r.running = false
 	r.tuning = false
+	r.tunerUpdates = nil
+	r.tunerHardware = nil
+	r.lastAnalysis = nil
+	r.receiverTelemetry = nil
 	r.startedAt = nil
 	for i := range r.mixer {
 		r.mixer[i].Active = false
@@ -459,6 +546,65 @@ func (r *Runtime) Stop() {
 	if r.op25 != nil {
 		r.op25.Stop()
 	}
+}
+
+func (r *Runtime) updateReceiverTelemetry(telemetry ReceiverTelemetry, analysis *SignalIntelligence) {
+	r.mu.Lock()
+	copy := telemetry
+	r.receiverTelemetry = &copy
+	if analysis != nil {
+		analysisCopy := *analysis
+		analysisCopy.Evidence = append([]string(nil), analysis.Evidence...)
+		r.lastAnalysis = &analysisCopy
+	}
+	r.mu.Unlock()
+}
+
+func (r *Runtime) trySoftwareTune(request TunerRequest) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.running || !r.tuning || r.active == nil || r.active.ID != "quick-tune" || r.tunerUpdates == nil || r.tunerHardware == nil || r.spectrum.SampleRateHz <= 0 {
+		return false, nil
+	}
+	if !sameTunerHardware(*r.tunerHardware, request) {
+		return false, nil
+	}
+	center := r.spectrum.CenterFrequencyHz
+	if request.HardwareCenterHz > 0 && math.Abs(request.HardwareCenterHz-center) > 1 {
+		return false, errors.New("The requested hardware center no longer matches the active capture.")
+	}
+	usableHalfSpan := float64(r.spectrum.SampleRateHz) * .44
+	if math.Abs(request.FrequencyHz-center)+request.BandwidthHz/2 > usableHalfSpan {
+		return false, fmt.Errorf("%.6f MHz is outside the locked %.3f MHz usable passband.", request.FrequencyHz/1e6, usableHalfSpan*2/1e6)
+	}
+	request.HardwareCenterHz = center
+	select {
+	case r.tunerUpdates <- request:
+	default:
+		select {
+		case <-r.tunerUpdates:
+		default:
+		}
+		r.tunerUpdates <- request
+	}
+	if len(r.active.Channels) > 0 {
+		r.active.Channels[0].FrequencyHz = request.FrequencyHz
+		r.active.Channels[0].BandwidthHz = request.BandwidthHz
+		r.active.Channels[0].Mode = request.Mode
+	}
+	if len(r.mixer) > 0 {
+		r.mixer[0].Channel.FrequencyHz = request.FrequencyHz
+		r.mixer[0].Channel.BandwidthHz = request.BandwidthHz
+		r.mixer[0].Channel.Mode = request.Mode
+	}
+	return true, nil
+}
+
+func sameTunerHardware(active, next TunerRequest) bool {
+	return active.DeviceID == next.DeviceID && active.SampleRateHz == next.SampleRateHz && active.GainDB == next.GainDB &&
+		active.LNAGainDB == next.LNAGainDB && active.VGAGainDB == next.VGAGainDB && active.PPMCorrection == next.PPMCorrection &&
+		active.AmpEnabled == next.AmpEnabled && active.AntennaPower == next.AntennaPower && active.AutoGain == next.AutoGain &&
+		active.IQDCRemoval == next.IQDCRemoval && active.IQGain == next.IQGain && active.IQPhase == next.IQPhase && active.IQSwap == next.IQSwap
 }
 
 func (r *Runtime) P25Status() P25Status {
@@ -629,12 +775,51 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				if duration < 0 {
 					duration = 0
 				}
+				systemName, talkgroupID := call.Grant.System, call.Grant.GroupID
+				var sourceRadioID *uint32
+				if call.Grant.SourceID != 0 {
+					source := call.Grant.SourceID
+					sourceRadioID = &source
+				}
 				event := TransmissionEvent{ID: NewID(), StartedAt: call.StartedAt, DurationSeconds: duration,
 					FrequencyHz: float64(call.Grant.FrequencyHz), BandwidthHz: 12_500, SignalDBFS: -30, NoiseDBFS: -80,
-					Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99}
+					Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99,
+					SystemName: &systemName, TalkgroupID: &talkgroupID, SourceRadioID: sourceRadioID, Encrypted: call.Grant.Encrypted,
+					Analysis: &SignalIntelligence{Engine: "SDRTrunk frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
+						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: "SDRTrunk confirmed a framed " + protocol + " call."}}
 				_ = r.Events.Append(event)
+				if !call.Grant.Encrypted {
+					go r.attachP25Recording(stop, profile, call, event.ID)
+				}
 			}
 			previous = current
+		}
+	}
+}
+
+func (r *Runtime) attachP25Recording(stop <-chan struct{}, profile ScanProfile, call P25ActiveCall, eventID string) {
+	root := filepath.Join(r.dataDirectory, "Runtime", "P25", profile.ID, "home", "SDRTrunk", "recordings")
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(8 * time.Second)
+	defer deadline.Stop()
+	for {
+		if source := findP25Recording(root, call.Grant.GroupID, call.StartedAt); source != "" {
+			path, err := archiveP25Recording(r.dataDirectory, source, call.Grant.GroupID, call.StartedAt)
+			if err == nil {
+				_ = r.Events.UpdateAudioPath(eventID, path)
+				if profile.Settings.TranscribeVoice {
+					go r.transcribeEvent(stop, eventID, float64(call.Grant.FrequencyHz), path)
+				}
+			}
+			return
+		}
+		select {
+		case <-stop:
+			return
+		case <-deadline.C:
+			return
+		case <-ticker.C:
 		}
 	}
 }
@@ -644,6 +829,22 @@ func p25CallKey(call P25ActiveCall) string {
 }
 
 func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupState, calls []P25ActiveCall) {
+	type talkgroupHistory struct {
+		count int
+		last  time.Time
+	}
+	history := make(map[uint32]talkgroupHistory)
+	for _, event := range r.Events.Recent(2000) {
+		if event.TalkgroupID == nil || *event.TalkgroupID == 0 {
+			continue
+		}
+		item := history[*event.TalkgroupID]
+		item.count++
+		if event.StartedAt.After(item.last) {
+			item.last = event.StartedAt
+		}
+		history[*event.TalkgroupID] = item
+	}
 	active := make(map[uint32]P25ActiveCall)
 	for _, call := range calls {
 		if call.Grant.GroupID != 0 {
@@ -675,10 +876,21 @@ func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupSta
 			index = len(r.mixer) - 1
 			byID[id] = index
 		}
+		item := history[talkgroup.ID]
+		r.mixer[index].EventCount = item.count
+		if !item.last.IsZero() {
+			last := item.last
+			r.mixer[index].LastHeardAt = &last
+		}
 		if call, ok := active[talkgroup.ID]; ok {
 			r.mixer[index].Active = true
 			r.mixer[index].Level = .72
 			r.mixer[index].Encrypted = call.Grant.Encrypted
+			last := call.LastHeardAt
+			if last.IsZero() {
+				last = call.StartedAt
+			}
+			r.mixer[index].LastHeardAt = &last
 			if call.Grant.System != "" {
 				systemName := call.Grant.System
 				r.mixer[index].SystemName = &systemName

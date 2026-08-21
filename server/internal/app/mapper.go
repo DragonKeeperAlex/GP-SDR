@@ -31,6 +31,7 @@ type MapperConfig struct {
 	EndHz                 float64  `json:"endHz,omitempty"`
 	StepHz                float64  `json:"stepHz,omitempty"`
 	DwellMilliseconds     int      `json:"dwellMilliseconds,omitempty"`
+	SampleRateHz          int      `json:"sampleRateHz,omitempty"`
 	DecipherListenSeconds int64    `json:"decipherListenSeconds,omitempty"`
 	Transcribe            bool     `json:"transcribe"`
 	IncludeLocation       bool     `json:"includeLocation"`
@@ -55,6 +56,13 @@ type MapperFrequencyRecord struct {
 	Callsigns            []string             `json:"callsigns,omitempty"`
 	Confidence           float64              `json:"confidence"`
 	IdentificationSource string               `json:"identificationSource,omitempty"`
+	CandidateDecoder     string               `json:"candidateDecoder,omitempty"`
+	DetectionStatus      string               `json:"detectionStatus,omitempty"`
+	DetectionEvidence    string               `json:"detectionEvidence,omitempty"`
+	DecoderReady         bool                 `json:"decoderReady"`
+	AnalysisEngine       string               `json:"analysisEngine,omitempty"`
+	AnalysisSummary      string               `json:"analysisSummary,omitempty"`
+	AnalysisEvidence     []string             `json:"analysisEvidence,omitempty"`
 	HourlyHits           [24]int              `json:"hourlyHits"`
 	ActivityTimeZone     string               `json:"activityTimeZone,omitempty"`
 	Location             *ObservationLocation `json:"location,omitempty"`
@@ -78,6 +86,8 @@ type MapperProgress struct {
 	TotalTargets       int        `json:"totalTargets"`
 	ChecksCompleted    int64      `json:"checksCompleted"`
 	PassesCompleted    int        `json:"passesCompleted"`
+	PassStartedAt      *time.Time `json:"passStartedAt,omitempty"`
+	EstimatedPassEndAt *time.Time `json:"estimatedPassEndAt,omitempty"`
 	StartedAt          *time.Time `json:"startedAt,omitempty"`
 	StoppedAt          *time.Time `json:"stoppedAt,omitempty"`
 	TargetStartedAt    *time.Time `json:"targetStartedAt,omitempty"`
@@ -169,7 +179,7 @@ func (m *MapperManager) BeginSession(mode string, totalTargets int) uint64 {
 	m.mu.Lock()
 	m.sessionID++
 	sessionID := m.sessionID
-	m.progress = MapperProgress{Running: true, Mode: mode, CurrentIndex: -1, TotalTargets: totalTargets, StartedAt: &now}
+	m.progress = MapperProgress{Running: true, Mode: mode, CurrentIndex: -1, TotalTargets: totalTargets, StartedAt: &now, PassStartedAt: &now}
 	m.mu.Unlock()
 	return sessionID
 }
@@ -188,11 +198,23 @@ func (m *MapperManager) BeginTarget(sessionID uint64, index, totalTargets int, f
 	progress.CurrentFrequencyHz = frequencyHz
 	progress.CurrentLabel = label
 	progress.TargetStartedAt = &now
+	if index == 0 || progress.PassStartedAt == nil {
+		progress.PassStartedAt = &now
+		progress.EstimatedPassEndAt = nil
+	}
 	if listenFor > 0 {
 		endsAt := now.Add(listenFor)
 		progress.TargetEndsAt = &endsAt
+		remaining := time.Duration(totalTargets-index) * listenFor
+		estimated := now.Add(remaining)
+		progress.EstimatedPassEndAt = &estimated
 	} else {
 		progress.TargetEndsAt = nil
+		if index > 0 && progress.PassStartedAt != nil {
+			average := now.Sub(*progress.PassStartedAt) / time.Duration(index)
+			estimated := now.Add(average * time.Duration(totalTargets-index))
+			progress.EstimatedPassEndAt = &estimated
+		}
 	}
 	m.mu.Unlock()
 }
@@ -237,6 +259,9 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	}
 	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
 		return MapperStatus{}, errors.New("decipher listen time must be between 5 seconds and 7 days")
+	}
+	if !supportedUserSampleRate(config.SampleRateHz) {
+		return MapperStatus{}, errors.New("choose Auto or a supported Mapper sample rate")
 	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {
@@ -340,15 +365,92 @@ func (m *MapperManager) SetIdentification(frequencyHz float64, source string, co
 	m.mu.Unlock()
 }
 
+func (m *MapperManager) SetDecoderEvidence(frequencyHz float64, decoderID, status, evidence string, ready bool) {
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	m.mu.Lock()
+	record, exists := m.records[key]
+	if exists {
+		record.CandidateDecoder = canonicalDecoderID(decoderID)
+		record.DetectionStatus = strings.TrimSpace(status)
+		record.DetectionEvidence = strings.TrimSpace(evidence)
+		record.DecoderReady = ready
+		m.records[key] = record
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) SetSignalIntelligence(frequencyHz float64, analysis SignalIntelligence) {
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	m.mu.Lock()
+	record, exists := m.records[key]
+	if exists {
+		record.AnalysisEngine = strings.TrimSpace(analysis.Engine)
+		record.AnalysisSummary = strings.TrimSpace(analysis.Summary)
+		record.AnalysisEvidence = append([]string(nil), analysis.Evidence...)
+		// Local waveform classification is useful evidence, but it must not
+		// replace an explicit mode supplied by an imported or saved channel.
+		knownMode := strings.ToUpper(strings.TrimSpace(record.Modulation))
+		if analysis.Modulation != "" && analysis.Modulation != "UNKNOWN" &&
+			(knownMode == "" || knownMode == "AUTO" || knownMode == "UNKNOWN") {
+			record.Modulation = analysis.Modulation
+		}
+		record.Confidence = math.Max(record.Confidence, analysis.Confidence)
+		record.Callsigns = mergeUniqueStrings(record.Callsigns, analysis.Callsigns)
+		m.records[key] = record
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) SetDecodedMessages(frequencyHz float64, decoderID string, messages []DecoderMessage) {
+	if len(messages) == 0 {
+		return
+	}
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	m.mu.Lock()
+	record, exists := m.records[key]
+	if exists {
+		record.CandidateDecoder = canonicalDecoderID(decoderID)
+		record.DetectionStatus = "confirmed"
+		record.DecoderReady = true
+		record.ProtocolName = messages[0].Protocol
+		record.Confidence = math.Max(record.Confidence, messages[0].Confidence)
+		evidence := make([]string, 0, len(messages))
+		for _, message := range messages {
+			evidence = append(evidence, message.Summary)
+			record.Callsigns = mergeUniqueStrings(record.Callsigns, message.Callsigns)
+		}
+		record.DetectionEvidence = strings.Join(evidence, " · ")
+		m.records[key] = record
+	}
+	m.mu.Unlock()
+}
+
 func (m *MapperManager) SetTranscript(frequencyHz float64, transcript string) {
 	key := fmt.Sprintf("%.0f", frequencyHz)
 	m.mu.Lock()
 	record, exists := m.records[key]
 	if exists && strings.TrimSpace(transcript) != "" {
 		record.LastTranscript = strings.TrimSpace(transcript)
+		record.Callsigns = mergeUniqueStrings(record.Callsigns, ExtractCallsigns(transcript))
 		m.records[key] = record
 	}
 	m.mu.Unlock()
+}
+
+func mergeUniqueStrings(existing, additions []string) []string {
+	seen := make(map[string]bool, len(existing)+len(additions))
+	for _, value := range append(append([]string(nil), existing...), additions...) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			seen[value] = true
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for value := range seen {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (m *MapperManager) ShouldArchive(frequencyHz float64, interval time.Duration) bool {
@@ -417,7 +519,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
-	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone"}
+	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -431,7 +533,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 		}
 		row := []string{
 			strconv.FormatFloat(record.FrequencyHz, 'f', 0, 64), strconv.FormatFloat(record.FrequencyHz/1e6, 'f', 6, 64),
-			safeSpreadsheetText(record.Name), safeSpreadsheetText(record.Modulation), safeSpreadsheetText(record.ProtocolName), safeSpreadsheetText(strings.Join(record.Callsigns, " | ")),
+			safeSpreadsheetText(record.Name), safeSpreadsheetText(record.Modulation), safeSpreadsheetText(record.ProtocolName), safeSpreadsheetText(record.CandidateDecoder), safeSpreadsheetText(record.DetectionStatus), safeSpreadsheetText(record.DetectionEvidence), strconv.FormatBool(record.DecoderReady), safeSpreadsheetText(record.AnalysisEngine), safeSpreadsheetText(record.AnalysisSummary), safeSpreadsheetText(strings.Join(record.AnalysisEvidence, " | ")), safeSpreadsheetText(strings.Join(record.Callsigns, " | ")),
 			record.FirstSeen.Format(time.RFC3339Nano), record.LastSeen.Format(time.RFC3339Nano), strconv.Itoa(record.Checks), strconv.Itoa(record.Hits),
 			strconv.FormatFloat(record.Occupancy, 'f', 6, 64), strconv.FormatFloat(record.StrongestDBFS, 'f', 2, 64), strconv.FormatFloat(record.NoiseDBFS, 'f', 2, 64),
 			strconv.FormatFloat(record.Confidence, 'f', 3, 64), safeSpreadsheetText(record.LastTranscript), latitude, longitude, locationName, locationPrecision,
@@ -640,6 +742,9 @@ func mapperAdditionRow(record MapperFrequencyRecord, config MapperConfig) map[st
 		confidence = "Repeated observation"
 	}
 	notes := fmt.Sprintf("GP-SDR Identify: signal %.1f dBFS; local noise %.1f dBFS; confidence %.0f%%", record.StrongestDBFS, record.NoiseDBFS, record.Confidence*100)
+	if record.AnalysisSummary != "" {
+		notes += "; " + record.AnalysisSummary
+	}
 	if len(record.Callsigns) > 0 {
 		notes += "; decoded callsigns: " + strings.Join(record.Callsigns, ", ")
 	}

@@ -2,8 +2,11 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +74,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs the vendor-neutral SoapySDR runtime. A matching device module is also required. The stream helper is already included in macOS packages; native HackRF and RTL-SDR paths do not require SoapySDR.",
 			GuideURL: "https://github.com/pothosware/SoapySDR"}, tools: []string{"SoapySDRUtil"}, formulae: []string{"soapysdr"}},
 		{component: SetupComponent{ID: "transcription", Name: "Transcription", Category: "integration",
-			Guide:    "Installs whisper.cpp. After installation, choose or download a local ggml model and set GPSDR_WHISPER_MODEL before starting GP-SDR.",
+			Guide:    "Installs whisper.cpp and downloads GP-SDR's checksum-pinned English base model. Processing stays on this computer; no account or API key is required.",
 			GuideURL: "https://github.com/ggml-org/whisper.cpp"}, tools: []string{"whisper-cli"}, formulae: []string{"whisper-cpp"}},
 		{component: SetupComponent{ID: "rtl-433", Name: "rtl_433", Category: "decoder",
 			Guide:    "Installs rtl_433 for compatible weather stations, TPMS devices, and ISM-band sensors.",
@@ -83,7 +86,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Creates the open-source JMBE voice library locally. The creator downloads and compiles the codec after showing the upstream patent notice; check the rules that apply where you use it.",
 			GuideURL: "https://github.com/DSheirer/jmbe"}},
 		{component: SetupComponent{ID: "dsd-fme", Name: "DSD-FME", Category: "decoder",
-			Guide:    "Install DSD-FME from its upstream project, then place dsd-fme on PATH or in GPSDR_HELPERS. Builds and dependencies vary by operating system.",
+			Guide:    "Install DSD-FME from its upstream project, then place dsd-fme on PATH or in GPSDR_HELPERS. The GP-SDR install guide includes the tested macOS dependency and build commands.",
 			GuideURL: "https://github.com/lwvmobile/dsd-fme"}, tools: []string{"dsd-fme"}},
 		{component: SetupComponent{ID: "dump1090", Name: "dump1090", Category: "decoder",
 			Guide:    "Install a maintained dump1090 build for your operating system and place dump1090 or dump1090-fa on PATH.",
@@ -93,7 +96,7 @@ func setupRecipes() []installerRecipe {
 			GuideURL: "https://github.com/EliasOenal/multimon-ng"}, tools: []string{"multimon-ng"}},
 		{component: SetupComponent{ID: "acarsdec", Name: "acarsdec", Category: "decoder",
 			Guide:    "Build or install acarsdec for ACARS, then place acarsdec on PATH.",
-			GuideURL: "https://github.com/TLeconte/acarsdec"}, tools: []string{"acarsdec"}},
+			GuideURL: "https://github.com/f00b4r0/acarsdec"}, tools: []string{"acarsdec"}},
 		{component: SetupComponent{ID: "ais", Name: "AIS-catcher", Category: "decoder",
 			Guide:    "Install AIS-catcher from its upstream releases or package instructions, then place AIS-catcher on PATH.",
 			GuideURL: "https://github.com/jvde-github/AIS-catcher"}, tools: []string{"AIS-catcher", "ais-catcher"}},
@@ -139,11 +142,19 @@ func (installer *Installer) Overview() SetupOverview {
 	for _, recipe := range setupRecipes() {
 		component := recipe.component
 		ready := recipeReady(recipe)
+		if component.ID == "transcription" {
+			status := NewTranscriber(installer.dataDirectory).Status()
+			ready = status.State == "ready"
+			component.Note = status.Note
+		}
 		if component.ID == "p25-voice" {
 			ready = findJMBELibrary(installer.dataDirectory, filepath.Join(userHomeDirectory(), "SDRTrunk")) != ""
 		}
 		if ready {
-			component.State, component.Action, component.Note = "ready", "Ready", "Installed and discoverable by GP-SDR."
+			component.State, component.Action = "ready", "Ready"
+			if component.Note == "" {
+				component.Note = "Installed and discoverable by GP-SDR."
+			}
 		} else {
 			component.State = "setup"
 			component.Installable = runtime.GOOS == "darwin" && brewErr == nil && len(recipe.formulae) > 0
@@ -184,6 +195,9 @@ func (installer *Installer) Start(componentID string) (InstallJob, error) {
 		return InstallJob{}, errors.New("unknown setup component")
 	}
 	ready := recipeReady(*selected)
+	if componentID == "transcription" {
+		ready = NewTranscriber(installer.dataDirectory).Status().State == "ready"
+	}
 	if componentID == "p25-voice" {
 		ready = findJMBELibrary(installer.dataDirectory, filepath.Join(userHomeDirectory(), "SDRTrunk")) != ""
 	}
@@ -292,6 +306,14 @@ func (installer *Installer) run(recipe installerRecipe, brew string, job *Instal
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	err := command.Run()
+	if err == nil && recipe.component.ID == "transcription" {
+		installer.mu.Lock()
+		job.Message = "Downloading the offline English speech model…"
+		installer.mu.Unlock()
+		if modelErr := installer.downloadWhisperModel(); modelErr != nil {
+			err = modelErr
+		}
+	}
 	finished := time.Now()
 	message, state := recipe.component.Name+" installed. Refreshing hardware…", "ready"
 	if err != nil {
@@ -308,4 +330,54 @@ func (installer *Installer) run(recipe installerRecipe, brew string, job *Instal
 	if err == nil && installer.onRefresh != nil {
 		installer.onRefresh()
 	}
+}
+
+const whisperBaseEnglishModelURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+const whisperBaseEnglishModelSHA256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"
+
+func (installer *Installer) downloadWhisperModel() error {
+	directory := filepath.Join(installer.dataDirectory, "Components", "Whisper")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	destination := filepath.Join(directory, "ggml-base.en.bin")
+	if info, err := os.Stat(destination); err == nil && info.Size() > 100*1024*1024 {
+		return nil
+	}
+	request, err := http.NewRequest(http.MethodGet, whisperBaseEnglishModelURL, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 20 * time.Minute}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("offline speech model download failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("offline speech model download returned HTTP %d", response.StatusCode)
+	}
+	temporary := destination + ".part"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, 1024*1024*1024))
+	closeErr := file.Close()
+	if copyErr != nil || closeErr != nil || written < 100*1024*1024 {
+		_ = os.Remove(temporary)
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return fmt.Errorf("offline speech model download was incomplete")
+	}
+	if fmt.Sprintf("%x", hash.Sum(nil)) != whisperBaseEnglishModelSHA256 {
+		_ = os.Remove(temporary)
+		return fmt.Errorf("offline speech model checksum did not match the pinned release")
+	}
+	return os.Rename(temporary, destination)
 }

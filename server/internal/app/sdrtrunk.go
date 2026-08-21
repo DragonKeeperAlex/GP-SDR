@@ -105,6 +105,9 @@ func sdrTrunkLauncher() string {
 func (m *OP25Manager) Start(profile ScanProfile, plan []ReceiverPlanItem, devices []SDRDevice, dataDirectory string) error {
 	m.restartMu.Lock()
 	defer m.restartMu.Unlock()
+	m.mu.Lock()
+	m.rateFallback = false
+	m.mu.Unlock()
 	return m.start(profile, plan, devices, dataDirectory)
 }
 
@@ -138,7 +141,10 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 		return err
 	}
 	_ = importExistingSDRTrunkTunerConfiguration(applicationRoot)
-	_ = optimizeHackRFP25SampleRate(applicationRoot, profile)
+	m.mu.Lock()
+	conservativeRate := m.rateFallback
+	m.mu.Unlock()
+	_ = optimizeHackRFP25SampleRate(applicationRoot, profile, conservativeRate)
 	jmbePath := findJMBELibrary(dataDirectory, applicationRoot)
 	preferencesRoot := filepath.Join(runtimeDirectory, "java-preferences")
 	if jmbePath != "" {
@@ -210,7 +216,59 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 		m.stop(false)
 		return fmt.Errorf("SDRTrunk did not become ready: %w (log: %s)\n%s", err, logPath, diagnostics)
 	}
+	go m.monitorSDRTrunkHackRFTransport(command, logPath)
 	return nil
+}
+
+// monitorSDRTrunkHackRFTransport preserves the wide 10 MS/s P25 channelizer
+// whenever the stream is healthy. If the backend reports a libusb transport
+// failure, GP-SDR performs one supervised restart at 5 MS/s. The fallback is
+// kept for talkgroup-setting restarts, and reset on the next explicit Start.
+func (m *OP25Manager) monitorSDRTrunkHackRFTransport(command *exec.Cmd, logPath string) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	timeout := time.NewTimer(75 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case <-timeout.C:
+			return
+		case <-ticker.C:
+			m.mu.Lock()
+			current, alreadyFallback := m.command == command, m.rateFallback
+			m.mu.Unlock()
+			if !current || alreadyFallback {
+				return
+			}
+			text := strings.ToUpper(tailText(logPath, 128_000))
+			if !strings.Contains(text, "LIBUSB_ERROR_PIPE") && !strings.Contains(text, "LIBUSB_ERROR_NO_DEVICE") &&
+				!strings.Contains(text, "TRANSFER ERROR") && !strings.Contains(text, "DROPPED SAMPLE") {
+				continue
+			}
+			m.restartMu.Lock()
+			m.mu.Lock()
+			if m.command != command || m.rateFallback || m.profile == nil || m.dataRoot == "" {
+				m.mu.Unlock()
+				m.restartMu.Unlock()
+				return
+			}
+			m.rateFallback = true
+			profile := *m.profile
+			plan := append([]ReceiverPlanItem(nil), m.plan...)
+			devices := append([]SDRDevice(nil), m.devices...)
+			dataRoot := m.dataRoot
+			m.mu.Unlock()
+			err := m.start(profile, plan, devices, dataRoot)
+			m.restartMu.Unlock()
+			if err != nil {
+				message := "P25 automatic 5 MS/s fallback failed: " + err.Error()
+				m.mu.Lock()
+				m.lastError = &message
+				m.mu.Unlock()
+			}
+			return
+		}
+	}
 }
 
 func quoteLauncherOption(value string) string {
@@ -238,6 +296,7 @@ func (m *OP25Manager) stop(clearSession bool) {
 	m.engine, m.apiURL = "", nil
 	if clearSession {
 		m.profile, m.plan, m.devices, m.dataRoot, m.sessionStart = nil, nil, nil, "", time.Time{}
+		m.rateFallback = false
 	}
 	m.mu.Unlock()
 }
@@ -245,7 +304,7 @@ func (m *OP25Manager) stop(clearSession bool) {
 func (m *OP25Manager) Status() P25Status {
 	m.mu.Lock()
 	engine, command, done, waitError := m.engine, m.command, m.done, m.waitError
-	profileID, configPath, sessionStart := m.profileID, m.configPath, m.sessionStart
+	profileID, configPath, sessionStart, profile, rateFallback := m.profileID, m.configPath, m.sessionStart, m.profile, m.rateFallback
 	m.mu.Unlock()
 	if engine == "SDRTrunk" && command != nil {
 		select {
@@ -258,9 +317,24 @@ func (m *OP25Manager) Status() P25Status {
 		default:
 			status := P25Status{State: "running", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath,
 				Reception: "searching", Note: "SDRTrunk is checking the configured P25 control channels."}
+			if profile != nil {
+				status.CaptureRateHz = profile.Settings.P25SampleRateHz
+				if status.CaptureRateHz == 0 {
+					status.CaptureRateHz = 10_000_000
+				}
+			}
+			if rateFallback {
+				status.CaptureRateHz = 5_000_000
+				status.Note += " Receiver transport fallback is active."
+			}
 			if configPath != nil {
 				root := filepath.Dir(filepath.Dir(*configPath))
-				locked, calls := inspectSDRTrunkEvents(filepath.Join(root, "event_logs"), sessionStart)
+				eventDirectory := filepath.Join(root, "event_logs")
+				locked, calls := inspectSDRTrunkEvents(eventDirectory, sessionStart)
+				status.ControlChannelHz = inspectSDRTrunkControlFrequency(eventDirectory, sessionStart)
+				if status.ControlChannelHz > 0 {
+					status.ControlSource = "decoded"
+				}
 				logText := tailText(filepath.Join(filepath.Dir(filepath.Dir(root)), "sdrtrunk.log"), 256_000)
 				if strings.Contains(logText, "JMBE audio conversion library") && strings.Contains(logText, "successfully loaded") {
 					status.Note += " P25 voice codec is loaded."
@@ -270,6 +344,12 @@ func (m *OP25Manager) Status() P25Status {
 				if locked || calls > 0 {
 					status.Reception = "locked"
 					status.Note = "P25 control channel locked; SDRTrunk is following traffic and decoding available voice."
+					if status.ControlChannelHz == 0 && profile != nil {
+						if systems := enabledP25Systems(*profile); len(systems) > 0 && len(systems[0].ControlChannelsHz) > 0 {
+							status.ControlChannelHz = systems[0].ControlChannelsHz[0]
+							status.ControlSource = "configured"
+						}
+					}
 				}
 			}
 			return status
@@ -318,8 +398,15 @@ func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint
 			fmt.Fprintf(&text, "  <alias name=\"%s\" list=\"%s\" group=\"%s\">\n", xmlValue(talkgroup.Name), xmlValue(listName), xmlValue(system.Name))
 			fmt.Fprintf(&text, "    <id type=\"talkgroup\" protocol=\"APCO25\" value=\"%d\"/>\n", talkgroup.ID)
 			fmt.Fprintf(&text, "    <id type=\"priority\" priority=\"%d\"/>\n", priority)
+			if !talkgroup.Encrypted && talkgroup.Enabled {
+				text.WriteString("    <id type=\"record\"/>\n")
+			}
 			text.WriteString("  </alias>\n")
 		}
+		fmt.Fprintf(&text, "  <alias name=\"GP-SDR Auto Record\" list=\"%s\" group=\"%s\">\n", xmlValue(listName), xmlValue(system.Name))
+		text.WriteString("    <id type=\"talkgroupRange\" protocol=\"APCO25\" min=\"1\" max=\"65535\"/>\n")
+		text.WriteString("    <id type=\"record\"/>\n")
+		text.WriteString("  </alias>\n")
 		fmt.Fprintf(&text, "  <channel system=\"%s\" enabled=\"true\" site=\"%s\" order=\"1\" name=\"%s\">\n", xmlValue(system.Name), xmlValue(system.Name), xmlValue(system.Name))
 		text.WriteString("    <aux_decode_configuration/>\n")
 		text.WriteString("    <decode_configuration type=\"decodeConfigP25Phase1\" modulation=\"CQPSK\" traffic_channel_pool_size=\"30\" ignore_data_calls=\"false\"/>\n")
@@ -408,14 +495,17 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 	return os.WriteFile(destination, data, 0o600)
 }
 
-// optimizeHackRFP25SampleRate prevents a broad SDRTrunk desktop setting from
-// making a compact trunked site unnecessarily expensive to decode. Five MS/s
-// is SDRTrunk's HackRF default and comfortably covers control-channel groups
-// spanning up to 3.5 MHz while materially reducing USB and channelizer load.
-// Wider systems keep the user's existing rate.
-func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile) error {
+// optimizeHackRFP25SampleRate gives compact HackRF P25 sites a 10 MS/s capture,
+// wide enough for simultaneous control and traffic channels while retaining
+// margin below the receiver's maximum transport load. A supervised transport
+// failure switches the current session to 5 MS/s. Wider systems keep the
+// user's existing rate. The isolated GP-SDR runtime
+// also forces the HackRF RF amplifier off: importing a desktop SDRTrunk config
+// with that amplifier enabled can overload a window antenna and produce
+// robotic, intermittently synchronized P25 voice even while control lock holds.
+func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile, conservative bool) error {
 	minimum, maximum, found := p25ControlChannelSpan(profile)
-	if !found || maximum-minimum > 3_500_000 {
+	if !found || (maximum-minimum > 3_500_000 && profile.Settings.P25SampleRateHz == 0 && !conservative) {
 		return nil
 	}
 	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
@@ -429,16 +519,19 @@ func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile) er
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil
 	}
-	highRates := map[string]bool{
-		"RATE_5_5": true, "RATE_6_0": true, "RATE_7_0": true, "RATE_8_0": true,
-		"RATE_9_0": true, "RATE_10_0": true, "RATE_12_0": true, "RATE_14_0": true,
-		"RATE_15_0": true, "RATE_20_0": true,
+	desiredRate := hackRFSampleRateName(profile.Settings.P25SampleRateHz)
+	if conservative {
+		desiredRate = "RATE_5_0"
 	}
 	changed := false
 	for _, tuner := range root.Tuners {
 		if tuner["type"] == "hackRFTunerConfiguration" {
-			if rate, ok := tuner["sampleRate"].(string); ok && highRates[rate] {
-				tuner["sampleRate"] = "RATE_5_0"
+			if enabled, ok := tuner["amplifierEnabled"].(bool); !ok || enabled {
+				tuner["amplifierEnabled"] = false
+				changed = true
+			}
+			if rate, ok := tuner["sampleRate"].(string); ok && rate != desiredRate {
+				tuner["sampleRate"] = desiredRate
 				changed = true
 			}
 		}
@@ -452,6 +545,19 @@ func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile) er
 	}
 	updated = append(updated, '\n')
 	return os.WriteFile(path, updated, 0o600)
+}
+
+func hackRFSampleRateName(rate int) string {
+	switch rate {
+	case 5_000_000:
+		return "RATE_5_0"
+	case 8_000_000:
+		return "RATE_8_0"
+	case 20_000_000:
+		return "RATE_20_0"
+	default:
+		return "RATE_10_0"
+	}
 }
 
 func p25ControlChannelSpan(profile ScanProfile) (float64, float64, bool) {
@@ -570,6 +676,61 @@ func inspectSDRTrunkEvents(directory string, since time.Time) (bool, int) {
 		}
 	}
 	return locked, calls
+}
+
+var (
+	sdrTrunkBandPlanPattern = regexp.MustCompile(`\bID:(\d+)\b.*\bSPACING:(\d+)\b.*\bBASE:(\d+)\b`)
+	sdrTrunkChannelPattern  = regexp.MustCompile(`\bCHAN:(\d+)-(\d+)\b`)
+)
+
+// inspectSDRTrunkControlFrequency derives the active downlink from the current
+// session's P25 band-plan and network-status messages. SDRTrunk does not write
+// the tuned control frequency directly into every decoded-message log line.
+func inspectSDRTrunkControlFrequency(directory string, since time.Time) float64 {
+	files, _ := filepath.Glob(filepath.Join(directory, "*_decoded_messages.log"))
+	type bandPlan struct {
+		baseHz    uint64
+		spacingHz uint64
+	}
+	plans := make(map[uint64]bandPlan)
+	logs := make([]string, 0, len(files))
+	var frequencyHz uint64
+	for _, file := range files {
+		if !fileModifiedSince(file, since) {
+			continue
+		}
+		text := tailText(file, 512_000)
+		logs = append(logs, text)
+		for _, line := range strings.Split(text, "\n") {
+			upper := strings.ToUpper(line)
+			if match := sdrTrunkBandPlanPattern.FindStringSubmatch(upper); len(match) == 4 {
+				id, idErr := strconv.ParseUint(match[1], 10, 16)
+				spacing, spacingErr := strconv.ParseUint(match[2], 10, 64)
+				base, baseErr := strconv.ParseUint(match[3], 10, 64)
+				if idErr == nil && spacingErr == nil && baseErr == nil && spacing > 0 && base > 0 {
+					plans[id] = bandPlan{baseHz: base, spacingHz: spacing}
+				}
+			}
+		}
+	}
+	// A status broadcast can arrive before its identifier update, particularly
+	// during startup. Resolve channels only after collecting the full band plan.
+	for _, text := range logs {
+		for _, line := range strings.Split(text, "\n") {
+			upper := strings.ToUpper(line)
+			if !strings.Contains(upper, "NET_STATUS_BCAST") && !strings.Contains(upper, "RFSS_STATUS_BCST") {
+				continue
+			}
+			if match := sdrTrunkChannelPattern.FindStringSubmatch(upper); len(match) == 3 {
+				id, idErr := strconv.ParseUint(match[1], 10, 16)
+				channel, channelErr := strconv.ParseUint(match[2], 10, 64)
+				if plan, ok := plans[id]; ok && idErr == nil && channelErr == nil {
+					frequencyHz = plan.baseHz + channel*plan.spacingHz
+				}
+			}
+		}
+	}
+	return float64(frequencyHz)
 }
 
 func fileModifiedSince(path string, since time.Time) bool {

@@ -56,6 +56,11 @@
           <p id="view-subtitle">Receiver and channel mixer</p>
         </div>
         <div class="top-actions">
+          <div class="master-audio" title="Master volume for GP-SDR live audio and recordings">
+            <button id="master-mute" class="icon-button" type="button" aria-label="Mute all GP-SDR audio" aria-pressed="false" title="Mute all GP-SDR audio">🔊</button>
+            <input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="GP-SDR master volume" title="Whole-app volume">
+            <output id="master-volume-value" for="master-volume">80%</output>
+          </div>
           <label class="profile-select-wrap" title="Profile used when the survey starts">
             <span>Profile</span>
             <select id="active-profile"></select>
@@ -133,9 +138,12 @@
             <form id="tuner-form">
               <div class="tuner-readout"><span>Frequency</span><strong id="tuner-readout">462.6750</strong><small>MHz</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
               <label>Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
-              <label>Frequency · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Center frequency in MHz"></label>
+              <div class="form-grid two"><label>Hardware center · MHz<input id="tuner-hardware-center" type="number" min="0.001" step="0.000001" placeholder="Auto offset" title="Physical SDR tuning center; leave blank to place the VFO away from the DC spike"></label><label>Listen VFO · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Software-demodulated frequency; Up and Down use the selected tuning step"></label></div>
+              <label>Tuning step<select id="tuner-step" title="Frequency change used by the arrow keys"><option value="0.001">1 kHz</option><option value="0.0025">2.5 kHz</option><option value="0.005">5 kHz</option><option value="0.00625">6.25 kHz</option><option value="0.0125" selected>12.5 kHz</option><option value="0.025">25 kHz</option><option value="0.1">100 kHz</option></select></label>
+              <label>Recent frequencies<select id="tuner-history" title="Return to a recently tuned frequency"><option value="">No recent frequencies</option></select></label>
+              <label class="check-line"><input id="tuner-lock-center" type="checkbox"> Lock center · software VFO</label>
               <div class="form-grid two">
-                <label>Mode<select id="tuner-mode" title="Audio demodulation mode"><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+                <label>Mode<select id="tuner-mode" title="Automatic uses local IQ analysis to choose AM, NFM, or WFM"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
                 <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Audio channel bandwidth"></label>
               </div>
               <div class="form-grid two">
@@ -151,16 +159,16 @@
                   <label>IQ phase · °<input id="tuner-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label>
                 </div>
                 <div class="form-grid two"><label>Squelch · dB<input id="tuner-squelch" type="number" min="0" max="60" step="1" value="8"></label><label>Noise reduction<select id="tuner-noise" title="Local low-latency speech noise reduction"><option value="off">Off</option><option value="voice" selected>Voice</option><option value="strong">Strong</option></select></label></div>
-                <div class="toggle-grid"><label><input id="tuner-amp" type="checkbox"> RF amp</label><label><input id="tuner-bias" type="checkbox"> Antenna power</label><label><input id="tuner-dc" type="checkbox" checked> DC removal</label><label><input id="tuner-iq-swap" type="checkbox"> Swap I/Q</label><label><input id="tuner-agc" type="checkbox" checked> AGC</label><label><input id="tuner-monitor-open" type="checkbox"> Open squelch</label><label><input id="tuner-use-calibration" type="checkbox" checked> Apply saved calibration</label></div>
+                <div class="toggle-grid"><label><input id="tuner-amp" type="checkbox"> RF amp</label><label><input id="tuner-bias" type="checkbox"> Antenna power</label><label><input id="tuner-dc" type="checkbox" checked> DC removal</label><label><input id="tuner-iq-swap" type="checkbox"> Swap I/Q</label><label><input id="tuner-agc" type="checkbox" checked> Audio AGC</label><label><input id="tuner-monitor-open" type="checkbox"> Open squelch</label><label><input id="tuner-use-calibration" type="checkbox" checked> Apply saved calibration</label></div>
               </details>
-              <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Tune</button><button id="tuner-stop" type="button">Stop</button></div>
+              <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Tune</button><button id="tuner-stop" type="button">Stop</button><button id="tuner-bookmark" type="button" title="Save the current frequency as a reusable scan profile">Save channel</button></div>
               <p id="tuner-status">Choose a receiver and frequency.</p>
             </form>
           </article>
           <div class="tuner-displays">
             <article class="panel spectrum-panel tuner-spectrum-panel">
-              <div class="panel-head"><div><h2>Spectrum</h2><span id="tuner-span">No IQ data</span></div><span id="tuner-center" class="frequency-caption">—</span></div>
-              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum"></canvas>
+              <div class="panel-head"><div><h2>Spectrum</h2><span id="tuner-span">No IQ data</span></div><span id="tuner-cursor" class="frequency-caption">Hover for frequency</span><span id="tuner-center" class="frequency-caption">—</span></div>
+              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum; click to copy a frequency into the tuner" title="Click a signal to copy its frequency into the tuner"></canvas>
             </article>
             <article class="panel waterfall-panel">
               <div class="panel-head"><div><h2>Waterfall</h2><span>Newest samples appear at the top</span></div><div class="waterfall-scale"><i></i><span>−110</span><span>−20 dBFS</span></div></div>
@@ -204,6 +212,7 @@
             <div><span>Checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 passes</small></div>
             <div><span>Hits</span><strong id="mapper-hits">0</strong><small id="mapper-last-activity">No activity yet</small></div>
             <div><span>Elapsed</span><strong id="mapper-elapsed">—</strong><small id="mapper-channel-time">—</small></div>
+            <div><span>Pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">Calculating after the first channel</small></div>
           </div>
           <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
           <form id="mapper-form" class="mapper-controls">
@@ -213,6 +222,7 @@
             <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
             <label>Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
             <label>Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
+            <label>Capture width<select id="mapper-rate" title="Receiver sample rate; wider rates show more spectrum but use more USB and CPU"><option value="0">Auto</option><option value="2000000">2 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
             <label id="mapper-listen-wrap" class="hidden">Listen per channel<div class="mapper-duration-input"><input id="mapper-listen-value" type="number" min="1" step="1" value="1"><select id="mapper-listen-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
             <label>Mode<select id="mapper-mode"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
             <label class="check-line"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
@@ -304,6 +314,11 @@
 		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option></select></label>
 		    <label>Spectrum detail<select id="display-detail"><option value="256">Fast</option><option value="512" selected>Detailed</option><option value="1024">Maximum</option></select></label>
 		    <label>Trace smoothing<input id="display-smoothing" type="range" min="0" max="90" step="5" value="20"><output id="display-smoothing-value">20%</output></label>
+		    <label class="check-line"><input id="display-peak-hold" type="checkbox"> Spectrum peak hold</label>
+		    <label class="check-line"><input id="display-markers" type="checkbox" checked> Channel markers</label>
+		    <label>Display floor<select id="display-floor"><option value="-140">−140 dBFS</option><option value="-130">−130 dBFS</option><option value="-120" selected>−120 dBFS</option><option value="-110">−110 dBFS</option></select></label>
+		    <label>Display ceiling<select id="display-ceiling"><option value="-10">−10 dBFS</option><option value="-20" selected>−20 dBFS</option><option value="-30">−30 dBFS</option><option value="-40">−40 dBFS</option></select></label>
+		    <button id="display-peak-reset" type="button">Reset peak hold</button>
 		  </div><p class="range-sync-detail">Changes apply immediately and are saved on this device.</p></article>
           <article class="panel settings-card"><h2>Controls</h2><div class="display-settings"><label>Interface mode<select id="interface-mode"><option value="beginner">Beginner</option><option value="advanced">Advanced</option></select></label></div><p class="range-sync-detail">Beginner uses saved calibration and automatic receiver settings. Advanced exposes manual RF and I/Q controls.</p></article>
           <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd></dl></article>
@@ -344,6 +359,7 @@
         <div class="toggle-grid">
           <label><input id="record-audio" type="checkbox"> Record audio</label>
           <label><input id="transcribe-voice" type="checkbox"> Transcribe voice</label>
+          <label>P25 capture width<select id="p25-sample-rate" title="Auto uses 10 MS/s and falls back if the USB stream becomes unstable"><option value="0">Auto · 10 MS/s</option><option value="5000000">5 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
         </div>
       </div>
       <footer><button value="cancel">Cancel</button><button id="save-profile" class="primary" value="default">Save profile</button></footer>
@@ -382,6 +398,17 @@
         <a id="setup-link" class="setup-link" href="#" target="_blank" rel="noreferrer">Open upstream instructions ↗</a>
       </div>
       <footer><button value="cancel" class="primary">Done</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="missing-components-dialog" class="setup-dialog missing-components-dialog">
+    <form method="dialog">
+      <header><div><h2>Optional tools not installed</h2><p>Core receiving still works. Install these to unlock their listed decoders.</p></div><button value="cancel" class="dialog-close" title="Ignore for now">×</button></header>
+      <div class="dialog-body">
+        <div id="missing-components-list" class="missing-components-list"></div>
+        <p class="range-sync-detail">GP-SDR only runs allow-listed installers. Manual items open the upstream download instructions.</p>
+      </div>
+      <footer><button id="missing-components-ignore" value="cancel">Ignore</button><button id="missing-components-review" type="button" class="primary">Review in Hardware</button></footer>
     </form>
   </dialog>
 

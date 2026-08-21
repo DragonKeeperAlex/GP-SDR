@@ -50,6 +50,9 @@ func TestMapperProgressTracksFrequencyPassesAndLongListenWindow(t *testing.T) {
 	if progress.TargetEndsAt == nil || progress.TargetStartedAt == nil || progress.TargetEndsAt.Sub(*progress.TargetStartedAt) != 48*time.Hour {
 		t.Fatalf("expected a 48 hour channel listen window: %+v", progress)
 	}
+	if progress.EstimatedPassEndAt == nil || progress.EstimatedPassEndAt.Sub(*progress.TargetStartedAt) != 96*time.Hour {
+		t.Fatalf("expected ETA to include the current and remaining channel: %+v", progress)
+	}
 	record := manager.Status().Records[0]
 	if record.IdentificationSource != "RadioReference import · Test" || record.Confidence != .98 {
 		t.Fatalf("unexpected identification evidence: %+v", record)
@@ -102,7 +105,7 @@ func TestMapperBandIdentification(t *testing.T) {
 	}{
 		{99_700_000, "Analog FM"},
 		{125_000_000, "Aviation AM"},
-		{1090_000_000, "ADS-B / Mode S"},
+		{1090_000_000, "ADS-B / Mode S candidate"},
 		{774_181_250, "Likely P25"},
 	}
 	for _, test := range tests {
@@ -138,8 +141,37 @@ func TestMapperCSVIncludesCompleteRecordsAndEscapesFormulas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed) != 2 || parsed[1][2] != "'=unsafe" || parsed[1][14] != "'+transcript" {
+	if len(parsed) != 2 || parsed[1][2] != "'=unsafe" || parsed[1][21] != "'+transcript" {
 		t.Fatalf("unexpected CSV output: %#v", parsed)
+	}
+}
+
+func TestDecoderTargetsAddProfilesAndMapperCandidateEvidence(t *testing.T) {
+	profiles := decoderScanProfiles()
+	if len(profiles) != 6 {
+		t.Fatalf("expected six decoder scan profiles, got %d", len(profiles))
+	}
+	for _, id := range []string{"dsd-fme", "rtl-433", "dump1090", "multimon-ng", "acarsdec", "ais"} {
+		found := false
+		for _, profile := range profiles {
+			for _, channel := range profile.Channels {
+				found = found || channel.Decoder != nil && *channel.Decoder == id
+			}
+			for _, scanRange := range profile.Ranges {
+				found = found || scanRange.Decoder != nil && *scanRange.Decoder == id
+			}
+		}
+		if !found {
+			t.Fatalf("decoder %s has no scan target", id)
+		}
+	}
+
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord)}
+	manager.Observe(1090e6, true, -30, -75, "DIGITAL", "ADS-B / Mode S candidate", "Aircraft transponder", "")
+	manager.SetDecoderEvidence(1090e6, "dump1090", "candidate", "RF activity near 1090 MHz", true)
+	record := manager.Status().Records[0]
+	if record.CandidateDecoder != "dump1090" || record.DetectionStatus != "candidate" || !record.DecoderReady {
+		t.Fatalf("unexpected decoder evidence: %+v", record)
 	}
 }
 

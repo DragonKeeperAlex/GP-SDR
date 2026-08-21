@@ -15,10 +15,10 @@ provided by user-space receiver tools or the operating system's USB driver.
 
 ## macOS 13 or newer
 
-Use `GP-SDR-1.0.12-macos-universal.zip` unless you specifically need the smaller
+Use `GP-SDR-1.0.13-macos-universal.dmg` unless you specifically need the smaller
 Apple Silicon (`arm64`) or Intel (`x86_64`) package.
 
-1. Unzip the package and move **GP-SDR.app** to Applications.
+1. Open the DMG and drag **GP-SDR.app** to Applications.
 2. Control-click the app, choose **Open**, then confirm **Open**. The public
    package is ad-hoc signed but is not Apple-notarized.
 3. Open **Hardware** and press **Refresh**.
@@ -58,9 +58,9 @@ from another device. Local use does not require a public-network firewall rule.
 Choose the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.0.12_amd64.deb
+sudo apt install ./gp-sdr_1.0.13_amd64.deb
 # or, on 64-bit ARM:
-sudo apt install ./gp-sdr_1.0.12_arm64.deb
+sudo apt install ./gp-sdr_1.0.13_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -95,6 +95,11 @@ authenticated HTTPS reverse proxy outside a trusted LAN.
 5. Create JMBE if unencrypted calls have no audio.
 6. Use the unified talkgroup mixer to mute, solo, or change each talkgroup level.
 
+GP-SDR forces the HackRF RF amplifier off when starting its isolated P25
+receiver. Excess front-end gain can preserve control-channel lock while making
+voice frames sound robotic or intermittent; raise LNA/VGA gain gradually before
+enabling an external amplifier.
+
 Encrypted calls can be identified and logged but are not decrypted. A quiet
 system, wrong control channel, unsuitable antenna, overload, or weak signal can
 all produce no calls even when the software is operating normally.
@@ -116,14 +121,33 @@ Open the displayed tokenized URL from a phone on the same trusted network.
 
 ## Optional components
 
-- **Transcription:** install `whisper.cpp`, select `whisper-cli`, and choose a
-  local model. Audio and text remain local unless Mapper upload is enabled.
+- **Transcription:** press **Install** on the Transcription card. GP-SDR installs
+  `whisper.cpp` and downloads the pinned English base model after you confirm.
+  Audio and text remain local unless Mapper upload is enabled.
 - **SoapySDR:** install SoapySDR and the module for the exact receiver. The macOS
   app already contains GP-SDR's Universal stream bridge.
 - **RadioReference:** use approved API credentials, or download official CSVs
   while signed in and select their folder under **Settings → Local database**.
 - **Other decoders:** cards show **Install** or **How to** only when GP-SDR can
   safely automate or explain the platform-specific setup.
+
+### Optional decoders on macOS
+
+GP-SDR detects decoder executables in both Apple Silicon and Intel Homebrew
+prefixes. The following helper installs the maintained upstream builds of
+DSD-FME, dump1090, multimon-ng, acarsdec, and AIS-catcher, plus the dependencies
+needed for GP-SDR's file/audio bridges:
+
+```bash
+chmod +x Scripts/install_optional_decoders_macos.sh
+Scripts/install_optional_decoders_macos.sh
+```
+
+The helper builds in a temporary directory and installs into the active
+Homebrew prefix. It does not start background services or change USB/network
+security settings. Return to **Hardware** and press **Refresh** when it finishes.
+The source projects and their licenses remain independent and are credited in
+`THIRD_PARTY.md`.
 
 ## Troubleshooting
 
@@ -149,7 +173,7 @@ On Windows PowerShell, compare this result with the matching line in
 `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\GP-SDR-1.0.12-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\GP-SDR-1.0.13-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ## Build from source
@@ -167,7 +191,7 @@ To create all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.12
+Scripts/build_release.sh 1.0.13
 ```
 
 Do not build a source checkout from a cloud-synced folder while it is resolving

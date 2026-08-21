@@ -23,13 +23,39 @@ type Transcriber struct {
 	semaphore  chan struct{}
 }
 
-func NewTranscriber() *Transcriber {
+func NewTranscriber(dataDirectories ...string) *Transcriber {
 	executable := strings.TrimSpace(os.Getenv("GPSDR_WHISPER_EXECUTABLE"))
 	if executable == "" {
 		executable, _ = findTool("whisper-cli", "main")
 	}
 	model := strings.TrimSpace(os.Getenv("GPSDR_WHISPER_MODEL"))
+	if model == "" {
+		model = findWhisperModel(dataDirectories...)
+	}
 	return &Transcriber{executable: executable, model: model, semaphore: make(chan struct{}, 1)}
+}
+
+func findWhisperModel(dataDirectories ...string) string {
+	candidates := make([]string, 0, 16)
+	for _, directory := range dataDirectories {
+		if strings.TrimSpace(directory) != "" {
+			for _, name := range []string{"ggml-base.en.bin", "ggml-small.en.bin", "ggml-tiny.en.bin", "ggml-base.bin", "ggml-small.bin", "ggml-tiny.bin"} {
+				candidates = append(candidates, filepath.Join(directory, "Components", "Whisper", name))
+			}
+		}
+	}
+	if executable, err := os.Executable(); err == nil {
+		base := filepath.Dir(executable)
+		for _, name := range []string{"ggml-base.en.bin", "ggml-small.en.bin", "ggml-tiny.en.bin"} {
+			candidates = append(candidates, filepath.Join(base, "..", "Models", name), filepath.Join(base, "..", "Resources", "Models", name))
+		}
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(filepath.Clean(candidate)); err == nil && !info.IsDir() && info.Size() > 10*1024*1024 {
+			return filepath.Clean(candidate)
+		}
+	}
+	return ""
 }
 
 func (t *Transcriber) Status() TranscriptionStatus {
@@ -64,7 +90,7 @@ func (t *Transcriber) Transcribe(parent context.Context, wavPath string) (string
 	defer os.RemoveAll(outputDirectory)
 	outputBase := filepath.Join(outputDirectory, "transcript")
 	command := exec.CommandContext(contextWithTimeout, t.executable,
-		"-m", t.model, "-f", wavPath, "-otxt", "-of", outputBase, "-nt", "-np")
+		"-m", t.model, "-f", wavPath, "-l", "en", "--prompt", "Two-way radio traffic. Callsigns may be spoken with NATO phonetics.", "-otxt", "-of", outputBase, "-nt", "-np")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))

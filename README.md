@@ -17,7 +17,11 @@ browser and is designed for phones and tablets.
 - Native HackRF and RTL-SDR discovery and live IQ input
 - Concurrent receivers with control, voice, survey, tuner, and channel-bank roles
 - Built-in AM, narrow FM, and broadcast FM DSP, squelch, recording, and live audio
-- Real tuner spectrum and scrolling waterfall
+- Real tuner spectrum and scrolling waterfall with peak hold, channel markers,
+  cursor frequency/power, click-to-tune, recent frequencies, and estimated SNR
+- Separate hardware center and software Listen VFO controls; GP-SDR offsets a
+  new VFO away from receiver DC by default and can move it inside a locked
+  HackRF/RTL-SDR passband without restarting the device
 - Unified channel controls plus per-talkgroup mute, solo, identity, and activity
 - Unattended activity logging, signal grouping, recordings, and later review
 - Mapper Discovery and Decipher workflows with live frequency/progress,
@@ -25,6 +29,9 @@ browser and is designed for phones and tablets.
   identification evidence, optional location/transcription, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
   acarsdec, and AIS-catcher
+- Built-in decoder scan profiles for conventional digital voice, common
+  315/345/433.92/868/915 MHz sensors, 1090 MHz ADS-B/Mode S, paging/signaling,
+  North American ACARS, and both marine AIS channels
 - Built-in GMRS, NOAA Weather Radio, MURS, CB, broadcast FM/AM, civil air,
   marine VHF, 2 m, 70 cm, public-safety discovery, and custom-range profiles
 - Bundled San Ramon/East Bay conventional and P25 profiles, all 84 California
@@ -42,6 +49,11 @@ browser and is designed for phones and tablets.
 Encrypted P25 calls are identified and skipped. GP-SDR does not transmit and
 does not attempt to defeat encryption.
 
+Mapper keeps RF evidence separate from protocol proof. Activity on a known
+decoder target is labeled as a candidate and records the matching decoder and
+its installation state; a specific protocol is not claimed merely because a
+frequency falls inside a known band.
+
 ## Install and run
 
 For the complete first-run checklist, receiver-driver steps, P25 setup, LAN
@@ -49,8 +61,8 @@ access, and troubleshooting, see the [installation guide](Docs/INSTALL.md).
 
 ### macOS
 
-Download the Universal package for the easiest choice, unzip it, and open
-**GP-SDR.app**. Separate arm64 and x86_64 packages are also available. These
+Download the Universal DMG for the easiest choice, drag **GP-SDR.app** to
+Applications, and open it. Separate arm64 and x86_64 ZIP packages are also available. These
 preview bundles are ad-hoc signed rather than Apple-notarized, so macOS may
 require Control-click → **Open** the first time.
 
@@ -74,7 +86,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.12_amd64.deb
+sudo apt install ./gp-sdr_1.0.13_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -136,7 +148,9 @@ brew install hackrf librtlsdr soapysdr cmake
 Scripts/build_optional_components.sh build/helpers/darwin-arm64
 ```
 
-For offline transcription, install whisper.cpp and set:
+For offline transcription, use **Install** on the in-app Transcription card.
+GP-SDR installs whisper.cpp and downloads its checksum-pinned English base
+model without an API key. Source builds can still override either path with:
 
 ```bash
 export GPSDR_WHISPER_EXECUTABLE=/path/to/whisper-cli
@@ -200,7 +214,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.12
+Scripts/build_release.sh 1.0.13
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -229,7 +243,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.12.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.13.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

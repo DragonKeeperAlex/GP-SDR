@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.12-dev}
+VERSION=${1:-1.0.13-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.12; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.13; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
@@ -138,14 +138,28 @@ make_mac_app() {
   chmod 755 "$app_root/Contents/MacOS/GP-SDR" "$app_root/Contents/Resources/bin/gpsdr-server"
   find "$app_root/Contents/Resources" -path '*/bin/*' -type f -exec chmod 755 {} \;
   xattr -cr "$app_root"
-  codesign --force --sign - "$app_root/Contents/MacOS/GP-SDR"
-  codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-server"
-  if [ -f "$app_root/Contents/Resources/bin/gpsdr-soapy" ]; then
-    codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-soapy"
+  signing_identity=${GPSDR_CODESIGN_IDENTITY:--}
+  codesign_options=""
+  if [ "$signing_identity" != "-" ]; then
+    codesign_options="--options runtime --timestamp"
   fi
-  codesign --force --sign - "$app_root/Contents/Resources/bin/gpsdr-mac-prefs"
-  codesign --force --deep --sign - "$app_root"
+  codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/MacOS/GP-SDR"
+  codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-server"
+  if [ -f "$app_root/Contents/Resources/bin/gpsdr-soapy" ]; then
+    codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-soapy"
+  fi
+  codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-mac-prefs"
+  codesign --force --deep $codesign_options --sign "$signing_identity" "$app_root"
   ditto --norsrc -c -k --keepParent "$app_root" "$DIST_ROOT/GP-SDR-$VERSION-macos-$architecture.zip"
+
+  if [ "$architecture" = "universal" ]; then
+    dmg_root="$APP_BUILD_ROOT/GP-SDR-dmg"
+    mkdir -p "$dmg_root"
+    cp -R "$app_root" "$dmg_root/GP-SDR.app"
+    ln -s /Applications "$dmg_root/Applications"
+    diskutil image create from --format UDZO --volumeName "GP-SDR $VERSION" \
+      "$dmg_root" "$DIST_ROOT/GP-SDR-$VERSION-macos-universal.dmg"
+  fi
 }
 
 make_mac_app arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64" "$BUILD_ROOT/bin/gpsdr-server-darwin-arm64"

@@ -15,14 +15,17 @@ import (
 )
 
 type P25Status struct {
-	State      string  `json:"state"`
-	Engine     string  `json:"engine"`
-	Executable *string `json:"executable"`
-	ProfileID  *string `json:"profileID"`
-	ConfigPath *string `json:"configPath"`
-	APIURL     *string `json:"apiURL,omitempty"`
-	Note       string  `json:"note"`
-	Reception  string  `json:"reception,omitempty"`
+	State            string  `json:"state"`
+	Engine           string  `json:"engine"`
+	Executable       *string `json:"executable"`
+	ProfileID        *string `json:"profileID"`
+	ConfigPath       *string `json:"configPath"`
+	APIURL           *string `json:"apiURL,omitempty"`
+	Note             string  `json:"note"`
+	Reception        string  `json:"reception,omitempty"`
+	ControlChannelHz float64 `json:"controlChannelHz,omitempty"`
+	ControlSource    string  `json:"controlSource,omitempty"`
+	CaptureRateHz    int     `json:"captureRateHz,omitempty"`
 }
 
 type OP25Manager struct {
@@ -46,6 +49,7 @@ type OP25Manager struct {
 	muted        map[uint32]bool
 	restartTimer *time.Timer
 	sessionStart time.Time
+	rateFallback bool
 }
 
 type op25Configuration struct {

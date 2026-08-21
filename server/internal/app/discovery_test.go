@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestUniquePhysicalDevicesPrefersNativeDiscovery(t *testing.T) {
 	serial := "abc123"
@@ -11,5 +14,30 @@ func TestUniquePhysicalDevicesPrefersNativeDiscovery(t *testing.T) {
 	unique := uniquePhysicalDevices(devices)
 	if len(unique) != 1 || unique[0].ID != "hackrf-abc123" {
 		t.Fatalf("expected native hardware entry, got %#v", unique)
+	}
+}
+
+func TestUniquePhysicalDevicesMatchesNativeAndSoapyHackRFByOrdinal(t *testing.T) {
+	invalid, zero := "��", "00000000000000000000000000000000"
+	devices := []SDRDevice{
+		{ID: "hackrf-0", Kind: "HackRF", Serial: &invalid, Driver: "/opt/homebrew/bin/hackrf_info", Connected: true},
+		{ID: "soapy-hackrf-0", Kind: "HackRF", Serial: &zero, Driver: "SoapySDR:hackrf", Connected: true},
+	}
+	unique := uniquePhysicalDevices(devices)
+	if len(unique) != 1 || unique[0].ID != "hackrf-0" {
+		t.Fatalf("same HackRF was exposed twice: %#v", unique)
+	}
+}
+
+func TestValidHackRFSerialRejectsTransientProbeGarbage(t *testing.T) {
+	if got := validHackRFSerial("��"); got != "" {
+		t.Fatalf("accepted invalid serial %q", got)
+	}
+	if got := validHackRFSerial("00000000000000000000000000000000"); got != "" {
+		t.Fatalf("accepted placeholder serial %q", got)
+	}
+	const serial = "000000000000000024B862DC3140C5CB"
+	if got := validHackRFSerial(serial); got != strings.ToLower(serial) {
+		t.Fatalf("rejected valid serial %q", got)
 	}
 }
