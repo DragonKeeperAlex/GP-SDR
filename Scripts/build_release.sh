@@ -159,8 +159,8 @@ make_mac_app() {
     mkdir -p "$dmg_root"
     cp -R "$app_root" "$dmg_root/GP-SDR.app"
     ln -s /Applications "$dmg_root/Applications"
-    diskutil image create from --format UDZO --volumeName "GP-SDR $VERSION" \
-      "$dmg_root" "$DIST_ROOT/GP-SDR-$VERSION-macos-universal.dmg"
+    hdiutil create -volname "GP-SDR $VERSION" -srcfolder "$dmg_root" -ov \
+      -format UDZO "$DIST_ROOT/GP-SDR-$VERSION-macos-universal.dmg"
   fi
 }
 
