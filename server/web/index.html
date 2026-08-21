@@ -76,6 +76,7 @@
           Demo source is active. Events are simulated and clearly marked.
         </div>
         <div id="runtime-error" class="banner error hidden"></div>
+        <div id="health-notices" class="banner health hidden"></div>
         <div class="metric-grid">
           <article class="metric"><span>Receivers</span><strong id="metric-devices">0</strong><small>connected</small></article>
           <article class="metric"><span>Signals</span><strong id="metric-signals">0</strong><small>discovered</small></article>
@@ -195,7 +196,7 @@
           </div>
         </article>
         <article id="activity-events" class="panel table-panel hidden">
-          <div class="panel-head"><div><h2>Timeline</h2><span>Individual transmission events</span></div></div>
+          <div class="panel-head"><div><h2>Timeline</h2><span>Individual transmission events</span></div><input id="event-search" class="search" type="search" placeholder="Search timeline" aria-label="Search transcripts, callsigns, protocols, systems, and frequencies"></div>
           <div class="table-scroll">
             <table><thead><tr><th>Time</th><th>Frequency</th><th>Type</th><th>Level</th><th>Duration</th><th>Transcript</th><th></th></tr></thead>
               <tbody id="events-body"></tbody></table>
@@ -205,17 +206,19 @@
 
       <section id="view-mapper" class="view">
         <article class="panel mapper-control-panel">
-          <div class="panel-head"><div><h2>Range mapper</h2><span>Detect, identify, and consolidate active frequencies</span></div><span id="mapper-state" class="chip">Idle</span></div>
+          <div class="panel-head"><div><h2>Mapper jobs</h2><span>Run one independent workflow per receiver</span></div><div class="mapper-actions"><span id="mapper-state" class="chip">Idle</span><button id="mapper-new-job" type="button" title="Clear the editor for a new Mapper job">New job</button><button id="mapper-import-jobs" type="button" title="Import one or more shared Mapper job files">Import</button><input id="mapper-job-files" type="file" accept="application/json,.json" multiple hidden><button id="mapper-stop-button" type="button" title="Stop every active Mapper job">Stop all</button></div></div>
           <div class="mapper-live" aria-live="polite">
             <div class="mapper-live-frequency"><span>Current frequency</span><strong id="mapper-current-frequency">—</strong><small id="mapper-current-detail">Waiting to start</small></div>
-            <div><span>Pass progress</span><strong id="mapper-pass-progress">—</strong><small id="mapper-pass-count">0 / 0</small></div>
-            <div><span>Checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 passes</small></div>
+            <div><span>Active jobs</span><strong id="mapper-pass-progress">0</strong><small id="mapper-pass-count">0 receivers assigned</small></div>
+            <div><span>Total checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 completed passes</small></div>
             <div><span>Hits</span><strong id="mapper-hits">0</strong><small id="mapper-last-activity">No activity yet</small></div>
             <div><span>Elapsed</span><strong id="mapper-elapsed">—</strong><small id="mapper-channel-time">—</small></div>
-            <div><span>Pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">Calculating after the first channel</small></div>
+            <div><span>Next pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">No active pass</small></div>
           </div>
           <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
           <form id="mapper-form" class="mapper-controls">
+            <input id="mapper-job-id" type="hidden">
+            <label>Job name<input id="mapper-job-name" maxlength="60" placeholder="UHF discovery"></label>
             <label>Receiver<select id="mapper-device"></select></label>
             <label>Workflow<select id="mapper-workflow"><option value="discovery">Discovery</option><option value="decipher">Decipher</option></select></label>
             <label>Start · MHz<input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
@@ -224,7 +227,7 @@
             <label>Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
             <label>Capture width<select id="mapper-rate" title="Receiver sample rate; wider rates show more spectrum but use more USB and CPU"><option value="0">Auto</option><option value="2000000">2 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
             <label id="mapper-listen-wrap" class="hidden">Listen per channel<div class="mapper-duration-input"><input id="mapper-listen-value" type="number" min="1" step="1" value="1"><select id="mapper-listen-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
-            <label>Mode<select id="mapper-mode"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+            <label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
             <label class="check-line"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
             <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
             <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>
@@ -232,12 +235,13 @@
             <label>Latitude<input id="mapper-latitude" type="number" min="-90" max="90" step="0.000001" placeholder="37.000000"></label>
             <label>Longitude<input id="mapper-longitude" type="number" min="-180" max="180" step="0.000001" placeholder="-122.000000"></label>
             <button id="mapper-current-location" type="button">Use current location</button>
-            <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Start mapping</button><button id="mapper-stop-button" type="button">Stop</button></div>
+            <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Save + start</button><button id="mapper-save-job" type="button">Save</button></div>
           </form>
-          <p id="mapper-workflow-detail" class="range-sync-detail">Discovery continuously sweeps the range and revisits it. Decipher dwells on the frequencies already found.</p>
+          <p id="mapper-workflow-detail" class="range-sync-detail">Discovery continuously sweeps this receiver's range. Add another job to use a second SDR at the same time.</p>
         </article>
-        <article class="panel table-panel"><div class="panel-head"><div><h2>Identify results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-actions"><button id="mapper-clear">Clear results</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download CSV</button><button id="mapper-upload-now">Send all to sheet</button></div></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Level</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>
-        <article class="panel mapper-sheet-panel"><div class="panel-head"><div><h2>Google Sheet</h2><span>Writes discoveries to Additions Queue for review</span></div><span id="mapper-upload-state" class="chip">Off</span></div><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue new activity automatically</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Download setup script</button></form><p id="mapper-upload-detail" class="range-sync-detail">Target: Additions Queue · new observations remain unverified until reviewed.</p></article>
+        <div id="mapper-job-grid" class="mapper-job-grid"></div>
+        <article class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver"><option value="">All receivers</option></select><input id="mapper-filter-search" type="search" placeholder="Frequency or identity" aria-label="Filter Mapper results"><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>
+        <details class="panel mapper-sheet-panel"><summary><span><strong>Google Sheet</strong><small>Optional Additions Queue upload</small></span><span id="mapper-upload-state" class="chip">Off</span></summary><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue automatically</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Setup script</button><button id="mapper-upload-now" type="button">Send all now</button></form><p id="mapper-upload-detail" class="range-sync-detail">New observations remain unverified until reviewed.</p></details>
       </section>
 
       <section id="view-profiles" class="view">
@@ -322,7 +326,7 @@
 		  </div><p class="range-sync-detail">Changes apply immediately and are saved on this device.</p></article>
           <article class="panel settings-card"><h2>Controls</h2><div class="display-settings"><label>Interface mode<select id="interface-mode"><option value="beginner">Beginner</option><option value="advanced">Advanced</option></select></label></div><p class="range-sync-detail">Beginner uses saved calibration and automatic receiver settings. Advanced exposes manual RF and I/Q controls.</p></article>
           <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd></dl></article>
-          <article class="panel settings-card"><h2>Data</h2><dl><dt>Format</dt><dd>Portable JSON profiles</dd><dt>Journal</dt><dd>Local event history</dd></dl></article>
+          <article class="panel settings-card"><h2>Data</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd></dl><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p></article>
           <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>
           <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. The companion web app is available to devices on the same network through its private access link.</p></article>
           <article class="panel settings-card"><h2>Radio references</h2><div class="settings-links"><a href="/reference/GMRS_Repeater_Rev3_Accurate_Schematic.svg" target="_blank" rel="noreferrer">Repeater schematic ↗</a><a href="/reference/GMRS_Repeater_Rev3_Exact_Solder_Map_v2.svg" target="_blank" rel="noreferrer">Solder map ↗</a></div></article>
@@ -358,7 +362,9 @@
         <div class="editor-head"><h3>Logging</h3></div>
         <div class="toggle-grid">
           <label><input id="record-audio" type="checkbox"> Record audio</label>
+          <label><input id="record-iq" type="checkbox"> Save IQ for unidentified signals</label>
           <label><input id="transcribe-voice" type="checkbox"> Transcribe voice</label>
+          <label>Keep captures<select id="recording-retention" title="Old GP-SDR recording and IQ date folders are removed when this profile starts"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">Forever</option></select></label>
           <label>P25 capture width<select id="p25-sample-rate" title="Auto uses 10 MS/s and falls back if the USB stream becomes unstable"><option value="0">Auto · 10 MS/s</option><option value="5000000">5 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
         </div>
       </div>

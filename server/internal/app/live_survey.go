@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +19,12 @@ type surveyTarget struct {
 	Label       string
 	Dwell       time.Duration
 	Decoder     *string
+}
+
+type mapperRunContext struct {
+	JobID     string
+	SessionID uint64
+	Config    MapperConfig
 }
 
 func surveyTargets(profile ScanProfile) []surveyTarget {
@@ -53,6 +61,9 @@ func liveSampleRate(device SDRDevice, target surveyTarget) int {
 		// HackRF's documented sampling path is best behaved at 8 MS/s or above;
 		// GP-SDR digitally narrows the requested channel after capture.
 		return 8_000_000
+	}
+	if canonicalDecoderID(stringValue(target.Decoder)) == "dump1090" {
+		return 2_400_000
 	}
 	if target.Mode == "wfm" || target.Mode == "fm" {
 		return 1_000_000
@@ -252,7 +263,11 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 			}
 			deadline := time.Now().Add(listenFor)
 			for {
-				if !r.processSurveyTarget(stop, profile, device, target) {
+				var mapperRun *mapperRunContext
+				if isMapper {
+					mapperRun = &mapperRunContext{SessionID: mapperSessionID, Config: mapperConfig}
+				}
+				if !r.processSurveyTarget(stop, profile, device, target, mapperRun) {
 					return
 				}
 				if listenFor == 0 || !time.Now().Before(deadline) {
@@ -266,13 +281,132 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 	}
 }
 
+func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyTarget, error) {
+	config := job.Config
+	if config.Mode == "decipher" {
+		targets := make([]surveyTarget, 0, len(records))
+		for _, record := range records {
+			if record.Hits == 0 || config.StartHz > 0 && record.FrequencyHz < config.StartHz || config.EndHz > 0 && record.FrequencyHz > config.EndHz {
+				continue
+			}
+			mode := strings.ToLower(strings.TrimSpace(record.Modulation))
+			if config.PreferredMode != "" && config.PreferredMode != "auto" {
+				mode = config.PreferredMode
+			}
+			if mode != "am" && mode != "wfm" && mode != "nfm" {
+				mode = "auto"
+			}
+			bandwidth := 12_500.0
+			if mode == "wfm" {
+				bandwidth = 180_000
+			}
+			label := firstNonEmpty(record.Name, record.ProtocolName, "Mapped frequency")
+			var decoder *string
+			if record.CandidateDecoder != "" {
+				value := record.CandidateDecoder
+				decoder = &value
+			}
+			targets = append(targets, surveyTarget{FrequencyHz: record.FrequencyHz, BandwidthHz: bandwidth, Mode: mode, Label: label, Dwell: 15 * time.Second, Decoder: decoder})
+		}
+		if len(targets) == 0 {
+			return nil, errors.New("Decipher has no discovered frequencies in this range. Run Discovery first or widen its range.")
+		}
+		return targets, nil
+	}
+	if config.StepHz <= 0 || config.EndHz < config.StartHz {
+		return nil, errors.New("the Mapper discovery range is invalid")
+	}
+	count := int(math.Floor((config.EndHz-config.StartHz)/config.StepHz)) + 1
+	if count <= 0 || count > 1_000_000 {
+		return nil, errors.New("this Mapper job exceeds one million tuning steps; increase the step size or split the range between receivers")
+	}
+	targets := make([]surveyTarget, 0, count)
+	dwell := time.Duration(config.DwellMilliseconds) * time.Millisecond
+	for frequency := config.StartHz; frequency <= config.EndHz+config.StepHz*.001; frequency += config.StepHz {
+		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: maxFloat(config.StepHz, 12_500), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell})
+	}
+	return targets, nil
+}
+
+func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJobRuntime) {
+	targets, err := mapperJobTargets(job, r.mapper.Status().Records)
+	if err != nil {
+		r.finishMapperJob(job.ID, handle, 0, err)
+		return
+	}
+	sessionID := r.mapper.BeginJobSession(job.ID, len(targets))
+	config := job.Config
+	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: 6, RecordAudio: config.Mode == "decipher", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
+	for {
+		for index, target := range targets {
+			select {
+			case <-handle.stop:
+				r.finishMapperJob(job.ID, handle, sessionID, nil)
+				return
+			default:
+			}
+			listenFor := time.Duration(0)
+			if config.Mode == "decipher" {
+				listenFor = time.Duration(config.DecipherListenSeconds) * time.Second
+				target.Dwell = minDuration(listenFor, 15*time.Second)
+			}
+			r.mapper.BeginJobTarget(job.ID, sessionID, index, len(targets), target.FrequencyHz, target.Label, listenFor)
+			deadline := time.Now().Add(listenFor)
+			for {
+				if device.Kind == "Simulator" {
+					wait := target.Dwell
+					if wait > 500*time.Millisecond {
+						wait = 500 * time.Millisecond
+					}
+					select {
+					case <-handle.stop:
+						r.finishMapperJob(job.ID, handle, sessionID, nil)
+						return
+					case <-time.After(wait):
+					}
+					// Every simulated receiver exposes one stable active target per
+					// pass so concurrent-job and provenance behavior is testable even
+					// when a job contains fewer than four frequencies.
+					active := index == int(sessionID%uint64(len(targets)))
+					name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
+					r.mapper.ObserveJob(job.ID, device.ID, config, target.FrequencyHz, active, -46+rand.Float64()*14, -84+rand.Float64()*4, mode, protocol, name, "")
+					if active {
+						r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+					}
+				} else if !r.processSurveyTarget(handle.stop, profile, device, target, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config}) {
+					r.finishMapperJob(job.ID, handle, sessionID, nil)
+					return
+				}
+				if listenFor == 0 || !time.Now().Before(deadline) {
+					break
+				}
+			}
+		}
+		r.mapper.CompleteJobPass(job.ID, sessionID)
+	}
+}
+
+func (r *Runtime) finishMapperJob(id string, handle *mapperJobRuntime, sessionID uint64, runError error) {
+	if sessionID != 0 {
+		r.mapper.EndJobSession(id, sessionID)
+	}
+	if runError != nil {
+		r.mapper.SetJobError(id, runError.Error())
+	}
+	r.mu.Lock()
+	if current, ok := r.mapperJobs[id]; ok && current == handle {
+		delete(r.mapperJobs, id)
+	}
+	r.mu.Unlock()
+}
+
 // processSurveyTarget captures one short window. Decipher mode calls this
 // repeatedly for the selected per-channel listen period, keeping memory use
 // bounded and Stop responsive even when the period is measured in days.
-func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget) bool {
+func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext) bool {
 	rate := liveSampleRate(device, target)
-	if profile.ID == "mapper-session" && r.mapper != nil {
-		rate = compatibleUserSampleRate(device, r.mapper.Config().SampleRateHz, rate)
+	if mapperRun != nil {
+		rate = compatibleUserSampleRate(device, mapperRun.Config.SampleRateHz, rate)
 	}
 	spec := surveyCaptureSpec(device, target, rate)
 	data, format, err := captureWindow(device, spec, target.Dwell, stop)
@@ -321,8 +455,8 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	active := measured && snr >= margin
 	if !active {
 		r.updateMixerActivity(target.FrequencyHz, 0, false)
-		if profile.ID == "mapper-session" && r.mapper != nil {
-			r.mapper.Observe(target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
+		if mapperRun != nil && r.mapper != nil {
+			r.mapper.ObserveJob(mapperRun.JobID, device.ID, mapperRun.Config, target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
 		}
 		return true
 	}
@@ -339,7 +473,7 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	confidence := .72
 	identificationSource := ""
 	candidate, hasCandidate := decoderCandidate(target.FrequencyHz, stringValue(target.Decoder))
-	if profile.ID == "mapper-session" {
+	if mapperRun != nil {
 		identifiedName, identifiedMode, identifiedProtocol, identifiedConfidence, source := r.identifyMapperFrequency(target.FrequencyHz)
 		if identifiedName != "" {
 			label = identifiedName
@@ -365,12 +499,12 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 			identificationSource = "Decoder target · " + candidate.DecoderID
 		}
 	}
-	if profile.ID == "mapper-session" && r.mapper != nil {
+	if mapperRun != nil && r.mapper != nil {
 		protocolName := ""
 		if protocol != nil {
 			protocolName = *protocol
 		}
-		r.mapper.Observe(target.FrequencyHz, true, level.SignalDB, level.NoiseDB, mode, protocolName, label, "")
+		r.mapper.ObserveJob(mapperRun.JobID, device.ID, mapperRun.Config, target.FrequencyHz, true, level.SignalDB, level.NoiseDB, mode, protocolName, label, "")
 		r.mapper.SetIdentification(target.FrequencyHz, identificationSource, confidence)
 		r.mapper.SetSignalIntelligence(target.FrequencyHz, analysis)
 		if hasCandidate {
@@ -382,15 +516,20 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	if channelID := r.mixerChannelID(target.FrequencyHz); channelID != "" && r.audioHub != nil {
 		r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: result.AudioRateHz, Samples: result.Audio})
 	}
-	if profile.ID == "mapper-session" && r.mapper != nil && !r.mapper.ShouldArchive(target.FrequencyHz, 30*time.Second) {
+	if mapperRun != nil && r.mapper != nil && !r.mapper.ShouldArchive(target.FrequencyHz, 30*time.Second) {
 		return true
 	}
 	event := TransmissionEvent{ID: NewID(), StartedAt: time.Now().Add(-target.Dwell), DurationSeconds: target.Dwell.Seconds(),
 		FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB,
 		NoiseDBFS: level.NoiseDB, Modulation: mode, ProtocolName: protocol, Label: &label,
 		DeviceID: device.ID, Confidence: math.Max(confidence, analysis.Confidence), Analysis: &analysis}
-	if profile.ID == "mapper-session" && r.mapper != nil {
-		event.Location = observationLocation(r.mapper.Config())
+	if (mode == "NFM" || mode == "FM") && len(result.Audio) > 0 {
+		if tone, _, detected := DetectCTCSS(result.Audio, result.AudioRateHz); detected {
+			event.CTCSSHz = &tone
+		}
+	}
+	if mapperRun != nil && r.mapper != nil {
+		event.Location = observationLocation(mapperRun.Config)
 	}
 	if profile.Settings.RecordAudio && len(result.Audio) > 0 {
 		filename := fmt.Sprintf("%s-%.0f-%s.wav", time.Now().UTC().Format("20060102T150405.000Z"), target.FrequencyHz, strings.ToLower(mode))
@@ -436,7 +575,7 @@ func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, dec
 	if event.IQPath != nil {
 		iqPath = *event.IQPath
 	}
-	messages, _ := runCandidateDecoder(decoderContext, decoderID, audio, audioRate, iqPath, spec)
+	messages, _ := runCandidateDecoder(decoderContext, decoderID, audio, audioRate, iqPath, event.FrequencyHz, spec)
 	// Several command-line decoders return a non-zero exit code after EOF even
 	// when they emitted valid frames. Parsed frames are the authoritative result.
 	if len(messages) == 0 {

@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.13-dev}
+VERSION=${1:-1.1.0-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.13; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.1.0; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
@@ -106,13 +106,15 @@ make_mac_app() {
   shell_binary=$2
   server_binary=$3
   app_root="$APP_BUILD_ROOT/GP-SDR-$architecture/GP-SDR.app"
-  mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources/bin" "$app_root/Contents/Resources/Documentation"
+  mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources/bin" "$app_root/Contents/Resources/Documentation" "$app_root/Contents/Resources/Scripts"
   cp "$PROJECT_ROOT/packaging/macos/Info.plist" "$app_root/Contents/Info.plist"
   cp "$PROJECT_ROOT/packaging/macos/GP-SDR.icns" "$app_root/Contents/Resources/GP-SDR.icns"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$app_root/Contents/Info.plist"
   cp "$shell_binary" "$app_root/Contents/MacOS/GP-SDR"
   cp "$server_binary" "$app_root/Contents/Resources/bin/gpsdr-server"
   cp "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/NOTICE" "$PROJECT_ROOT/THIRD_PARTY.md" "$app_root/Contents/Resources/Documentation/"
+  cp "$PROJECT_ROOT/Scripts/install_optional_decoders_macos.sh" "$app_root/Contents/Resources/Scripts/"
+  chmod 755 "$app_root/Contents/Resources/Scripts/install_optional_decoders_macos.sh"
   cp "$PROJECT_ROOT/build/p25-licenses/"* "$app_root/Contents/Resources/Documentation/"
   helper_tag=$architecture
   if [ "$architecture" = "x86_64" ]; then helper_tag=amd64; fi

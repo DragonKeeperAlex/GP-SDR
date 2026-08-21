@@ -6,7 +6,7 @@ mixing, and later review. The native macOS app contains the complete interface
 and local receiver service. The same interface can also run headlessly in a web
 browser and is designed for phones and tablets.
 
-> GP-SDR 1.0 is a public release. On-air performance still
+> GP-SDR 1.1 is a public release. On-air performance still
 > depends on the receiver, antenna, local signals, USB link, and gain settings.
 
 ## What is included
@@ -24,11 +24,18 @@ browser and is designed for phones and tablets.
   HackRF/RTL-SDR passband without restarting the device
 - Unified channel controls plus per-talkgroup mute, solo, identity, and activity
 - Unattended activity logging, signal grouping, recordings, and later review
-- Mapper Discovery and Decipher workflows with live frequency/progress,
-  5-second-to-7-day per-channel listening, peak activity hours, expandable
-  identification evidence, optional location/transcription, and Sheets upload
+- Indexed Timeline search across transcripts, callsigns, protocols, labels,
+  systems, and frequencies; configurable recording/IQ retention
+- Independent Mapper jobs per receiver: split ranges across SDRs, run parallel
+  Discovery sweeps, or run Discovery and Decipher simultaneously. Each job has
+  live frequency/progress/ETA, 5-second-to-7-day per-channel listening, and
+  receiver/job provenance in the combined result table and CSV export
+- Peak activity hours, expandable identification evidence, optional
+  location/transcription, filters, saved job controls, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
   acarsdec, and AIS-catcher
+- Normalized live decoder bridges for digital voice, sensors, ADS-B/Mode S,
+  paging/signaling, ACARS, and AIS; analog CTCSS detection
 - Built-in decoder scan profiles for conventional digital voice, common
   315/345/433.92/868/915 MHz sensors, 1090 MHz ADS-B/Mode S, paging/signaling,
   North American ACARS, and both marine AIS channels
@@ -58,6 +65,8 @@ frequency falls inside a known band.
 
 For the complete first-run checklist, receiver-driver steps, P25 setup, LAN
 access, and troubleshooting, see the [installation guide](Docs/INSTALL.md).
+The [1.1 feature status](Docs/FEATURE_STATUS_1.1.0.md) separates live-hardware
+evidence from implemented features and external requirements.
 
 ### macOS
 
@@ -86,7 +95,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.13_amd64.deb
+sudo apt install ./gp-sdr_1.1.0_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -140,6 +149,12 @@ credentials are available.
 The Hardware and Settings pages keep setup inside the app wherever an automatic
 installation is safe. Where platform security or vendor licensing prevents it,
 the **How to** action gives exact steps instead.
+
+On macOS, a decoder card's **Install** action can run the bundled, revision-pinned
+decoder-suite installer for DSD-FME, rtl_433, dump1090, multimon-ng, acarsdec,
+and AIS-catcher. Receiver host tools and offline transcription also have in-app
+Homebrew actions. Windows driver replacement and Linux system packages continue
+to use explicit **How to** steps because those require administrator control.
 
 For source builds on macOS (the release app already includes the stream bridge):
 
@@ -214,7 +229,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.13
+Scripts/build_release.sh 1.1.0
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -236,14 +251,15 @@ credentials, which are intentionally not stored in this repository.
 ## Verification scope
 
 Automated tests cover profile validation, API authorization, tuner input,
-spectrum generation, SDRTrunk playlist generation, Mapper aggregation, and the
+spectrum generation, SDRTrunk playlist generation, concurrent Mapper jobs,
+indexed event search, storage boundaries, optional-decoder handoffs, and the
 web application. A live HackRF acceptance capture through GP-SDR decoded EBRCS
 NAC `0x1F5`, WACN `0xBEE00`, system `0x1F1`, Phase 1/2 grants, traffic-channel
 frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.13.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.1.0.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

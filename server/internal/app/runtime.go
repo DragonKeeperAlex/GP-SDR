@@ -36,6 +36,7 @@ type Runtime struct {
 	rangeSync         *RangeSyncManager
 	calibrations      *CalibrationStore
 	mapper            *MapperManager
+	mapperJobs        map[string]*mapperJobRuntime
 	remoteReceivers   *RemoteReceiverStore
 	localDatabase     *LocalDatabaseManager
 	spectrum          SpectrumSnapshot
@@ -44,6 +45,14 @@ type Runtime struct {
 	tunerHardware     *TunerRequest
 	lastAnalysis      *SignalIntelligence
 	receiverTelemetry *ReceiverTelemetry
+	storage           StorageStatus
+	storageRefreshing bool
+}
+
+type mapperJobRuntime struct {
+	deviceID string
+	stop     chan struct{}
+	stopping bool
 }
 
 func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
@@ -64,7 +73,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		return nil, err
 	}
 	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
-		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{},
+		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations}
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
@@ -85,6 +94,10 @@ func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, erro
 func (r *Runtime) SyncRangesNow() RangeSyncStatus { return r.rangeSync.SyncNow() }
 func (r *Runtime) MapperStatus() MapperStatus     { return r.mapper.Status() }
 func (r *Runtime) MapperProgress() MapperProgress { return r.mapper.Progress() }
+func (r *Runtime) MapperJobs() []MapperJob        { return r.mapper.Jobs() }
+func (r *Runtime) MapperJob(id string) (MapperJob, bool) {
+	return r.mapper.Job(id)
+}
 func (r *Runtime) LocalDatabaseStatus() LocalDatabaseStatus {
 	return r.localDatabase.Status()
 }
@@ -94,6 +107,92 @@ func (r *Runtime) SetLocalDatabaseFolder(folder string) (LocalDatabaseStatus, er
 func (r *Runtime) ScanLocalDatabase() LocalDatabaseStatus { return r.localDatabase.Scan() }
 func (r *Runtime) UpdateMapper(config MapperConfig) (MapperStatus, error) {
 	return r.mapper.Update(config)
+}
+func (r *Runtime) SaveMapperJob(job MapperJob) (MapperJob, error) { return r.mapper.SaveJob(job) }
+func (r *Runtime) DeleteMapperJob(id string) error {
+	r.mu.RLock()
+	_, running := r.mapperJobs[id]
+	r.mu.RUnlock()
+	if running {
+		return errors.New("stop this Mapper job before deleting it")
+	}
+	return r.mapper.DeleteJob(id)
+}
+
+func (r *Runtime) StartMapperJob(id string) (MapperStatus, error) {
+	job, ok := r.mapper.Job(strings.TrimSpace(id))
+	if !ok {
+		return r.mapper.Status(), ErrNotFound
+	}
+	r.mu.Lock()
+	if _, running := r.mapperJobs[job.ID]; running {
+		r.mu.Unlock()
+		return r.mapper.Status(), errors.New("this Mapper job is already running")
+	}
+	var device SDRDevice
+	for _, candidate := range r.devices {
+		if candidate.ID == job.Config.DeviceID && candidate.Connected && candidate.Available {
+			device = candidate
+			break
+		}
+	}
+	if device.ID == "" {
+		r.mu.Unlock()
+		return r.mapper.Status(), errors.New("the assigned Mapper receiver is not connected or available")
+	}
+	for otherID, running := range r.mapperJobs {
+		if running.deviceID == device.ID {
+			r.mu.Unlock()
+			return r.mapper.Status(), fmt.Errorf("%s is already assigned to Mapper job %s", device.Name, otherID)
+		}
+	}
+	if r.running && r.profileUsesDeviceLocked(device.ID) {
+		r.mu.Unlock()
+		return r.mapper.Status(), fmt.Errorf("%s is already in use by the Live or Tuner workspace", device.Name)
+	}
+	handle := &mapperJobRuntime{deviceID: device.ID, stop: make(chan struct{})}
+	r.mapperJobs[job.ID] = handle
+	r.mu.Unlock()
+	go r.mapperJobLoop(job, device, handle)
+	return r.mapper.Status(), nil
+}
+
+func (r *Runtime) StopMapperJob(id string) MapperStatus {
+	r.mu.Lock()
+	if running, ok := r.mapperJobs[id]; ok {
+		if !running.stopping {
+			running.stopping = true
+			r.mapper.MarkJobStopping(id)
+			close(running.stop)
+		}
+	}
+	r.mu.Unlock()
+	return r.mapper.Status()
+}
+
+func (r *Runtime) StopAllMapperJobs() MapperStatus {
+	r.mu.Lock()
+	for id, running := range r.mapperJobs {
+		if !running.stopping {
+			running.stopping = true
+			r.mapper.MarkJobStopping(id)
+			close(running.stop)
+		}
+	}
+	r.mu.Unlock()
+	return r.mapper.Status()
+}
+
+func (r *Runtime) profileUsesDeviceLocked(deviceID string) bool {
+	if !r.running || r.active == nil {
+		return false
+	}
+	for _, item := range r.plan {
+		if item.DeviceID != nil && *item.DeviceID == deviceID && item.State == "assigned" {
+			return true
+		}
+	}
+	return false
 }
 func (r *Runtime) UploadMapperNow() MapperStatus { return r.mapper.UploadNow() }
 func (r *Runtime) UploadMapperFrequency(frequencyHz float64) MapperStatus {
@@ -148,7 +247,10 @@ func (r *Runtime) Refresh() {
 	// Hardware enumeration tools open USB devices briefly. Keep the last known
 	// inventory while receiving so a Hardware refresh cannot contend with the
 	// active DSP or trunking engine.
-	if !running {
+	r.mu.RLock()
+	mapperRunning := len(r.mapperJobs) > 0
+	r.mu.RUnlock()
+	if !running && !mapperRunning {
 		devices = DiscoverDevices(r.demo)
 		devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
 	}
@@ -210,11 +312,13 @@ func (r *Runtime) Plan() []ReceiverPlanItem {
 }
 
 func (r *Runtime) Status() RuntimeStatus {
+	r.refreshStorageStatus()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	status := RuntimeStatus{Running: r.running, Mode: "Idle", StartedAt: r.startedAt, ConnectedDeviceCount: 0,
 		EventCount: r.Events.Count(), WebAddress: r.webAddress, SimulatorEnabled: r.demo, Version: Version,
-		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry}
+		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry,
+		Storage: r.storage, HealthNotices: r.healthNoticesLocked()}
 	for _, d := range r.devices {
 		if d.Connected && d.Kind != "Simulator" {
 			status.ConnectedDeviceCount++
@@ -236,6 +340,24 @@ func (r *Runtime) Status() RuntimeStatus {
 		}
 	}
 	return status
+}
+
+func (r *Runtime) healthNoticesLocked() []HealthNotice {
+	notices := make([]HealthNotice, 0, 3)
+	if r.droppedSamples > 0 {
+		notices = append(notices, HealthNotice{ID: "dropped-samples", Level: "warning", Message: fmt.Sprintf("Receiver dropped %d sample blocks; lower the sample rate or use a direct USB connection.", r.droppedSamples)})
+	}
+	if telemetry := r.receiverTelemetry; telemetry != nil {
+		if telemetry.Overloaded {
+			notices = append(notices, HealthNotice{ID: "overload", Level: "warning", Message: fmt.Sprintf("Receiver input is overloaded (%.1f%% clipped). Reduce gain or disable the RF amplifier.", telemetry.ClippedPercent)})
+		} else if r.running && telemetry.SampleRateHz > 0 && !telemetry.SignalDetected && telemetry.SignalDBFS-telemetry.NoiseDBFS < 2 {
+			notices = append(notices, HealthNotice{ID: "noise-only", Level: "info", Message: "No signal is above the measured noise floor on the current channel."})
+		}
+	}
+	if r.storage.RecordingBytes+r.storage.IQBytes >= 25*1024*1024*1024 {
+		notices = append(notices, HealthNotice{ID: "capture-storage", Level: "warning", Message: "GP-SDR recordings and IQ captures use more than 25 GB. Review profile retention settings."})
+	}
+	return notices
 }
 
 func (r *Runtime) Start(profileID string) error {
@@ -386,6 +508,17 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 		}
 		if len(liveDevices) == 0 {
 			return errors.New("No SDR is connected. Connect a receiver and press Refresh, or launch with --demo.")
+		}
+		r.mu.RLock()
+		mapperOwners := make(map[string]string, len(r.mapperJobs))
+		for jobID, runningJob := range r.mapperJobs {
+			mapperOwners[runningJob.deviceID] = jobID
+		}
+		r.mu.RUnlock()
+		for _, device := range liveDevices {
+			if jobID := mapperOwners[device.ID]; jobID != "" {
+				return fmt.Errorf("%s is assigned to Mapper job %s; stop that job or choose another receiver", device.Name, jobID)
+			}
 		}
 		if !useP25 && len(surveyTargets(profile)) == 0 {
 			return errors.New("This profile has no AM, NFM, WFM, or automatic scan targets.")

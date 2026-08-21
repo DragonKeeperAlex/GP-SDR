@@ -210,6 +210,49 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.MapperStatus())
 	case r.Method == "GET" && path == "/api/mapper/progress":
 		writeJSON(w, 200, s.runtime.MapperProgress())
+	case r.Method == "GET" && path == "/api/mapper/jobs":
+		writeJSON(w, 200, s.runtime.MapperJobs())
+	case r.Method == "GET" && path == "/api/mapper/jobs/export":
+		job, ok := s.runtime.MapperJob(strings.TrimSpace(r.URL.Query().Get("id")))
+		if !ok {
+			writeError(w, http.StatusNotFound, "Mapper job not found")
+			return
+		}
+		job.ID = ""
+		job.State = "idle"
+		job.Progress = MapperProgress{}
+		job.LastError = ""
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Mapper-Job.json")
+		writeJSON(w, 200, job)
+	case r.Method == "POST" && path == "/api/mapper/jobs":
+		var job MapperJob
+		if !decodeBody(w, r, &job) {
+			return
+		}
+		result, err := s.runtime.SaveMapperJob(job)
+		writeResult(w, result, err, http.StatusCreated)
+	case r.Method == "DELETE" && path == "/api/mapper/jobs":
+		err := s.runtime.DeleteMapperJob(strings.TrimSpace(r.URL.Query().Get("id")))
+		writeResult(w, s.runtime.MapperStatus(), err, 200)
+	case r.Method == "POST" && path == "/api/mapper/jobs/start":
+		var body struct {
+			ID string `json:"id"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		result, err := s.runtime.StartMapperJob(body.ID)
+		writeResult(w, result, err, 200)
+	case r.Method == "POST" && path == "/api/mapper/jobs/stop":
+		var body struct {
+			ID string `json:"id"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		writeJSON(w, 200, s.runtime.StopMapperJob(body.ID))
+	case r.Method == "POST" && path == "/api/mapper/jobs/stop-all":
+		writeJSON(w, 200, s.runtime.StopAllMapperJobs())
 	case r.Method == "PUT" && path == "/api/mapper":
 		var config MapperConfig
 		if !decodeBody(w, r, &config) {
@@ -302,7 +345,12 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Profile.json")
 		_, _ = w.Write(data)
 	case r.Method == "GET" && path == "/api/events":
-		writeJSON(w, 200, s.runtime.Events.Recent(intQuery(r, "limit", 200)))
+		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		if query != "" {
+			writeJSON(w, 200, s.runtime.Events.Search(query, intQuery(r, "limit", 200)))
+		} else {
+			writeJSON(w, 200, s.runtime.Events.Recent(intQuery(r, "limit", 200)))
+		}
 	case r.Method == "GET" && path == "/api/audio":
 		s.serveEventAudio(w, r)
 	case r.Method == "GET" && path == "/api/live-audio":

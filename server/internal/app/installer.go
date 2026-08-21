@@ -51,6 +51,15 @@ type installerRecipe struct {
 	formulae  []string
 }
 
+func isDecoderSuiteComponent(id string) bool {
+	switch id {
+	case "dsd-fme", "dump1090", "multimon-ng", "acarsdec", "ais":
+		return true
+	default:
+		return false
+	}
+}
+
 type Installer struct {
 	mu            sync.Mutex
 	job           *InstallJob
@@ -141,6 +150,7 @@ func (installer *Installer) Overview() SetupOverview {
 	}
 	for _, recipe := range setupRecipes() {
 		component := recipe.component
+		applyPlatformSetupGuidance(&component)
 		ready := recipeReady(recipe)
 		if component.ID == "transcription" {
 			status := NewTranscriber(installer.dataDirectory).Status()
@@ -158,14 +168,25 @@ func (installer *Installer) Overview() SetupOverview {
 		} else {
 			component.State = "setup"
 			component.Installable = runtime.GOOS == "darwin" && brewErr == nil && len(recipe.formulae) > 0
+			usesSuiteInstaller := false
+			if runtime.GOOS == "darwin" && brewErr == nil && isDecoderSuiteComponent(component.ID) {
+				if _, scriptErr := findOptionalDecoderInstaller(); scriptErr == nil {
+					usesSuiteInstaller = true
+					component.Installable = true
+					component.Note = "GP-SDR can install the complete optional decoder suite from maintained upstream sources."
+					component.Command = "GP-SDR → Hardware → Install"
+				}
+			}
 			if component.ID == "p25-voice" {
 				_, creatorErr := findJMBECreator()
 				component.Installable = creatorErr == nil
 			}
 			if component.Installable {
 				component.Action = "Install"
-				component.Note = "Can be installed with Homebrew from this screen."
-				component.Command = brew + " install " + strings.Join(recipe.formulae, " ")
+				if !usesSuiteInstaller {
+					component.Note = "Can be installed with Homebrew from this screen."
+					component.Command = brew + " install " + strings.Join(recipe.formulae, " ")
+				}
 			} else {
 				component.Action = "How to"
 				component.Note = "Manual setup is required on this platform."
@@ -180,6 +201,42 @@ func (installer *Installer) Overview() SetupOverview {
 	}
 	installer.mu.Unlock()
 	return overview
+}
+
+func applyPlatformSetupGuidance(component *SetupComponent) {
+	if component == nil || runtime.GOOS == "darwin" {
+		return
+	}
+	if runtime.GOOS == "linux" {
+		switch component.ID {
+		case "hackrf":
+			component.Guide = "Install the distribution HackRF user-space tools and udev rules, reconnect the receiver, then press Refresh."
+			component.Command = "sudo apt install hackrf"
+		case "rtlsdr":
+			component.Guide = "Install rtl-sdr and its udev rules, add your user to the required device-access group if your distribution uses one, reconnect, then press Refresh."
+			component.Command = "sudo apt install rtl-sdr"
+		case "soapysdr":
+			component.Guide = "Install SoapySDR plus the hardware module for the exact receiver, then press Refresh."
+			component.Command = "sudo apt install soapysdr-tools"
+		case "rtl-433":
+			component.Guide = "Install rtl_433 from your distribution, then press Refresh."
+			component.Command = "sudo apt install rtl-433"
+		}
+		return
+	}
+	if runtime.GOOS == "windows" {
+		switch component.ID {
+		case "hackrf":
+			component.Guide = "Install the official HackRF Windows host tools. If Windows cannot claim the radio, use Zadig only on the exact HackRF interface to select WinUSB, reconnect, then press Refresh."
+			component.GuideURL = "https://github.com/greatscottgadgets/hackrf/releases"
+		case "rtlsdr":
+			component.Guide = "Use Zadig on Bulk-In Interface 0 of the exact RTL-SDR and select WinUSB. Do not replace a keyboard, mouse, storage, or unrelated USB driver. Then add rtl_sdr.exe and rtl_test.exe beside GP-SDR and press Refresh."
+			component.GuideURL = "https://zadig.akeo.ie/"
+		case "soapysdr":
+			component.Guide = "Install the official PothosSDR Windows bundle and the module for the exact receiver, then press Refresh."
+			component.GuideURL = "https://downloads.myriadrf.org/builds/PothosSDR/"
+		}
+	}
 }
 
 func (installer *Installer) Start(componentID string) (InstallJob, error) {
@@ -203,6 +260,22 @@ func (installer *Installer) Start(componentID string) (InstallJob, error) {
 	}
 	if ready {
 		return InstallJob{}, errors.New("component is already installed")
+	}
+	if isDecoderSuiteComponent(componentID) && runtime.GOOS == "darwin" {
+		script, scriptErr := findOptionalDecoderInstaller()
+		if scriptErr != nil {
+			return InstallJob{}, errors.New("the bundled optional-decoder installer is missing; reinstall GP-SDR or open How to")
+		}
+		installer.mu.Lock()
+		if installer.job != nil && installer.job.State == "installing" {
+			installer.mu.Unlock()
+			return InstallJob{}, errors.New("another component is already installing")
+		}
+		job := &InstallJob{ComponentID: componentID, State: "installing", Message: "Installing the optional decoder suite…", StartedAt: time.Now()}
+		installer.job = job
+		installer.mu.Unlock()
+		go installer.runOptionalDecoderInstaller(script, job)
+		return *job, nil
 	}
 	if componentID == "p25-voice" {
 		creator, creatorErr := findJMBECreator()
@@ -235,6 +308,49 @@ func (installer *Installer) Start(componentID string) (InstallJob, error) {
 	go installer.run(*selected, brew, job)
 	copy := *job
 	return copy, nil
+}
+
+func findOptionalDecoderInstaller() (string, error) {
+	var candidates []string
+	if executable, err := os.Executable(); err == nil {
+		base := filepath.Dir(executable)
+		candidates = append(candidates, filepath.Join(base, "..", "Resources", "Scripts", "install_optional_decoders_macos.sh"))
+	}
+	if workingDirectory, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(workingDirectory, "Scripts", "install_optional_decoders_macos.sh"),
+			filepath.Join(workingDirectory, "..", "Scripts", "install_optional_decoders_macos.sh"))
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return filepath.Clean(candidate), nil
+		}
+	}
+	return "", errors.New("optional decoder installer not found")
+}
+
+func (installer *Installer) runOptionalDecoderInstaller(script string, job *InstallJob) {
+	command := exec.Command("/bin/sh", script)
+	command.Env = append(os.Environ(), "HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",
+		"PATH="+strings.Join([]string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"}, string(os.PathListSeparator)))
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err := command.Run()
+	finished := time.Now()
+	message, state := "Optional decoder suite installed. Refreshing hardware…", "ready"
+	if err != nil {
+		state, message = "error", fmt.Sprintf("Decoder installation failed: %v", err)
+	}
+	text := output.String()
+	if len(text) > 24_000 {
+		text = text[len(text)-24_000:]
+	}
+	installer.mu.Lock()
+	job.State, job.Message, job.Output, job.FinishedAt = state, message, text, &finished
+	installer.mu.Unlock()
+	if err == nil && installer.onRefresh != nil {
+		installer.onRefresh()
+	}
 }
 
 func userHomeDirectory() string {

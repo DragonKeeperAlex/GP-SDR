@@ -222,17 +222,18 @@ func validateProfile(profile ScanProfile) error {
 }
 
 type EventStore struct {
-	mu      sync.RWMutex
-	path    string
-	events  []TransmissionEvent
-	signals map[string]SignalSummary
+	mu          sync.RWMutex
+	path        string
+	events      []TransmissionEvent
+	signals     map[string]SignalSummary
+	searchIndex map[string]map[string]struct{}
 }
 
 func NewEventStore(dir string) (*EventStore, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	store := &EventStore{path: filepath.Join(dir, "events.jsonl"), signals: make(map[string]SignalSummary)}
+	store := &EventStore{path: filepath.Join(dir, "events.jsonl"), signals: make(map[string]SignalSummary), searchIndex: make(map[string]map[string]struct{})}
 	file, err := os.Open(store.path)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = os.WriteFile(store.path, nil, 0o644); err != nil {
@@ -268,6 +269,7 @@ func NewEventStore(dir string) (*EventStore, error) {
 	if len(store.events) > 25_000 {
 		store.events = store.events[len(store.events)-25_000:]
 	}
+	store.rebuildSearchIndexLocked()
 	if removedLegacyEvents > 0 {
 		if err := writeEventFile(store.path, store.events); err != nil {
 			return nil, err
@@ -323,6 +325,9 @@ func (s *EventStore) Append(event TransmissionEvent) error {
 	s.events = append(s.events, event)
 	if len(s.events) > 25_000 {
 		s.events = s.events[len(s.events)-25_000:]
+		s.rebuildSearchIndexLocked()
+	} else {
+		s.indexEventLocked(event)
 	}
 	s.aggregate(event)
 	return nil
@@ -345,6 +350,51 @@ func (s *EventStore) Recent(limit int) []TransmissionEvent {
 		items[i] = s.events[len(s.events)-1-i]
 	}
 	return items
+}
+
+// Search uses an in-memory token index so transcript, callsign, label, system,
+// protocol and frequency searches remain responsive as the journal grows.
+func (s *EventStore) Search(query string, limit int) []TransmissionEvent {
+	terms := searchTokens(query)
+	if len(terms) == 0 {
+		return s.Recent(limit)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	var matches map[string]struct{}
+	for _, term := range terms {
+		termMatches := make(map[string]struct{})
+		for token, ids := range s.searchIndex {
+			if token != term && !strings.HasPrefix(token, term) {
+				continue
+			}
+			for id := range ids {
+				termMatches[id] = struct{}{}
+			}
+		}
+		if matches == nil {
+			matches = termMatches
+			continue
+		}
+		for id := range matches {
+			if _, ok := termMatches[id]; !ok {
+				delete(matches, id)
+			}
+		}
+	}
+	result := make([]TransmissionEvent, 0, minInt(limit, len(matches)))
+	for index := len(s.events) - 1; index >= 0 && len(result) < limit; index-- {
+		if _, ok := matches[s.events[index].ID]; ok {
+			result = append(result, s.events[index])
+		}
+	}
+	return result
 }
 
 func (s *EventStore) Get(id string) (TransmissionEvent, bool) {
@@ -377,6 +427,7 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	if !found {
 		return ErrNotFound
 	}
+	s.rebuildSearchIndexLocked()
 	return writeEventFile(s.path, s.events)
 }
 
@@ -396,6 +447,7 @@ func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage)
 		for _, message := range messages {
 			s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, message.Callsigns)
 		}
+		s.rebuildSearchIndexLocked()
 		return writeEventFile(s.path, s.events)
 	}
 	return ErrNotFound
@@ -432,11 +484,50 @@ func (s *EventStore) Signals(limit int) []SignalSummary {
 
 func (s *EventStore) Count() int { s.mu.RLock(); defer s.mu.RUnlock(); return len(s.events) }
 
+func (s *EventStore) rebuildSearchIndexLocked() {
+	s.searchIndex = make(map[string]map[string]struct{})
+	for _, event := range s.events {
+		s.indexEventLocked(event)
+	}
+}
+
+func (s *EventStore) indexEventLocked(event TransmissionEvent) {
+	parts := []string{event.ID, fmt.Sprintf("%.0f %.6f", event.FrequencyHz, event.FrequencyHz/1e6), event.Modulation,
+		stringValue(event.ProtocolName), stringValue(event.Label), event.DeviceID, stringValue(event.SystemName), stringValue(event.Transcript), strings.Join(event.Callsigns, " ")}
+	for _, message := range event.DecoderMessages {
+		parts = append(parts, message.DecoderID, message.Protocol, message.Summary, message.RawText, strings.Join(message.Callsigns, " "))
+	}
+	for _, token := range searchTokens(strings.Join(parts, " ")) {
+		ids := s.searchIndex[token]
+		if ids == nil {
+			ids = make(map[string]struct{})
+			s.searchIndex[token] = ids
+		}
+		ids[event.ID] = struct{}{}
+	}
+}
+
+func searchTokens(value string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+	seen := make(map[string]bool, len(fields))
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		result = append(result, field)
+	}
+	return result
+}
+
 func (s *EventStore) aggregate(event TransmissionEvent) {
 	key := fmt.Sprintf("%.0f", event.FrequencyHz)
 	summary, ok := s.signals[key]
 	if !ok {
-		s.signals[key] = SignalSummary{ID: key, FrequencyHz: event.FrequencyHz, FirstSeen: event.StartedAt, LastSeen: event.StartedAt, EventCount: 1, StrongestDBFS: event.SignalDBFS, Modulation: event.Modulation, ProtocolName: event.ProtocolName, Label: event.Label, Confidence: event.Confidence, Location: event.Location}
+		s.signals[key] = SignalSummary{ID: key, FrequencyHz: event.FrequencyHz, FirstSeen: event.StartedAt, LastSeen: event.StartedAt, EventCount: 1, StrongestDBFS: event.SignalDBFS, Modulation: event.Modulation, ProtocolName: event.ProtocolName, Label: event.Label, Confidence: event.Confidence, Location: event.Location, CTCSSHz: event.CTCSSHz}
 		return
 	}
 	if event.StartedAt.Before(summary.FirstSeen) {
@@ -459,6 +550,9 @@ func (s *EventStore) aggregate(event TransmissionEvent) {
 	}
 	if event.Location != nil {
 		summary.Location = event.Location
+	}
+	if event.CTCSSHz != nil {
+		summary.CTCSSHz = event.CTCSSHz
 	}
 	s.signals[key] = summary
 }

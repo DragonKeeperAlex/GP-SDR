@@ -26,6 +26,7 @@ type MapperConfig struct {
 	Secret                string   `json:"secret,omitempty"`
 	AutoUpload            bool     `json:"autoUpload"`
 	Mode                  string   `json:"mode,omitempty"`
+	PreferredMode         string   `json:"preferredMode,omitempty"`
 	DeviceID              string   `json:"deviceID,omitempty"`
 	StartHz               float64  `json:"startHz,omitempty"`
 	EndHz                 float64  `json:"endHz,omitempty"`
@@ -67,6 +68,19 @@ type MapperFrequencyRecord struct {
 	ActivityTimeZone     string               `json:"activityTimeZone,omitempty"`
 	Location             *ObservationLocation `json:"location,omitempty"`
 	LastTranscript       string               `json:"lastTranscript,omitempty"`
+	JobIDs               []string             `json:"jobIDs,omitempty"`
+	DeviceIDs            []string             `json:"deviceIDs,omitempty"`
+}
+
+type MapperJob struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Config    MapperConfig   `json:"config"`
+	State     string         `json:"state"`
+	LastError string         `json:"lastError,omitempty"`
+	Progress  MapperProgress `json:"progress"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
 type MapperStatus struct {
@@ -75,6 +89,7 @@ type MapperStatus struct {
 	LastError    string                  `json:"lastError,omitempty"`
 	UploadedRows int                     `json:"uploadedRows"`
 	Records      []MapperFrequencyRecord `json:"records"`
+	Jobs         []MapperJob             `json:"jobs"`
 }
 
 type MapperProgress struct {
@@ -115,16 +130,28 @@ type MapperManager struct {
 	client       *http.Client
 	progress     MapperProgress
 	sessionID    uint64
+	jobsPath     string
+	jobs         map[string]MapperJob
+	jobSessions  map[string]uint64
 	lastArchived map[string]time.Time
 }
 
 func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
-	m := &MapperManager{path: filepath.Join(dataDirectory, "Data", "mapper.json"), recordsPath: filepath.Join(dataDirectory, "Data", "mapper-records.json"), events: events, client: &http.Client{Timeout: 12 * time.Second}, lastSeen: make(map[string]time.Time), records: make(map[string]MapperFrequencyRecord), lastArchived: make(map[string]time.Time)}
+	m := &MapperManager{path: filepath.Join(dataDirectory, "Data", "mapper.json"), recordsPath: filepath.Join(dataDirectory, "Data", "mapper-records.json"), jobsPath: filepath.Join(dataDirectory, "Data", "mapper-jobs.json"), events: events, client: &http.Client{Timeout: 12 * time.Second}, lastSeen: make(map[string]time.Time), records: make(map[string]MapperFrequencyRecord), jobs: make(map[string]MapperJob), jobSessions: make(map[string]uint64), lastArchived: make(map[string]time.Time)}
 	if data, err := os.ReadFile(m.path); err == nil {
 		_ = json.Unmarshal(data, &m.config)
 	}
 	if data, err := os.ReadFile(m.recordsPath); err == nil {
 		_ = json.Unmarshal(data, &m.records)
+	}
+	if data, err := os.ReadFile(m.jobsPath); err == nil {
+		_ = json.Unmarshal(data, &m.jobs)
+	}
+	for id, job := range m.jobs {
+		job.State = "idle"
+		job.Progress.Running = false
+		job.Config.Secret = ""
+		m.jobs[id] = job
 	}
 	if pruneLegacyMapperFalsePositives(m.records) > 0 {
 		m.persistRecords()
@@ -165,13 +192,258 @@ func (m *MapperManager) Status() MapperStatus {
 	if len(records) > 5000 {
 		records = records[len(records)-5000:]
 	}
-	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, Records: records}
+	jobs := make([]MapperJob, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		jobs = append(jobs, job)
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].State != jobs[j].State {
+			return jobs[i].State == "running"
+		}
+		return jobs[i].CreatedAt.Before(jobs[j].CreatedAt)
+	})
+	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, Records: records, Jobs: jobs}
 }
 
 func (m *MapperManager) Progress() MapperProgress {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	for _, job := range m.jobs {
+		if job.Progress.Running {
+			return job.Progress
+		}
+	}
 	return m.progress
+}
+
+func (m *MapperManager) Job(id string) (MapperJob, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	job, ok := m.jobs[id]
+	return job, ok
+}
+
+func (m *MapperManager) Jobs() []MapperJob {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	jobs := make([]MapperJob, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		jobs = append(jobs, job)
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].CreatedAt.Before(jobs[j].CreatedAt) })
+	return jobs
+}
+
+func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
+	config.Mode = strings.ToLower(strings.TrimSpace(config.Mode))
+	if config.Mode == "" {
+		config.Mode = "discovery"
+	}
+	if config.Mode != "discovery" && config.Mode != "decipher" {
+		return config, errors.New("mapper workflow must be discovery or decipher")
+	}
+	config.PreferredMode = strings.ToLower(strings.TrimSpace(config.PreferredMode))
+	if config.PreferredMode == "" {
+		config.PreferredMode = "auto"
+	}
+	if config.PreferredMode != "auto" && config.PreferredMode != "am" && config.PreferredMode != "nfm" && config.PreferredMode != "wfm" {
+		return config, errors.New("Mapper modulation must be Auto, AM, NFM, or WFM")
+	}
+	if strings.TrimSpace(config.DeviceID) == "" {
+		return config, errors.New("choose a receiver for this Mapper job")
+	}
+	if config.Mode == "discovery" {
+		if !isFinitePositive(config.StartHz) || !isFinitePositive(config.EndHz) || config.EndHz < config.StartHz {
+			return config, errors.New("enter a valid discovery frequency range")
+		}
+		if config.StepHz <= 0 {
+			return config, errors.New("discovery step must be greater than zero")
+		}
+		if config.DwellMilliseconds < 200 || config.DwellMilliseconds > 60_000 {
+			return config, errors.New("discovery dwell must be between 0.2 and 60 seconds")
+		}
+	}
+	if config.DecipherListenSeconds == 0 {
+		config.DecipherListenSeconds = 60
+	}
+	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
+		return config, errors.New("decipher listen time must be between 5 seconds and 7 days")
+	}
+	if !supportedUserSampleRate(config.SampleRateHz) {
+		return config, errors.New("choose Auto or a supported Mapper sample rate")
+	}
+	if config.IncludeLocation {
+		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {
+			return config, errors.New("add a valid latitude and longitude or turn location tagging off")
+		}
+		if config.LocationPrecision == "" {
+			config.LocationPrecision = "approximate"
+		}
+	}
+	return config, nil
+}
+
+func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
+	config, err := validateMapperScanConfig(job.Config)
+	if err != nil {
+		return MapperJob{}, err
+	}
+	now := time.Now()
+	job.ID = strings.TrimSpace(job.ID)
+	job.Name = strings.TrimSpace(job.Name)
+	if job.ID == "" {
+		job.ID = NewID()
+		job.CreatedAt = now
+	}
+	if job.Name == "" {
+		if config.Mode == "decipher" {
+			job.Name = "Decipher · found frequencies"
+		} else {
+			job.Name = "Discovery · " + fmt.Sprintf("%.3f–%.3f MHz", config.StartHz/1e6, config.EndHz/1e6)
+		}
+	}
+	job.Config = config
+	job.UpdatedAt = now
+	m.mu.Lock()
+	if existing, exists := m.jobs[job.ID]; exists {
+		if existing.State == "running" {
+			m.mu.Unlock()
+			return MapperJob{}, errors.New("stop this Mapper job before editing it")
+		}
+		job.CreatedAt = existing.CreatedAt
+	}
+	job.State = "idle"
+	job.LastError = ""
+	job.Progress = MapperProgress{Mode: config.Mode, CurrentIndex: -1}
+	m.jobs[job.ID] = job
+	m.mu.Unlock()
+	m.persistJobs()
+	return job, nil
+}
+
+func (m *MapperManager) DeleteJob(id string) error {
+	m.mu.Lock()
+	job, exists := m.jobs[id]
+	if !exists {
+		m.mu.Unlock()
+		return ErrNotFound
+	}
+	if job.State == "running" || job.State == "stopping" {
+		m.mu.Unlock()
+		return errors.New("stop this Mapper job before deleting it")
+	}
+	delete(m.jobs, id)
+	delete(m.jobSessions, id)
+	m.mu.Unlock()
+	m.persistJobs()
+	return nil
+}
+
+func (m *MapperManager) SetJobError(id, message string) {
+	m.mu.Lock()
+	if job, ok := m.jobs[id]; ok {
+		job.State = "error"
+		job.LastError = strings.TrimSpace(message)
+		job.Progress.Running = false
+		job.UpdatedAt = time.Now()
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
+	m.persistJobs()
+}
+
+func (m *MapperManager) MarkJobStopping(id string) {
+	m.mu.Lock()
+	if job, ok := m.jobs[id]; ok && job.State == "running" {
+		job.State = "stopping"
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) BeginJobSession(id string, totalTargets int) uint64 {
+	now := time.Now()
+	m.mu.Lock()
+	m.sessionID++
+	sessionID := m.sessionID
+	m.jobSessions[id] = sessionID
+	if job, ok := m.jobs[id]; ok {
+		job.State = "running"
+		job.LastError = ""
+		job.Progress = MapperProgress{Running: true, Mode: job.Config.Mode, CurrentIndex: -1, TotalTargets: totalTargets, StartedAt: &now, PassStartedAt: &now}
+		job.UpdatedAt = now
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
+	return sessionID
+}
+
+func (m *MapperManager) BeginJobTarget(id string, sessionID uint64, index, totalTargets int, frequencyHz float64, label string, listenFor time.Duration) {
+	now := time.Now()
+	m.mu.Lock()
+	if m.jobSessions[id] != sessionID {
+		m.mu.Unlock()
+		return
+	}
+	job, ok := m.jobs[id]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	progress := &job.Progress
+	progress.Running = true
+	progress.CurrentIndex = index
+	progress.TotalTargets = totalTargets
+	progress.CurrentFrequencyHz = frequencyHz
+	progress.CurrentLabel = label
+	progress.TargetStartedAt = &now
+	if index == 0 || progress.PassStartedAt == nil {
+		progress.PassStartedAt = &now
+		progress.EstimatedPassEndAt = nil
+	}
+	if listenFor > 0 {
+		endsAt := now.Add(listenFor)
+		progress.TargetEndsAt = &endsAt
+		estimated := now.Add(time.Duration(totalTargets-index) * listenFor)
+		progress.EstimatedPassEndAt = &estimated
+	} else {
+		progress.TargetEndsAt = nil
+		if index > 0 && progress.PassStartedAt != nil {
+			average := now.Sub(*progress.PassStartedAt) / time.Duration(index)
+			estimated := now.Add(average * time.Duration(totalTargets-index))
+			progress.EstimatedPassEndAt = &estimated
+		}
+	}
+	job.Progress = *progress
+	m.jobs[id] = job
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) CompleteJobPass(id string, sessionID uint64) {
+	m.mu.Lock()
+	if m.jobSessions[id] == sessionID {
+		job := m.jobs[id]
+		job.Progress.PassesCompleted++
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) EndJobSession(id string, sessionID uint64) {
+	now := time.Now()
+	m.mu.Lock()
+	if m.jobSessions[id] == sessionID {
+		job := m.jobs[id]
+		job.State = "idle"
+		job.Progress.Running = false
+		job.Progress.StoppedAt = &now
+		job.Progress.TargetEndsAt = nil
+		job.UpdatedAt = now
+		m.jobs[id] = job
+		delete(m.jobSessions, id)
+	}
+	m.mu.Unlock()
+	m.persistJobs()
 }
 
 func (m *MapperManager) BeginSession(mode string, totalTargets int) uint64 {
@@ -303,13 +575,26 @@ func (m *MapperManager) Config() MapperConfig {
 }
 
 func (m *MapperManager) Observe(frequencyHz float64, active bool, signalDBFS, noiseDBFS float64, modulation, protocol, name, transcript string) {
+	m.ObserveJob("", "", m.Config(), frequencyHz, active, signalDBFS, noiseDBFS, modulation, protocol, name, transcript)
+}
+
+func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, frequencyHz float64, active bool, signalDBFS, noiseDBFS float64, modulation, protocol, name, transcript string) {
 	key := fmt.Sprintf("%.0f", frequencyHz)
 	now := time.Now()
 	m.mu.Lock()
-	m.progress.ChecksCompleted++
-	m.progress.LastCheckAt = &now
-	if active {
-		m.progress.LastActivityAt = &now
+	if jobID == "" {
+		m.progress.ChecksCompleted++
+		m.progress.LastCheckAt = &now
+		if active {
+			m.progress.LastActivityAt = &now
+		}
+	} else if job, ok := m.jobs[jobID]; ok {
+		job.Progress.ChecksCompleted++
+		job.Progress.LastCheckAt = &now
+		if active {
+			job.Progress.LastActivityAt = &now
+		}
+		m.jobs[jobID] = job
 	}
 	record, exists := m.records[key]
 	if !exists && !active {
@@ -341,8 +626,10 @@ func (m *MapperManager) Observe(frequencyHz float64, active bool, signalDBFS, no
 		if transcript != "" {
 			record.LastTranscript = transcript
 		}
+		record.JobIDs = mergeUniqueStrings(record.JobIDs, []string{jobID})
+		record.DeviceIDs = mergeUniqueStrings(record.DeviceIDs, []string{deviceID})
 		record.Confidence = math.Max(record.Confidence, .72)
-		if location := observationLocation(m.config); location != nil {
+		if location := observationLocation(config); location != nil {
 			record.Location = location
 		}
 	}
@@ -519,7 +806,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
-	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone"}
+	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone", "mapper_job_ids", "receiver_ids"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -538,6 +825,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 			strconv.FormatFloat(record.Occupancy, 'f', 6, 64), strconv.FormatFloat(record.StrongestDBFS, 'f', 2, 64), strconv.FormatFloat(record.NoiseDBFS, 'f', 2, 64),
 			strconv.FormatFloat(record.Confidence, 'f', 3, 64), safeSpreadsheetText(record.LastTranscript), latitude, longitude, locationName, locationPrecision,
 			safeSpreadsheetText(record.IdentificationSource), safeSpreadsheetText(mapperPeakHours(record.HourlyHits)), safeSpreadsheetText(record.ActivityTimeZone),
+			safeSpreadsheetText(strings.Join(record.JobIDs, " | ")), safeSpreadsheetText(strings.Join(record.DeviceIDs, " | ")),
 		}
 		if err := writer.Write(row); err != nil {
 			return nil, 0, err
@@ -619,6 +907,23 @@ func (m *MapperManager) persistRecords() {
 	if err == nil {
 		_ = os.MkdirAll(filepath.Dir(m.recordsPath), 0o700)
 		_ = os.WriteFile(m.recordsPath, data, 0o600)
+	}
+}
+
+func (m *MapperManager) persistJobs() {
+	m.mu.RLock()
+	jobs := make(map[string]MapperJob, len(m.jobs))
+	for id, job := range m.jobs {
+		copy := job
+		copy.Config.Secret = ""
+		jobs[id] = copy
+	}
+	data, err := json.MarshalIndent(jobs, "", "  ")
+	path := m.jobsPath
+	m.mu.RUnlock()
+	if err == nil && path != "" {
+		_ = os.MkdirAll(filepath.Dir(path), 0o700)
+		_ = os.WriteFile(path, data, 0o600)
 	}
 }
 

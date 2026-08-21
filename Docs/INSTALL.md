@@ -15,7 +15,7 @@ provided by user-space receiver tools or the operating system's USB driver.
 
 ## macOS 13 or newer
 
-Use `GP-SDR-1.0.13-macos-universal.dmg` unless you specifically need the smaller
+Use `GP-SDR-1.1.0-macos-universal.dmg` unless you specifically need the smaller
 Apple Silicon (`arm64`) or Intel (`x86_64`) package.
 
 1. Open the DMG and drag **GP-SDR.app** to Applications.
@@ -39,6 +39,23 @@ profile. Use the JMBE action once if unencrypted P25 voice is silent. JMBE is
 created locally because of its license. Control-channel lock, system/NAC data,
 and grants are the acceptance signals; RF energy alone is not decoded P25.
 
+### Always-on Mac setup
+
+For a Mac that will keep the receivers connected permanently:
+
+1. Put GP-SDR in Applications and add it under **System Settings → General →
+   Login Items**.
+2. Enable LAN access in GP-SDR only on a trusted home network. Bookmark the
+   tokenized Web UI link shown by the app; do not expose its port directly to
+   the public internet.
+3. GP-SDR prevents idle system sleep while a receiver, Mapper job, or P25
+   session is running. The display may still turn off normally.
+4. Connect each dongle directly or through a powered USB hub and assign stable,
+   named receiver roles in **Hardware**.
+5. Back up the GP-SDR data folder shown in **Settings**. Recordings and IQ files
+   can be large, so choose a retention period instead of leaving it unlimited
+   unless the storage is monitored.
+
 ## Windows 10 or 11
 
 1. Extract the complete ZIP to a normal folder. Keep `GP-SDR.exe`, `sdrtrunk`,
@@ -58,9 +75,9 @@ from another device. Local use does not require a public-network firewall rule.
 Choose the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.0.13_amd64.deb
+sudo apt install ./gp-sdr_1.1.0_amd64.deb
 # or, on 64-bit ARM:
-sudo apt install ./gp-sdr_1.0.13_arm64.deb
+sudo apt install ./gp-sdr_1.1.0_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -133,6 +150,12 @@ Open the displayed tokenized URL from a phone on the same trusted network.
 
 ### Optional decoders on macOS
 
+In the packaged app, open **Hardware** and press **Install** on any missing
+DSD-FME, dump1090, multimon-ng, acarsdec, or AIS-catcher card. One confirmed
+action installs the complete revision-pinned optional decoder suite, including
+rtl_433, into the active Homebrew prefix. Progress and errors remain visible in
+GP-SDR. Press **Refresh** afterward.
+
 GP-SDR detects decoder executables in both Apple Silicon and Intel Homebrew
 prefixes. The following helper installs the maintained upstream builds of
 DSD-FME, dump1090, multimon-ng, acarsdec, and AIS-catcher, plus the dependencies
@@ -143,8 +166,8 @@ chmod +x Scripts/install_optional_decoders_macos.sh
 Scripts/install_optional_decoders_macos.sh
 ```
 
-The helper builds in a temporary directory and installs into the active
-Homebrew prefix. It does not start background services or change USB/network
+The helper builds reviewed, pinned upstream revisions in a temporary directory
+and installs into the active Homebrew prefix. It does not start background services or change USB/network
 security settings. Return to **Hardware** and press **Refresh** when it finishes.
 The source projects and their licenses remain independent and are credited in
 `THIRD_PARTY.md`.
@@ -173,7 +196,7 @@ On Windows PowerShell, compare this result with the matching line in
 `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\GP-SDR-1.0.13-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\GP-SDR-1.1.0-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ## Build from source
@@ -191,7 +214,7 @@ To create all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.13
+Scripts/build_release.sh 1.1.0
 ```
 
 Do not build a source checkout from a cloud-synced folder while it is resolving

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.0.13"
+var Version = "1.1.0"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -153,6 +153,7 @@ type TransmissionEvent struct {
 	Callsigns       []string             `json:"callsigns,omitempty"`
 	Analysis        *SignalIntelligence  `json:"analysis,omitempty"`
 	DecoderMessages []DecoderMessage     `json:"decoderMessages,omitempty"`
+	CTCSSHz         *float64             `json:"ctcssHz,omitempty"`
 	Confidence      float64              `json:"confidence"`
 	AudioPath       *string              `json:"audioPath"`
 	IQPath          *string              `json:"iqPath"`
@@ -196,6 +197,7 @@ type SignalSummary struct {
 	Label         *string              `json:"label"`
 	Confidence    float64              `json:"confidence"`
 	Location      *ObservationLocation `json:"location,omitempty"`
+	CTCSSHz       *float64             `json:"ctcssHz,omitempty"`
 }
 
 type DecoderDescriptor struct {
@@ -250,6 +252,23 @@ type RuntimeStatus struct {
 	DroppedSamples       uint64              `json:"droppedSamples"`
 	SignalAnalysis       *SignalIntelligence `json:"signalAnalysis,omitempty"`
 	ReceiverTelemetry    *ReceiverTelemetry  `json:"receiverTelemetry,omitempty"`
+	Storage              StorageStatus       `json:"storage"`
+	HealthNotices        []HealthNotice      `json:"healthNotices"`
+}
+
+type StorageStatus struct {
+	JournalBytes   int64     `json:"journalBytes"`
+	RecordingBytes int64     `json:"recordingBytes"`
+	IQBytes        int64     `json:"iqBytes"`
+	ProfileBytes   int64     `json:"profileBytes"`
+	TotalBytes     int64     `json:"totalBytes"`
+	CheckedAt      time.Time `json:"checkedAt"`
+}
+
+type HealthNotice struct {
+	ID      string `json:"id"`
+	Level   string `json:"level"`
+	Message string `json:"message"`
 }
 
 type ReceiverTelemetry struct {

@@ -78,3 +78,27 @@ func TestEventStorePrunesOnlyLegacyMapperFalsePositives(t *testing.T) {
 		t.Fatalf("event file was not rewritten correctly: %s", data)
 	}
 }
+
+func TestEventSearchIndexesTranscriptCallsignProtocolAndFrequency(t *testing.T) {
+	store, err := NewEventStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransmissionEvent{ID: "search-event", StartedAt: time.Now(), FrequencyHz: 462_562_500, Modulation: "NFM",
+		ProtocolName: ptr("Analog FM"), Label: ptr("GMRS Trail Group"), Transcript: ptr("K6ABC arriving at camp"), Callsigns: []string{"K6ABC"}}
+	if err := store.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"K6ABC", "trail camp", "analog", "462.5625", "gmrs"} {
+		results := store.Search(query, 10)
+		if len(results) != 1 || results[0].ID != event.ID {
+			t.Fatalf("query %q did not find the event: %#v", query, results)
+		}
+	}
+	if results := store.Search("not-present", 10); len(results) != 0 {
+		t.Fatalf("unexpected nonmatching results: %#v", results)
+	}
+	if tokens := strings.Join(searchTokens("P25 Phase-2"), ","); tokens != "p25,phase,2" {
+		t.Fatalf("unexpected search tokens: %s", tokens)
+	}
+}

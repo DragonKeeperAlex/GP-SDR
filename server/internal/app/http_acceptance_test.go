@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func acceptanceRequest(t *testing.T, server *Server, method, target string, body any, expected int) *httptest.ResponseRecorder {
@@ -58,7 +59,7 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 	for _, endpoint := range []string{
 		"/api/status", "/api/devices", "/api/decoders", "/api/integrations", "/api/setup",
 		"/api/p25/status", "/api/spectrum?bins=64", "/api/calibrations", "/api/remote-receivers",
-		"/api/range-sync", "/api/local-database", "/api/mapper", "/api/mapper/progress", "/api/profiles",
+		"/api/range-sync", "/api/local-database", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
 		"/api/events?limit=10", "/api/signals?limit=10", "/api/mixer", "/api/receiver-plan",
 	} {
 		acceptanceRequest(t, server, http.MethodGet, endpoint, nil, http.StatusOK)
@@ -86,6 +87,24 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 	mapperConfig := MapperConfig{Mode: "discovery", DeviceID: "simulator-0", StartHz: 100e6, EndHz: 101e6,
 		StepHz: 200e3, DwellMilliseconds: 200, LocationPrecision: "approximate"}
 	acceptanceRequest(t, server, http.MethodPut, "/api/mapper", mapperConfig, http.StatusOK)
+	mapperJob := decodeAcceptance[MapperJob](t, acceptanceRequest(t, server, http.MethodPost, "/api/mapper/jobs", MapperJob{Name: "Acceptance Mapper", Config: mapperConfig}, http.StatusCreated))
+	exportedJob := decodeAcceptance[MapperJob](t, acceptanceRequest(t, server, http.MethodGet, "/api/mapper/jobs/export?id="+mapperJob.ID, nil, http.StatusOK))
+	if exportedJob.ID != "" || exportedJob.Name != mapperJob.Name || exportedJob.Config.DeviceID != "simulator-0" {
+		t.Fatalf("unexpected portable Mapper job: %+v", exportedJob)
+	}
+	acceptanceRequest(t, server, http.MethodPost, "/api/mapper/jobs/start", map[string]string{"id": mapperJob.ID}, http.StatusOK)
+	acceptanceRequest(t, server, http.MethodPost, "/api/mapper/jobs/stop", map[string]string{"id": mapperJob.ID}, http.StatusOK)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		runtimeState.mu.RLock()
+		_, active := runtimeState.mapperJobs[mapperJob.ID]
+		runtimeState.mu.RUnlock()
+		if !active {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	acceptanceRequest(t, server, http.MethodDelete, "/api/mapper/jobs?id="+mapperJob.ID, nil, http.StatusOK)
 	export := acceptanceRequest(t, server, http.MethodGet, "/api/mapper/export.csv", nil, http.StatusOK)
 	if !bytes.Contains(export.Body.Bytes(), []byte("frequency_hz")) {
 		t.Fatal("Mapper CSV header is missing")

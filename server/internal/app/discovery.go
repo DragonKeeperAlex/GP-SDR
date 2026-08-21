@@ -16,9 +16,12 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 	devices := make([]SDRDevice, 0)
 	if includeSimulator {
 		limit := 20e6
-		devices = append(devices, SDRDevice{ID: "simulator-0", Name: "Demo Receiver", Kind: "Simulator",
+		devices = append(devices, SDRDevice{ID: "simulator-0", Name: "Demo Receiver A", Kind: "Simulator",
 			Driver: "built-in", Connected: true, Available: true, SampleRateLimit: &limit,
-			Note: ptr("Generates clearly marked sample activity for interface testing.")})
+			Note: ptr("Generates clearly marked sample activity for concurrent Mapper testing.")},
+			SDRDevice{ID: "simulator-1", Name: "Demo Receiver B", Kind: "Simulator",
+				Driver: "built-in", Connected: true, Available: true, SampleRateLimit: &limit,
+				Note: ptr("Second simulated receiver for simultaneous Discovery and Decipher testing.")})
 	}
 	devices = append(devices, discoverHackRF()...)
 	devices = append(devices, discoverRTLSDR()...)
