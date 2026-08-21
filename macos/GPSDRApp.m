@@ -15,6 +15,7 @@
 @property(nonatomic, copy) NSString *serverToken;
 @property(nonatomic, strong) CLLocationManager *locationManager;
 @property(nonatomic) BOOL locationRequestPending;
+@property(nonatomic, strong) id sleepActivity;
 @end
 
 @implementation GPSDRAppDelegate
@@ -33,6 +34,8 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    self.sleepActivity = [NSProcessInfo.processInfo beginActivityWithOptions:NSActivityIdleSystemSleepDisabled
+        reason:@"GP-SDR is monitoring radio activity."];
     [self buildMenus];
     [self buildWindow];
     self.serverPort = [self availableLoopbackPort];
@@ -47,6 +50,10 @@
         [self.serverProcess waitUntilExit];
     }
     [self.serverLogHandle closeFile];
+    if (self.sleepActivity) {
+        [NSProcessInfo.processInfo endActivity:self.sleepActivity];
+        self.sleepActivity = nil;
+    }
 }
 
 - (void)windowWillClose:(NSNotification *)notification { [NSApp terminate:nil]; }

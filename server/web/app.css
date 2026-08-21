@@ -147,7 +147,20 @@ td.transcript { max-width: 330px; overflow: hidden; text-overflow: ellipsis; col
 .calibration-box strong { font-size:11px; }.calibration-box span { color:var(--muted); font-size:9px; font-variant-numeric:tabular-nums; }
 .calibration-box label { color:var(--muted); font-size:9px; }.calibration-box input { width:100%; margin-top:4px; }
 .calibration-actions { grid-column:1/-1; display:flex; gap:6px; }.calibration-actions button { flex:1; padding:7px 8px; font-size:10px; }
+.mapper-live{display:grid;grid-template-columns:minmax(210px,1.7fr) repeat(4,minmax(95px,1fr));gap:1px;background:var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.mapper-live>div{min-width:0;padding:12px 14px;background:var(--panel)}
+.mapper-live span,.mapper-live small{display:block;color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:.055em}
+.mapper-live strong{display:block;overflow:hidden;margin:5px 0 3px;color:var(--text);font-size:18px;font-weight:620;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+.mapper-live-frequency strong{color:var(--accent);font-size:25px;letter-spacing:-.03em}
+.mapper-live small{overflow:hidden;text-transform:none;letter-spacing:0;text-overflow:ellipsis;white-space:nowrap}
+.mapper-progress-track{height:3px;background:#0d1116;overflow:hidden}.mapper-progress-track i{display:block;width:0;height:100%;background:var(--accent);transition:width .22s ease}
 .mapper-controls { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)) auto; gap:9px; padding:13px; align-items:end; }.mapper-actions{display:flex;gap:6px}.mapper-sheet-form{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:9px;align-items:end;padding:13px}.mapper-sheet-panel{margin-top:12px}
+.mapper-duration-input{display:grid;grid-template-columns:minmax(58px,.7fr) minmax(82px,1fr);gap:5px}.mapper-duration-input input,.mapper-duration-input select{margin-top:5px}
+.mapper-result-row.expanded{background:rgba(73,213,170,.035)}
+.mapper-frequency-button{display:flex;align-items:center;gap:7px;padding:3px 5px;border:0;color:var(--text);background:transparent;font-variant-numeric:tabular-nums}.mapper-frequency-button:hover{border:0;color:var(--accent);background:transparent}.mapper-frequency-button i{font-style:normal;font-size:17px;line-height:10px;transition:transform .15s}.mapper-result-row.expanded .mapper-frequency-button i{transform:rotate(90deg)}
+.mapper-detail-row td{padding:0;background:#0e1217;white-space:normal}.mapper-detail-row:hover{background:transparent}
+.mapper-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:1px;background:var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.mapper-detail-grid>div{min-width:0;padding:12px 14px;background:#10151b}.mapper-detail-grid span,.mapper-detail-grid small{display:block;color:var(--dim);font-size:9px}.mapper-detail-grid span{text-transform:uppercase;letter-spacing:.05em}.mapper-detail-grid strong{display:block;margin:5px 0 3px;color:#cbd3dc;font-size:11px;font-weight:570;line-height:1.4}.mapper-detail-wide{grid-column:1/-1}
 .p25-native-audio{font-size:10px;color:var(--muted);letter-spacing:.08em;text-align:center}
 .remote-panel{margin-top:10px}.remote-form{display:grid;grid-template-columns:1fr 1fr 110px auto;gap:8px;align-items:end;padding:12px}.remote-list{border-top:1px solid var(--line-soft)}.remote-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px}.remote-row span{display:flex;flex-direction:column}.remote-row small{color:var(--muted)}
 body:not(.advanced-mode) .advanced-radio, body:not(.advanced-mode) .advanced-only { display:none!important; }
@@ -347,6 +360,12 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
   .two-column, .settings-grid, .decoder-columns { grid-template-columns: 1fr; }
   .range-sync-form { grid-template-columns: 1fr; }
   .mapper-controls,.mapper-sheet-form,.remote-form { grid-template-columns:1fr 1fr; }
+  .mapper-live { grid-template-columns:1fr 1fr; }
+  .mapper-live-frequency { grid-column:1/-1; }
+  .mapper-live strong { font-size:16px; }
+  .mapper-live-frequency strong { font-size:23px; }
+  .mapper-detail-grid { grid-template-columns:1fr 1fr; }
+  .mapper-detail-wide { grid-column:1/-1; }
   .range-sync-options { align-items: stretch; flex-direction: column; }
   .range-sync-options select, .range-sync-actions button { width: 100%; }
   .range-sync-actions { display: grid; grid-template-columns: 1fr 1fr; }

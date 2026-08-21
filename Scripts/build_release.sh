@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.0.11-dev}
+VERSION=${1:-1.0.12-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.11; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.0.12; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"
@@ -22,7 +22,12 @@ if [ -s "$CONFLICT_LIST" ]; then
   exit 1
 fi
 
-rm -rf "$BUILD_ROOT" "$DIST_ROOT"
+rm -rf "$BUILD_ROOT" "$DIST_ROOT" 2>/dev/null || true
+mkdir -p "$BUILD_ROOT/bin" "$DIST_ROOT"
+# Finder can recreate .DS_Store between removal of a directory and its parent.
+# Remove any remaining real build content while tolerating that harmless race.
+find "$BUILD_ROOT" "$DIST_ROOT" -mindepth 1 ! -name '.DS_Store' -exec rm -rf {} +
+find "$BUILD_ROOT" "$DIST_ROOT" -name '.DS_Store' -delete 2>/dev/null || true
 mkdir -p "$BUILD_ROOT/bin" "$DIST_ROOT"
 chmod +x "$PROJECT_ROOT/Scripts/fetch_p25_stack.sh"
 "$PROJECT_ROOT/Scripts/fetch_p25_stack.sh"

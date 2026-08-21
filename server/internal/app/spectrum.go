@@ -10,6 +10,7 @@ import (
 type ChannelSpectrumLevel struct {
 	SignalDB float64
 	NoiseDB  float64
+	PeakDB   float64
 }
 
 func MeasureChannelSpectrum(data []byte, format SampleFormat, sampleRate int, centerFrequency float64, channels []ChannelDefinition) (map[string]ChannelSpectrumLevel, error) {
@@ -58,9 +59,13 @@ func MeasureChannelSpectrum(data []byte, format SampleFormat, sampleRate int, ce
 		if halfWidth < 2 {
 			halfWidth = 2
 		}
-		signalPower, signalBins := 0.0, 0
+		signalPower, peakPower, signalBins := 0.0, 0.0, 0
 		for delta := -halfWidth; delta <= halfWidth; delta++ {
-			signalPower += accumulated[wrappedBin(centerBin+delta, fftSize)]
+			power := accumulated[wrappedBin(centerBin+delta, fftSize)]
+			signalPower += power
+			if power > peakPower {
+				peakPower = power
+			}
 			signalBins++
 		}
 		noisePower, noiseBins := 0.0, 0
@@ -73,7 +78,7 @@ func MeasureChannelSpectrum(data []byte, format SampleFormat, sampleRate int, ce
 		signalPower /= float64(signalBins)
 		noisePower /= float64(maxInt(noiseBins, 1))
 		levels[channel.ID] = ChannelSpectrumLevel{SignalDB: 10 * math.Log10(math.Max(signalPower, 1e-15)),
-			NoiseDB: 10 * math.Log10(math.Max(noisePower, 1e-15))}
+			NoiseDB: 10 * math.Log10(math.Max(noisePower, 1e-15)), PeakDB: 10 * math.Log10(math.Max(peakPower, 1e-15))}
 	}
 	return levels, nil
 }

@@ -45,6 +45,7 @@ type OP25Manager struct {
 	dataRoot     string
 	muted        map[uint32]bool
 	restartTimer *time.Timer
+	sessionStart time.Time
 }
 
 type op25Configuration struct {

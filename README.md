@@ -20,8 +20,9 @@ browser and is designed for phones and tablets.
 - Real tuner spectrum and scrolling waterfall
 - Unified channel controls plus per-talkgroup mute, solo, identity, and activity
 - Unattended activity logging, signal grouping, recordings, and later review
-- Mapper Discovery and Decipher workflows with occupancy, optional location,
-  transcription, and Google Sheets upload
+- Mapper Discovery and Decipher workflows with live frequency/progress,
+  5-second-to-7-day per-channel listening, peak activity hours, expandable
+  identification evidence, optional location/transcription, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
   acarsdec, and AIS-catcher
 - Built-in GMRS, NOAA Weather Radio, MURS, CB, broadcast FM/AM, civil air,
@@ -53,6 +54,10 @@ Download the Universal package for the easiest choice, unzip it, and open
 preview bundles are ad-hoc signed rather than Apple-notarized, so macOS may
 require Control-click → **Open** the first time.
 
+While the native app is open, GP-SDR prevents idle system sleep so unattended
+scans and recordings continue. Display sleep remains available, and the sleep
+assertion is released when the app quits.
+
 The complete P25 trunking engine is already inside the app. The P25 page can
 create the JMBE voice codec locally on first use. For the built-in analog tuner
 and scanner, open **Hardware** and use each component's **Install** or **How to**
@@ -69,7 +74,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.0.11_amd64.deb
+sudo apt install ./gp-sdr_1.0.12_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -195,7 +200,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.11
+Scripts/build_release.sh 1.0.12
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -224,7 +229,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.11.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.0.12.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

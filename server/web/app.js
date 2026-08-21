@@ -1,7 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
-  rangeSync: null, localDatabase: null, calibrations: [], mapper: null, remoteReceivers: [],
+  rangeSync: null, localDatabase: null, calibrations: [], mapper: null, mapperProgress: null, remoteReceivers: [],
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live'
 };
 const serverToken = new URLSearchParams(location.search).get('token') || '';
@@ -17,6 +17,7 @@ const liveAudio = { context:null, controller:null, gains:new Map(), nextTimes:ne
 let receiverApplyTimer, receiverApplying = false;
 const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20}}})();
 const spectrumHistory = new WeakMap();
+const expandedMapperFrequencies = new Set();
 
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -68,6 +69,21 @@ function durationSince(dateString) {
   return `${Math.floor(seconds / 3600)}h`;
 }
 
+function compactDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const days = Math.floor(seconds / 86400), hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60), remainder = seconds % 60;
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${remainder}s`;
+  return `${remainder}s`;
+}
+
+function durationBetween(start, end = null) {
+  if (!start) return '—';
+  return compactDuration((new Date(end || Date.now()).getTime() - new Date(start).getTime()) / 1000);
+}
+
 function setView(view) {
   state.view = view;
   $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
@@ -90,12 +106,12 @@ function setView(view) {
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations, mapper, remoteReceivers] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations, mapper, mapperProgress, remoteReceivers] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/calibrations'), api('/api/mapper'), api('/api/remote-receivers')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/calibrations'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/remote-receivers')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations: calibrations || [], mapper, remoteReceivers: remoteReceivers || [] });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations: calibrations || [], mapper, mapperProgress, remoteReceivers: remoteReceivers || [] });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -132,13 +148,51 @@ function renderRadioReferenceSettings() {
 function renderMapper(){
   const body=$('#mapper-body'); if(!body)return; const connected=state.devices.filter(d=>d.connected&&d.kind!=='Simulator'), select=$('#mapper-device'); const sig=connected.map(d=>d.id).join(); if(select.dataset.signature!==sig){select.innerHTML=connected.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(d.name)}</option>`).join('')||'<option value="">No receiver</option>';select.dataset.signature=sig;}
   const m=state.mapper,records=m?.records||[];
-  body.innerHTML=records.map(s=>`<tr><td>${formatFrequency(s.frequencyHz)}</td><td>${escapeHTML(s.name||s.protocolName||'Unidentified')}${s.location?.label?`<small>${escapeHTML(s.location.label)}</small>`:''}</td><td>${escapeHTML(s.protocolName||s.modulation||'Unknown')}</td><td>${s.hits} / ${s.checks} · ${(100*(s.occupancy||0)).toFixed(1)}%</td><td>${Number(s.strongestDBFS).toFixed(1)} dBFS</td><td>${timeAgo(s.lastSeen)}</td><td><button class="mapper-send-one" data-frequency-hz="${s.frequencyHz}" title="Add this observation to the spreadsheet Additions Queue">Queue</button></td></tr>`).join('')||'<tr><td colspan="7">No mapped activity yet</td></tr>';
-  $('#mapper-count').textContent=records.length?`${records.length} active frequencies`:'No detected activity'; const running=state.status?.running&&state.status?.activeProfileID==='mapper-session'; $('#mapper-state').textContent=running?(m?.config?.mode==='decipher'?'Deciphering':'Discovering'):'Idle'; $('#mapper-start-button').disabled=running||!connected.length; $('#mapper-stop-button').disabled=!running;
-  if(m){if(!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-sheet-url').value=m.config.sheetURL||''; $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-contributor').value=m.config.contributor||'GP-SDR'; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;} if(!$('#mapper-form').contains(document.activeElement)){ $('#mapper-workflow').value=m.config.mode||'discovery'; if(m.config.deviceID)$('#mapper-device').value=m.config.deviceID; if(m.config.startHz)$('#mapper-start').value=m.config.startHz/1e6; if(m.config.endHz)$('#mapper-end').value=m.config.endHz/1e6; if(m.config.stepHz)$('#mapper-step').value=m.config.stepHz/1000; if(m.config.dwellMilliseconds)$('#mapper-dwell').value=m.config.dwellMilliseconds; $('#mapper-transcribe').checked=!!m.config.transcribe; $('#mapper-location').checked=!!m.config.includeLocation; $('#mapper-location-precision').value=m.config.locationPrecision||'approximate'; $('#mapper-location-label').value=m.config.locationLabel||''; $('#mapper-latitude').value=m.config.latitude??''; $('#mapper-longitude').value=m.config.longitude??'';} $('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off'; $('#mapper-upload-detail').textContent=m.lastError||`Additions Queue · ${m.uploadedRows||0} rows sent${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
-  updateMapperWorkflow();
+  body.innerHTML=records.map(s=>{const key=String(s.frequencyHz),expanded=expandedMapperFrequencies.has(key);return `<tr class="mapper-result-row ${expanded?'expanded':''}" data-mapper-frequency="${key}"><td><button class="mapper-frequency-button" type="button" aria-expanded="${expanded}" title="Show identification and activity details"><i>›</i>${formatFrequency(s.frequencyHz)}</button></td><td>${escapeHTML(s.name||s.protocolName||'Unidentified')}${s.location?.label?`<small>${escapeHTML(s.location.label)}</small>`:''}</td><td>${escapeHTML(s.protocolName||s.modulation||'Unknown')}</td><td>${s.hits} / ${s.checks} · ${(100*(s.occupancy||0)).toFixed(1)}%</td><td>${Number(s.strongestDBFS).toFixed(1)} dBFS</td><td>${timeAgo(s.lastSeen)}</td><td><button class="mapper-send-one" data-frequency-hz="${s.frequencyHz}" title="Add this observation to the spreadsheet Additions Queue">Queue</button></td></tr><tr class="mapper-detail-row ${expanded?'':'hidden'}" data-mapper-detail="${key}"><td colspan="7">${mapperDetailHTML(s)}</td></tr>`;}).join('')||'<tr><td colspan="7">No mapped activity yet</td></tr>';
+  $('#mapper-count').textContent=records.length?`${records.length} active frequencies`:'No detected activity'; const running=state.status?.running&&state.status?.activeProfileID==='mapper-session'; $('#mapper-state').textContent=running?(m?.config?.mode==='decipher'?'Deciphering':'Discovering'):'Idle'; $('#mapper-state').className=`chip ${running?'ready':''}`; $('#mapper-start-button').disabled=running||!connected.length; $('#mapper-stop-button').disabled=!running;
+  if(m){if(!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-sheet-url').value=m.config.sheetURL||''; $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-contributor').value=m.config.contributor||'GP-SDR'; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;} if(!$('#mapper-form').contains(document.activeElement)){ $('#mapper-workflow').value=m.config.mode||'discovery'; if(m.config.deviceID)$('#mapper-device').value=m.config.deviceID; if(m.config.startHz)$('#mapper-start').value=m.config.startHz/1e6; if(m.config.endHz)$('#mapper-end').value=m.config.endHz/1e6; if(m.config.stepHz)$('#mapper-step').value=m.config.stepHz/1000; if(m.config.dwellMilliseconds)$('#mapper-dwell').value=m.config.dwellMilliseconds; setMapperListenInput(m.config.decipherListenSeconds||60); $('#mapper-transcribe').checked=!!m.config.transcribe; $('#mapper-location').checked=!!m.config.includeLocation; $('#mapper-location-precision').value=m.config.locationPrecision||'approximate'; $('#mapper-location-label').value=m.config.locationLabel||''; $('#mapper-latitude').value=m.config.latitude??''; $('#mapper-longitude').value=m.config.longitude??'';} $('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off'; $('#mapper-upload-detail').textContent=m.lastError||`Additions Queue · ${m.uploadedRows||0} rows sent${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
+  updateMapperWorkflow(); renderMapperProgress();
 }
 
-function updateMapperWorkflow(){const decipher=$('#mapper-workflow').value==='decipher';['mapper-start','mapper-end','mapper-step'].forEach(id=>$('#'+id).disabled=decipher);$('#mapper-workflow-detail').textContent=decipher?'Decipher revisits the active frequencies already found, records audio, and applies deeper identification.':'Discovery continuously sweeps the selected range, records hit rate, and resumes revisiting it.';}
+function mapperPeakHours(hourly=[]){
+  return hourly.map((count,hour)=>({hour,count:Number(count)||0})).filter(item=>item.count>0).sort((a,b)=>b.count-a.count||a.hour-b.hour).slice(0,3).map(item=>`${String(item.hour).padStart(2,'0')}:00–${String(item.hour).padStart(2,'0')}:59 (${item.count})`).join(' · ')||'Not enough activity yet';
+}
+
+function mapperDetailHTML(record){
+  const identity=record.name||record.protocolName||'Not identified';
+  const source=record.identificationSource||'No RadioReference, local database, or saved-profile match';
+  const callsigns=(record.callsigns||[]).join(', ')||'None decoded';
+  const location=record.location?(record.location.label||`${Number(record.location.latitude).toFixed(3)}, ${Number(record.location.longitude).toFixed(3)}`):'Not recorded';
+  const analysis=record.identificationSource?`Matched ${record.identificationSource}. The receiver classified this as ${record.protocolName||record.modulation||'an unknown signal'} with ${Math.round((record.confidence||0)*100)}% confidence.`:`Observed RF activity, but no authoritative database match is available yet. Modulation and identity remain evidence-based estimates.`;
+  return `<div class="mapper-detail-grid"><div><span>Identified as</span><strong>${escapeHTML(identity)}</strong><small>${escapeHTML(source)}</small></div><div><span>Peak activity hours</span><strong>${escapeHTML(mapperPeakHours(record.hourlyHits))}</strong><small>${escapeHTML(record.activityTimeZone||'Receiver local time')}</small></div><div><span>Signal evidence</span><strong>${record.hits} ${record.hits===1?'hit':'hits'} · ${(100*(record.occupancy||0)).toFixed(1)}% occupancy</strong><small>${Number(record.strongestDBFS).toFixed(1)} dBFS peak · ${Number(record.noiseDBFS).toFixed(1)} dBFS noise</small></div><div><span>Classification</span><strong>${escapeHTML(record.protocolName||record.modulation||'Unknown')}</strong><small>${escapeHTML(record.modulation||'Unknown modulation')} · ${Math.round((record.confidence||0)*100)}% confidence</small></div><div><span>Callsigns</span><strong>${escapeHTML(callsigns)}</strong><small>Decoded or database-provided identifiers</small></div><div><span>Observed</span><strong>${timeAgo(record.lastSeen)==='now'?'Now':`${timeAgo(record.lastSeen)} ago`}</strong><small>${escapeHTML(location)}</small></div><div class="mapper-detail-wide"><span>Automatic analysis</span><strong>${escapeHTML(analysis)}</strong><small>${record.lastTranscript?`Latest transcript: ${escapeHTML(record.lastTranscript)}`:'No speech transcript is available yet.'}</small></div></div>`;
+}
+
+function setMapperListenInput(seconds){
+  const options=[86400,3600,60,1],unit=options.find(value=>seconds>=value&&seconds%value===0)||1;
+  $('#mapper-listen-unit').value=String(unit); $('#mapper-listen-value').value=Math.max(1,seconds/unit);
+}
+
+function renderMapperProgress(){
+  const p=state.mapperProgress||{},records=state.mapper?.records||[],running=!!p.running;
+  const total=Number(p.totalTargets)||0,index=Number.isInteger(p.currentIndex)?p.currentIndex:-1;
+  const percent=total&&index>=0?Math.min(100,Math.max(0,((index+1)/total)*100)):0;
+  $('#mapper-current-frequency').textContent=p.currentFrequencyHz?formatFrequency(p.currentFrequencyHz):'—';
+  $('#mapper-current-detail').textContent=p.currentFrequencyHz?`${p.currentLabel||'Scanning'} · channel ${index+1} of ${total}`:(running?'Preparing receiver':'Waiting to start');
+  $('#mapper-pass-progress').textContent=total?`${percent.toFixed(percent<10?1:0)}%`:'—';
+  $('#mapper-pass-count').textContent=total&&index>=0?`${index+1} / ${total}`:'0 / 0';
+  $('#mapper-checks').textContent=Number(p.checksCompleted||0).toLocaleString();
+  $('#mapper-passes').textContent=`${p.passesCompleted||0} ${(p.passesCompleted||0)===1?'pass':'passes'}`;
+  const hits=records.reduce((sum,item)=>sum+(Number(item.hits)||0),0);
+  $('#mapper-hits').textContent=hits.toLocaleString();
+  const activityAge=p.lastActivityAt?timeAgo(p.lastActivityAt):'';$('#mapper-last-activity').textContent=activityAge?(activityAge==='now'?'Activity now':`Last activity ${activityAge} ago`):'No activity yet';
+  $('#mapper-elapsed').textContent=durationBetween(p.startedAt,running?null:p.stoppedAt);
+  if(running&&p.mode==='decipher'&&p.targetEndsAt){const remaining=Math.max(0,(new Date(p.targetEndsAt).getTime()-Date.now())/1000);$('#mapper-channel-time').textContent=`Next channel in ${compactDuration(remaining)}`;}
+  else if(running){const checkAge=p.lastCheckAt?timeAgo(p.lastCheckAt):'';$('#mapper-channel-time').textContent=checkAge?(checkAge==='now'?'Checking now':`Last check ${checkAge} ago`):'Starting first check';}
+  else{$('#mapper-channel-time').textContent=p.stoppedAt?'Session stopped':'—';}
+  const track=$('.mapper-progress-track');track.setAttribute('aria-valuenow',String(Math.round(percent)));$('#mapper-progress-bar').style.width=`${percent}%`;
+}
+
+function updateMapperWorkflow(){const decipher=$('#mapper-workflow').value==='decipher';['mapper-start','mapper-end','mapper-step'].forEach(id=>$('#'+id).disabled=decipher);$('#mapper-listen-wrap').classList.toggle('hidden',!decipher);$('#mapper-workflow-detail').textContent=decipher?'Decipher listens to each found channel for the selected time, records activity, and applies deeper identification.':'Discovery continuously sweeps the selected range, records hit rate, and resumes revisiting it.';}
 
 function renderRangeSync() {
   const sync = state.rangeSync; if (!sync) return;
@@ -902,8 +956,10 @@ $('#remote-form').addEventListener('submit',async event=>{event.preventDefault()
 $('#mapper-form').addEventListener('submit',async event=>{
   event.preventDefault(); const workflow=$('#mapper-workflow').value,start=Number($('#mapper-start').value)*1e6,end=Number($('#mapper-end').value)*1e6,deviceID=$('#mapper-device').value,mode=$('#mapper-mode').value,step=Number($('#mapper-step').value)*1000,dwell=Number($('#mapper-dwell').value),includeLocation=$('#mapper-location').checked;
   const latitude=$('#mapper-latitude').value===''?null:Number($('#mapper-latitude').value),longitude=$('#mapper-longitude').value===''?null:Number($('#mapper-longitude').value);
+  const decipherListenSeconds=Math.round(Number($('#mapper-listen-value').value)*Number($('#mapper-listen-unit').value));
+  if(workflow==='decipher'&&(decipherListenSeconds<5||decipherListenSeconds>7*86400))return toast('Choose 5 seconds to 7 days per channel',true);
   if(!deviceID)return toast('Select a receiver',true); if(workflow==='discovery'&&(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||step<=0))return toast('Enter a valid discovery range',true); if(includeLocation&&(!Number.isFinite(latitude)||!Number.isFinite(longitude)))return toast('Add a valid location or turn location tagging off',true);
-  const config={...(state.mapper?.config||{}),mode:workflow,deviceID,startHz:start,endHz:end,stepHz:step,dwellMilliseconds:dwell,transcribe:$('#mapper-transcribe').checked,includeLocation,locationPrecision:$('#mapper-location-precision').value,locationLabel:$('#mapper-location-label').value.trim(),latitude,longitude};
+  const config={...(state.mapper?.config||{}),mode:workflow,deviceID,startHz:start,endHz:end,stepHz:step,dwellMilliseconds:dwell,decipherListenSeconds,transcribe:$('#mapper-transcribe').checked,includeLocation,locationPrecision:$('#mapper-location-precision').value,locationLabel:$('#mapper-location-label').value.trim(),latitude,longitude};
   const records=state.mapper?.records||[],channels=workflow==='decipher'?records.slice(0,5000).map((item,index)=>({id:`mapper-found-${index}`,name:item.name||item.protocolName||`Found ${formatFrequency(item.frequencyHz)}`,frequencyHz:item.frequencyHz,bandwidthHz:item.modulation==='WFM'?180000:12500,mode:['AM','NFM','WFM'].includes(String(item.modulation).toUpperCase())?String(item.modulation).toLowerCase():'auto',decoder:item.protocolName||null,enabled:true,priority:5})):[];
   if(workflow==='decipher'&&!channels.length)return toast('Discovery has not found any active frequencies yet',true);
   const ranges=workflow==='discovery'?[{id:'mapper-range',name:'Mapper discovery',startHz:start,endHz:end,stepHz:step,dwellMilliseconds:dwell,preferredMode:mode,enabled:true}]:[];
@@ -915,7 +971,7 @@ $('#mapper-clear').addEventListener('click',async()=>{if(!confirm('Clear all Map
 $('#mapper-save').addEventListener('click',async()=>{try{const result=await api('/api/mapper/save',{method:'POST',body:'{}'});toast(`${result.rows} rows saved · ${result.path}`);}catch(error){toast(error.message,true);}});
 $('#mapper-download').addEventListener('click',()=>{window.location.href=`/api/mapper/export.csv${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
 $('#mapper-sheet-form').addEventListener('submit',async event=>{event.preventDefault();try{state.mapper=await api('/api/mapper',{method:'PUT',body:JSON.stringify({...(state.mapper?.config||{}),sheetURL:$('#mapper-sheet-url').value.trim(),webhookURL:$('#mapper-webhook').value.trim(),contributor:$('#mapper-contributor').value.trim()||'GP-SDR',secret:$('#mapper-secret').value,autoUpload:$('#mapper-auto-upload').checked})});renderMapper();toast('Additions Queue settings saved');}catch(error){toast(error.message,true);}});
-$('#mapper-body').addEventListener('click',async event=>{const button=event.target.closest('.mapper-send-one');if(!button)return;button.disabled=true;try{state.mapper=await api('/api/mapper/upload-one',{method:'POST',body:JSON.stringify({frequencyHz:Number(button.dataset.frequencyHz)})});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('Observation added to Additions Queue');}catch(error){toast(error.message,true);button.disabled=false;}});
+$('#mapper-body').addEventListener('click',async event=>{const button=event.target.closest('.mapper-send-one');if(button){button.disabled=true;try{state.mapper=await api('/api/mapper/upload-one',{method:'POST',body:JSON.stringify({frequencyHz:Number(button.dataset.frequencyHz)})});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('Observation added to Additions Queue');}catch(error){toast(error.message,true);button.disabled=false;}return;}const row=event.target.closest('.mapper-result-row');if(!row)return;const key=row.dataset.mapperFrequency;if(expandedMapperFrequencies.has(key))expandedMapperFrequencies.delete(key);else expandedMapperFrequencies.add(key);row.classList.toggle('expanded');row.querySelector('.mapper-frequency-button')?.setAttribute('aria-expanded',String(expandedMapperFrequencies.has(key)));$('#mapper-body').querySelector(`[data-mapper-detail="${CSS.escape(key)}"]`)?.classList.toggle('hidden',!expandedMapperFrequencies.has(key));});
 $('#mapper-script-download').addEventListener('click',()=>{window.location.href=`/api/mapper/apps-script.gs${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
 $('#mapper-upload-now').addEventListener('click',async()=>{try{state.mapper=await api('/api/mapper/upload',{method:'POST',body:'{}'});renderMapper();if(state.mapper.lastError)toast(state.mapper.lastError,true);else toast('New Mapper activity uploaded');}catch(error){toast(error.message,true);}});
 $('#mapper-workflow').addEventListener('change',updateMapperWorkflow);
@@ -961,11 +1017,11 @@ $('#interface-mode').addEventListener('change',event=>{const advanced=event.targ
 refreshAll();
 setInterval(async()=>{
   if(document.hidden)return;
-	try{const [status,mixer,p25Status]=await Promise.all([api('/api/status'),api('/api/mixer'),api('/api/p25/status')]);Object.assign(state,{status,mixer,p25Status});renderStatus();renderMixer();renderTuner();if(state.view==='decoders')renderDecoders();}catch(_){ }
+	try{const requests=[api('/api/status'),api('/api/mixer'),api('/api/p25/status')];if(state.view==='mapper')requests.push(api('/api/mapper/progress'));const [status,mixer,p25Status,mapperProgress]=await Promise.all(requests);Object.assign(state,{status,mixer,p25Status});if(mapperProgress)state.mapperProgress=mapperProgress;renderStatus();renderMixer();renderTuner();if(state.view==='decoders')renderDecoders();if(state.view==='mapper')renderMapperProgress();}catch(_){ }
 },750);
 setInterval(async()=>{
 	if(document.hidden)return;
-	try{const [events,signals]=await Promise.all([api('/api/events?limit=150'),api('/api/signals?limit=400')]);Object.assign(state,{events,signals});renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}}catch(_){ }
+	try{const requests=[api('/api/events?limit=150'),api('/api/signals?limit=400')];if(state.view==='mapper')requests.push(api('/api/mapper'));const [events,signals,mapper]=await Promise.all(requests);Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='mapper'&&mapper)renderMapper();}catch(_){ }
 },5000);
 async function pollSpectrum() {
 	if(!document.hidden && state.status?.running && (state.view==='live'||state.view==='tuner')){try{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);renderTuner();drawSpectrum();drawWaterfall();}catch(_){ }}

@@ -80,6 +80,7 @@ func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, erro
 }
 func (r *Runtime) SyncRangesNow() RangeSyncStatus { return r.rangeSync.SyncNow() }
 func (r *Runtime) MapperStatus() MapperStatus     { return r.mapper.Status() }
+func (r *Runtime) MapperProgress() MapperProgress { return r.mapper.Progress() }
 func (r *Runtime) LocalDatabaseStatus() LocalDatabaseStatus {
 	return r.localDatabase.Status()
 }
@@ -715,11 +716,52 @@ func clamp(value, min, max float64) float64 {
 func (r *Runtime) simulationLoop(stop <-chan struct{}) {
 	ticker := time.NewTicker(2400 * time.Millisecond)
 	defer ticker.Stop()
+	r.mu.RLock()
+	profile := ScanProfile{}
+	if r.active != nil {
+		profile = *r.active
+	}
+	r.mu.RUnlock()
+	mapperTargets := surveyTargets(profile)
+	mapperConfig := MapperConfig{}
+	mapperIndex := 0
+	var mapperSessionID uint64
+	var mapperTargetEndsAt time.Time
+	if profile.ID == "mapper-session" && r.mapper != nil && len(mapperTargets) > 0 {
+		mapperConfig = r.mapper.Config()
+		mapperSessionID = r.mapper.BeginSession(mapperConfig.Mode, len(mapperTargets))
+		defer r.mapper.EndSession(mapperSessionID)
+	}
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
+			if mapperSessionID != 0 {
+				target := mapperTargets[mapperIndex]
+				listenFor := time.Duration(0)
+				if mapperConfig.Mode == "decipher" {
+					listenFor = time.Duration(mapperConfig.DecipherListenSeconds) * time.Second
+				}
+				if mapperTargetEndsAt.IsZero() {
+					r.mapper.BeginTarget(mapperSessionID, mapperIndex, len(mapperTargets), target.FrequencyHz, target.Label, listenFor)
+					mapperTargetEndsAt = time.Now().Add(listenFor)
+				}
+				active := rand.Intn(4) == 0
+				name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
+				r.mapper.Observe(target.FrequencyHz, active, -40+rand.Float64()*12, -82+rand.Float64()*5, mode, protocol, name, "")
+				if active {
+					r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+				}
+				if listenFor == 0 || !time.Now().Before(mapperTargetEndsAt) {
+					mapperIndex++
+					mapperTargetEndsAt = time.Time{}
+					if mapperIndex >= len(mapperTargets) {
+						mapperIndex = 0
+						r.mapper.CompletePass(mapperSessionID)
+					}
+				}
+			}
 			r.generateDemo()
 		}
 	}

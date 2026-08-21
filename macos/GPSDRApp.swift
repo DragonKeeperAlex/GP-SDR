@@ -11,9 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private let serverToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
     private let locationManager = CLLocationManager()
     private var locationRequestPending = false
+    private var sleepActivity: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        sleepActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.idleSystemSleepDisabled],
+            reason: "GP-SDR is monitoring radio activity."
+        )
         buildMenus()
         buildWindow()
         locationManager.delegate = self
@@ -28,6 +33,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if let process = serverProcess, process.isRunning {
             process.terminate()
             process.waitUntilExit()
+        }
+        if let sleepActivity {
+            ProcessInfo.processInfo.endActivity(sleepActivity)
+            self.sleepActivity = nil
         }
     }
 

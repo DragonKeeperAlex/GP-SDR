@@ -20,41 +20,45 @@ import (
 )
 
 type MapperConfig struct {
-	WebhookURL        string   `json:"webhookURL"`
-	SheetURL          string   `json:"sheetURL,omitempty"`
-	Contributor       string   `json:"contributor,omitempty"`
-	Secret            string   `json:"secret,omitempty"`
-	AutoUpload        bool     `json:"autoUpload"`
-	Mode              string   `json:"mode,omitempty"`
-	DeviceID          string   `json:"deviceID,omitempty"`
-	StartHz           float64  `json:"startHz,omitempty"`
-	EndHz             float64  `json:"endHz,omitempty"`
-	StepHz            float64  `json:"stepHz,omitempty"`
-	DwellMilliseconds int      `json:"dwellMilliseconds,omitempty"`
-	Transcribe        bool     `json:"transcribe"`
-	IncludeLocation   bool     `json:"includeLocation"`
-	LocationPrecision string   `json:"locationPrecision,omitempty"`
-	Latitude          *float64 `json:"latitude,omitempty"`
-	Longitude         *float64 `json:"longitude,omitempty"`
-	LocationLabel     string   `json:"locationLabel,omitempty"`
+	WebhookURL            string   `json:"webhookURL"`
+	SheetURL              string   `json:"sheetURL,omitempty"`
+	Contributor           string   `json:"contributor,omitempty"`
+	Secret                string   `json:"secret,omitempty"`
+	AutoUpload            bool     `json:"autoUpload"`
+	Mode                  string   `json:"mode,omitempty"`
+	DeviceID              string   `json:"deviceID,omitempty"`
+	StartHz               float64  `json:"startHz,omitempty"`
+	EndHz                 float64  `json:"endHz,omitempty"`
+	StepHz                float64  `json:"stepHz,omitempty"`
+	DwellMilliseconds     int      `json:"dwellMilliseconds,omitempty"`
+	DecipherListenSeconds int64    `json:"decipherListenSeconds,omitempty"`
+	Transcribe            bool     `json:"transcribe"`
+	IncludeLocation       bool     `json:"includeLocation"`
+	LocationPrecision     string   `json:"locationPrecision,omitempty"`
+	Latitude              *float64 `json:"latitude,omitempty"`
+	Longitude             *float64 `json:"longitude,omitempty"`
+	LocationLabel         string   `json:"locationLabel,omitempty"`
 }
 
 type MapperFrequencyRecord struct {
-	FrequencyHz    float64              `json:"frequencyHz"`
-	FirstSeen      time.Time            `json:"firstSeen"`
-	LastSeen       time.Time            `json:"lastSeen"`
-	Checks         int                  `json:"checks"`
-	Hits           int                  `json:"hits"`
-	Occupancy      float64              `json:"occupancy"`
-	StrongestDBFS  float64              `json:"strongestDBFS"`
-	NoiseDBFS      float64              `json:"noiseDBFS"`
-	Modulation     string               `json:"modulation"`
-	ProtocolName   string               `json:"protocolName,omitempty"`
-	Name           string               `json:"name,omitempty"`
-	Callsigns      []string             `json:"callsigns,omitempty"`
-	Confidence     float64              `json:"confidence"`
-	Location       *ObservationLocation `json:"location,omitempty"`
-	LastTranscript string               `json:"lastTranscript,omitempty"`
+	FrequencyHz          float64              `json:"frequencyHz"`
+	FirstSeen            time.Time            `json:"firstSeen"`
+	LastSeen             time.Time            `json:"lastSeen"`
+	Checks               int                  `json:"checks"`
+	Hits                 int                  `json:"hits"`
+	Occupancy            float64              `json:"occupancy"`
+	StrongestDBFS        float64              `json:"strongestDBFS"`
+	NoiseDBFS            float64              `json:"noiseDBFS"`
+	Modulation           string               `json:"modulation"`
+	ProtocolName         string               `json:"protocolName,omitempty"`
+	Name                 string               `json:"name,omitempty"`
+	Callsigns            []string             `json:"callsigns,omitempty"`
+	Confidence           float64              `json:"confidence"`
+	IdentificationSource string               `json:"identificationSource,omitempty"`
+	HourlyHits           [24]int              `json:"hourlyHits"`
+	ActivityTimeZone     string               `json:"activityTimeZone,omitempty"`
+	Location             *ObservationLocation `json:"location,omitempty"`
+	LastTranscript       string               `json:"lastTranscript,omitempty"`
 }
 
 type MapperStatus struct {
@@ -63,6 +67,23 @@ type MapperStatus struct {
 	LastError    string                  `json:"lastError,omitempty"`
 	UploadedRows int                     `json:"uploadedRows"`
 	Records      []MapperFrequencyRecord `json:"records"`
+}
+
+type MapperProgress struct {
+	Running            bool       `json:"running"`
+	Mode               string     `json:"mode,omitempty"`
+	CurrentFrequencyHz float64    `json:"currentFrequencyHz,omitempty"`
+	CurrentLabel       string     `json:"currentLabel,omitempty"`
+	CurrentIndex       int        `json:"currentIndex"`
+	TotalTargets       int        `json:"totalTargets"`
+	ChecksCompleted    int64      `json:"checksCompleted"`
+	PassesCompleted    int        `json:"passesCompleted"`
+	StartedAt          *time.Time `json:"startedAt,omitempty"`
+	StoppedAt          *time.Time `json:"stoppedAt,omitempty"`
+	TargetStartedAt    *time.Time `json:"targetStartedAt,omitempty"`
+	TargetEndsAt       *time.Time `json:"targetEndsAt,omitempty"`
+	LastCheckAt        *time.Time `json:"lastCheckAt,omitempty"`
+	LastActivityAt     *time.Time `json:"lastActivityAt,omitempty"`
 }
 
 type MapperExportResult struct {
@@ -82,10 +103,13 @@ type MapperManager struct {
 	recordsPath  string
 	events       *EventStore
 	client       *http.Client
+	progress     MapperProgress
+	sessionID    uint64
+	lastArchived map[string]time.Time
 }
 
 func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
-	m := &MapperManager{path: filepath.Join(dataDirectory, "Data", "mapper.json"), recordsPath: filepath.Join(dataDirectory, "Data", "mapper-records.json"), events: events, client: &http.Client{Timeout: 12 * time.Second}, lastSeen: make(map[string]time.Time), records: make(map[string]MapperFrequencyRecord)}
+	m := &MapperManager{path: filepath.Join(dataDirectory, "Data", "mapper.json"), recordsPath: filepath.Join(dataDirectory, "Data", "mapper-records.json"), events: events, client: &http.Client{Timeout: 12 * time.Second}, lastSeen: make(map[string]time.Time), records: make(map[string]MapperFrequencyRecord), lastArchived: make(map[string]time.Time)}
 	if data, err := os.ReadFile(m.path); err == nil {
 		_ = json.Unmarshal(data, &m.config)
 	}
@@ -97,6 +121,9 @@ func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	}
 	if m.config.Mode == "" {
 		m.config.Mode = "discovery"
+	}
+	if m.config.DecipherListenSeconds == 0 {
+		m.config.DecipherListenSeconds = 60
 	}
 	go m.loop()
 	return m
@@ -131,6 +158,66 @@ func (m *MapperManager) Status() MapperStatus {
 	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, Records: records}
 }
 
+func (m *MapperManager) Progress() MapperProgress {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.progress
+}
+
+func (m *MapperManager) BeginSession(mode string, totalTargets int) uint64 {
+	now := time.Now()
+	m.mu.Lock()
+	m.sessionID++
+	sessionID := m.sessionID
+	m.progress = MapperProgress{Running: true, Mode: mode, CurrentIndex: -1, TotalTargets: totalTargets, StartedAt: &now}
+	m.mu.Unlock()
+	return sessionID
+}
+
+func (m *MapperManager) BeginTarget(sessionID uint64, index, totalTargets int, frequencyHz float64, label string, listenFor time.Duration) {
+	now := time.Now()
+	m.mu.Lock()
+	if sessionID != m.sessionID {
+		m.mu.Unlock()
+		return
+	}
+	progress := &m.progress
+	progress.Running = true
+	progress.CurrentIndex = index
+	progress.TotalTargets = totalTargets
+	progress.CurrentFrequencyHz = frequencyHz
+	progress.CurrentLabel = label
+	progress.TargetStartedAt = &now
+	if listenFor > 0 {
+		endsAt := now.Add(listenFor)
+		progress.TargetEndsAt = &endsAt
+	} else {
+		progress.TargetEndsAt = nil
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) CompletePass(sessionID uint64) {
+	m.mu.Lock()
+	if sessionID == m.sessionID {
+		m.progress.PassesCompleted++
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) EndSession(sessionID uint64) {
+	now := time.Now()
+	m.mu.Lock()
+	if sessionID != m.sessionID {
+		m.mu.Unlock()
+		return
+	}
+	m.progress.Running = false
+	m.progress.StoppedAt = &now
+	m.progress.TargetEndsAt = nil
+	m.mu.Unlock()
+}
+
 func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	config.WebhookURL = strings.TrimSpace(config.WebhookURL)
 	config.SheetURL = strings.TrimSpace(config.SheetURL)
@@ -144,6 +231,12 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	}
 	if config.Mode != "discovery" && config.Mode != "decipher" {
 		return MapperStatus{}, errors.New("mapper mode must be discovery or decipher")
+	}
+	if config.DecipherListenSeconds == 0 {
+		config.DecipherListenSeconds = 60
+	}
+	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
+		return MapperStatus{}, errors.New("decipher listen time must be between 5 seconds and 7 days")
 	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {
@@ -188,6 +281,11 @@ func (m *MapperManager) Observe(frequencyHz float64, active bool, signalDBFS, no
 	key := fmt.Sprintf("%.0f", frequencyHz)
 	now := time.Now()
 	m.mu.Lock()
+	m.progress.ChecksCompleted++
+	m.progress.LastCheckAt = &now
+	if active {
+		m.progress.LastActivityAt = &now
+	}
 	record, exists := m.records[key]
 	if !exists && !active {
 		m.mu.Unlock()
@@ -200,6 +298,8 @@ func (m *MapperManager) Observe(frequencyHz float64, active bool, signalDBFS, no
 	if active {
 		record.Hits++
 		record.LastSeen = now
+		record.HourlyHits[now.Hour()]++
+		record.ActivityTimeZone = now.Location().String()
 		if signalDBFS > record.StrongestDBFS {
 			record.StrongestDBFS = signalDBFS
 		}
@@ -226,6 +326,46 @@ func (m *MapperManager) Observe(frequencyHz float64, active bool, signalDBFS, no
 	}
 	m.records[key] = record
 	m.mu.Unlock()
+}
+
+func (m *MapperManager) SetIdentification(frequencyHz float64, source string, confidence float64) {
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	m.mu.Lock()
+	record, exists := m.records[key]
+	if exists {
+		record.IdentificationSource = strings.TrimSpace(source)
+		record.Confidence = math.Max(record.Confidence, confidence)
+		m.records[key] = record
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) SetTranscript(frequencyHz float64, transcript string) {
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	m.mu.Lock()
+	record, exists := m.records[key]
+	if exists && strings.TrimSpace(transcript) != "" {
+		record.LastTranscript = strings.TrimSpace(transcript)
+		m.records[key] = record
+	}
+	m.mu.Unlock()
+}
+
+func (m *MapperManager) ShouldArchive(frequencyHz float64, interval time.Duration) bool {
+	key := fmt.Sprintf("%.0f", frequencyHz)
+	now := time.Now()
+	m.mu.Lock()
+	if m.lastArchived == nil {
+		m.lastArchived = make(map[string]time.Time)
+	}
+	last := m.lastArchived[key]
+	if !last.IsZero() && now.Sub(last) < interval {
+		m.mu.Unlock()
+		return false
+	}
+	m.lastArchived[key] = now
+	m.mu.Unlock()
+	return true
 }
 
 func observationLocation(config MapperConfig) *ObservationLocation {
@@ -277,7 +417,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
-	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision"}
+	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -295,6 +435,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 			record.FirstSeen.Format(time.RFC3339Nano), record.LastSeen.Format(time.RFC3339Nano), strconv.Itoa(record.Checks), strconv.Itoa(record.Hits),
 			strconv.FormatFloat(record.Occupancy, 'f', 6, 64), strconv.FormatFloat(record.StrongestDBFS, 'f', 2, 64), strconv.FormatFloat(record.NoiseDBFS, 'f', 2, 64),
 			strconv.FormatFloat(record.Confidence, 'f', 3, 64), safeSpreadsheetText(record.LastTranscript), latitude, longitude, locationName, locationPrecision,
+			safeSpreadsheetText(record.IdentificationSource), safeSpreadsheetText(mapperPeakHours(record.HourlyHits)), safeSpreadsheetText(record.ActivityTimeZone),
 		}
 		if err := writer.Write(row); err != nil {
 			return nil, 0, err
@@ -305,6 +446,30 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 		return nil, 0, err
 	}
 	return output.Bytes(), len(records), nil
+}
+
+func mapperPeakHours(hourly [24]int) string {
+	type hourCount struct{ hour, count int }
+	items := make([]hourCount, 0, 24)
+	for hour, count := range hourly {
+		if count > 0 {
+			items = append(items, hourCount{hour: hour, count: count})
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count != items[j].count {
+			return items[i].count > items[j].count
+		}
+		return items[i].hour < items[j].hour
+	})
+	if len(items) > 3 {
+		items = items[:3]
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, fmt.Sprintf("%02d:00-%02d:59 (%d)", item.hour, item.hour, item.count))
+	}
+	return strings.Join(parts, " | ")
 }
 
 func safeSpreadsheetText(value string) string {

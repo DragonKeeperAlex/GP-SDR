@@ -15,7 +15,7 @@ provided by user-space receiver tools or the operating system's USB driver.
 
 ## macOS 13 or newer
 
-Use `GP-SDR-1.0.11-macos-universal.zip` unless you specifically need the smaller
+Use `GP-SDR-1.0.12-macos-universal.zip` unless you specifically need the smaller
 Apple Silicon (`arm64`) or Intel (`x86_64`) package.
 
 1. Unzip the package and move **GP-SDR.app** to Applications.
@@ -58,9 +58,9 @@ from another device. Local use does not require a public-network firewall rule.
 Choose the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.0.11_amd64.deb
+sudo apt install ./gp-sdr_1.0.12_amd64.deb
 # or, on 64-bit ARM:
-sudo apt install ./gp-sdr_1.0.11_arm64.deb
+sudo apt install ./gp-sdr_1.0.12_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -149,7 +149,7 @@ On Windows PowerShell, compare this result with the matching line in
 `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\GP-SDR-1.0.11-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\GP-SDR-1.0.12-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ## Build from source
@@ -167,7 +167,7 @@ To create all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.0.11
+Scripts/build_release.sh 1.0.12
 ```
 
 Do not build a source checkout from a cloud-synced folder while it is resolving

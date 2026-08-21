@@ -65,7 +65,9 @@ func regionalP25Profiles() []ScanProfile {
 				},
 				{
 					ID: "ebrcs-ccco-central", Name: "EBRCS · CCCO Central", NAC: "0x1F5", WACN: "0xBEE00", SystemID: "0x1F1",
-					ControlChannelsHz: mhzList(773.90625, 774.18125, 774.45625, 774.73125), Enabled: true,
+					// 774.45625 MHz produced a live NAC 0x1F5 / system 0x1F1 lock with the
+					// connected HackRF. Keep alternates for genuine control-channel rotation.
+					ControlChannelsHz: mhzList(774.45625, 773.90625, 774.18125, 774.73125), Enabled: true,
 					Talkgroups: []TalkgroupDefinition{
 						tg(919, "CHP Maroon 2 Patch", "T", false), tg(1007, "CCCO Law Interop 1", "T", false), tg(1008, "CCCO Law Interop 2", "T", false),
 						tg(1026, "CCCO Fire Interop 1", "T", false), tg(1030, "CCCO EMS Interop 1", "T", false), tg(6086, "San Ramon Regional Medical Center", "T", false),

@@ -19,6 +19,7 @@ import (
 )
 
 const bundledSDRTrunkVersion = "0.6.1"
+const sdrTrunkControlRotationDelayMS = 1200
 
 type P25TalkgroupState struct {
 	ID          uint32 `json:"id"`
@@ -137,6 +138,7 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 		return err
 	}
 	_ = importExistingSDRTrunkTunerConfiguration(applicationRoot)
+	_ = optimizeHackRFP25SampleRate(applicationRoot, profile)
 	jmbePath := findJMBELibrary(dataDirectory, applicationRoot)
 	preferencesRoot := filepath.Join(runtimeDirectory, "java-preferences")
 	if jmbePath != "" {
@@ -177,6 +179,7 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 		quotedJavaOptions = append(quotedJavaOptions, quoteLauncherOption(option))
 	}
 	command.Env = append(os.Environ(), "JAVA_OPTS="+strings.Join(quotedJavaOptions, " "))
+	sessionStart := time.Now()
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()
 		return fmt.Errorf("start SDRTrunk: %w", err)
@@ -197,6 +200,7 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	m.profileID, m.configPath, m.lastError, m.waitError = &id, &playlistPath, nil, nil
 	m.engine, m.apiURL = "SDRTrunk", nil
 	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
+	m.sessionStart = sessionStart
 	if m.muted == nil {
 		m.muted = make(map[uint32]bool)
 	}
@@ -233,7 +237,7 @@ func (m *OP25Manager) stop(clearSession bool) {
 	m.mu.Lock()
 	m.engine, m.apiURL = "", nil
 	if clearSession {
-		m.profile, m.plan, m.devices, m.dataRoot = nil, nil, nil, ""
+		m.profile, m.plan, m.devices, m.dataRoot, m.sessionStart = nil, nil, nil, "", time.Time{}
 	}
 	m.mu.Unlock()
 }
@@ -241,7 +245,7 @@ func (m *OP25Manager) stop(clearSession bool) {
 func (m *OP25Manager) Status() P25Status {
 	m.mu.Lock()
 	engine, command, done, waitError := m.engine, m.command, m.done, m.waitError
-	profileID, configPath := m.profileID, m.configPath
+	profileID, configPath, sessionStart := m.profileID, m.configPath, m.sessionStart
 	m.mu.Unlock()
 	if engine == "SDRTrunk" && command != nil {
 		select {
@@ -256,7 +260,7 @@ func (m *OP25Manager) Status() P25Status {
 				Reception: "searching", Note: "SDRTrunk is checking the configured P25 control channels."}
 			if configPath != nil {
 				root := filepath.Dir(filepath.Dir(*configPath))
-				locked, calls := inspectSDRTrunkEvents(filepath.Join(root, "event_logs"))
+				locked, calls := inspectSDRTrunkEvents(filepath.Join(root, "event_logs"), sessionStart)
 				logText := tailText(filepath.Join(filepath.Dir(filepath.Dir(root)), "sdrtrunk.log"), 256_000)
 				if strings.Contains(logText, "JMBE audio conversion library") && strings.Contains(logText, "successfully loaded") {
 					status.Note += " P25 voice codec is loaded."
@@ -321,7 +325,7 @@ func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint
 		text.WriteString("    <decode_configuration type=\"decodeConfigP25Phase1\" modulation=\"CQPSK\" traffic_channel_pool_size=\"30\" ignore_data_calls=\"false\"/>\n")
 		text.WriteString("    <event_log_configuration><logger>DECODED_MESSAGE</logger><logger>TRAFFIC_DECODED_MESSAGE</logger><logger>CALL_EVENT</logger><logger>TRAFFIC_CALL_EVENT</logger></event_log_configuration>\n")
 		text.WriteString("    <record_configuration/>\n")
-		fmt.Fprintf(&text, "    <source_configuration type=\"sourceConfigTunerMultipleFrequency\" frequency_rotation_delay=\"400\" source_type=\"TUNER_MULTIPLE_FREQUENCIES\"")
+		fmt.Fprintf(&text, "    <source_configuration type=\"sourceConfigTunerMultipleFrequency\" frequency_rotation_delay=\"%d\" source_type=\"TUNER_MULTIPLE_FREQUENCIES\"", sdrTrunkControlRotationDelayMS)
 		if preferred != "" {
 			fmt.Fprintf(&text, " preferred_tuner=\"%s\"", xmlValue(preferred))
 		}
@@ -404,6 +408,72 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 	return os.WriteFile(destination, data, 0o600)
 }
 
+// optimizeHackRFP25SampleRate prevents a broad SDRTrunk desktop setting from
+// making a compact trunked site unnecessarily expensive to decode. Five MS/s
+// is SDRTrunk's HackRF default and comfortably covers control-channel groups
+// spanning up to 3.5 MHz while materially reducing USB and channelizer load.
+// Wider systems keep the user's existing rate.
+func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile) error {
+	minimum, maximum, found := p25ControlChannelSpan(profile)
+	if !found || maximum-minimum > 3_500_000 {
+		return nil
+	}
+	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var root struct {
+		Tuners []map[string]any `json:"tunerConfigurations"`
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil
+	}
+	highRates := map[string]bool{
+		"RATE_5_5": true, "RATE_6_0": true, "RATE_7_0": true, "RATE_8_0": true,
+		"RATE_9_0": true, "RATE_10_0": true, "RATE_12_0": true, "RATE_14_0": true,
+		"RATE_15_0": true, "RATE_20_0": true,
+	}
+	changed := false
+	for _, tuner := range root.Tuners {
+		if tuner["type"] == "hackRFTunerConfiguration" {
+			if rate, ok := tuner["sampleRate"].(string); ok && highRates[rate] {
+				tuner["sampleRate"] = "RATE_5_0"
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return nil
+	}
+	updated, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	updated = append(updated, '\n')
+	return os.WriteFile(path, updated, 0o600)
+}
+
+func p25ControlChannelSpan(profile ScanProfile) (float64, float64, bool) {
+	var minimum, maximum float64
+	found := false
+	for _, system := range enabledP25Systems(profile) {
+		for _, frequency := range system.ControlChannelsHz {
+			if frequency <= 0 {
+				continue
+			}
+			if !found || frequency < minimum {
+				minimum = frequency
+			}
+			if !found || frequency > maximum {
+				maximum = frequency
+			}
+			found = true
+		}
+	}
+	return minimum, maximum, found
+}
+
 func findJMBELibrary(dataDirectory, applicationRoot string) string {
 	if configured := strings.TrimSpace(os.Getenv("GPSDR_JMBE")); configured != "" {
 		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
@@ -467,10 +537,13 @@ public class JmbePreferenceWriter {
 	return nil
 }
 
-func inspectSDRTrunkEvents(directory string) (bool, int) {
+func inspectSDRTrunkEvents(directory string, since time.Time) (bool, int) {
 	files, _ := filepath.Glob(filepath.Join(directory, "*_decoded_messages.log"))
 	locked := false
 	for _, file := range files {
+		if !fileModifiedSince(file, since) {
+			continue
+		}
 		for _, line := range strings.Split(tailText(file, 256_000), "\n") {
 			upper := strings.ToUpper(line)
 			if strings.Contains(upper, ",PASSED,NAC:") && (strings.Contains(upper, "TSBK") || strings.Contains(upper, "PDU") || strings.Contains(upper, "TDULC")) {
@@ -482,6 +555,9 @@ func inspectSDRTrunkEvents(directory string) (bool, int) {
 	callFiles, _ := filepath.Glob(filepath.Join(directory, "*_call_events.log"))
 	calls := 0
 	for _, file := range callFiles {
+		if !fileModifiedSince(file, since) {
+			continue
+		}
 		reader := csv.NewReader(strings.NewReader(tailText(file, 512_000)))
 		for {
 			row, err := reader.Read()
@@ -494,6 +570,14 @@ func inspectSDRTrunkEvents(directory string) (bool, int) {
 		}
 	}
 	return locked, calls
+}
+
+func fileModifiedSince(path string, since time.Time) bool {
+	if since.IsZero() {
+		return true
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.ModTime().Before(since)
 }
 
 func tailText(path string, limit int64) string {

@@ -31,7 +31,7 @@ func TestSDRTrunkConnectedP25Receiver(t *testing.T) {
 	}
 	profile := ScanProfile{ID: "hardware-ebrsc", Name: "EBRCS hardware acceptance", P25Systems: []P25SystemConfig{{
 		ID: "ebrsc", Name: "East Bay Regional Communications System", Enabled: true,
-		ControlChannelsHz: []float64{774_181_250, 773_906_250, 774_456_250, 774_731_250},
+		ControlChannelsHz: []float64{774_456_250, 773_906_250, 774_181_250, 774_731_250},
 	}}}
 	deviceID := selected.ID
 	plan := []ReceiverPlanItem{{DeviceID: &deviceID, Role: "control", State: "assigned"}}

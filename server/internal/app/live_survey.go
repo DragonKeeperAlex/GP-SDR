@@ -58,6 +58,24 @@ func liveSampleRate(device SDRDevice, target surveyTarget) int {
 	return 1_000_000
 }
 
+func surveyCaptureSpec(device SDRDevice, target surveyTarget, sampleRate int) CaptureSpec {
+	tuningOffset := surveyTuningOffset(sampleRate, target)
+	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(target.FrequencyHz + tuningOffset)), SampleRateHz: sampleRate, GainDB: 20}
+	// HackRF needs both IF (LNA) and baseband (VGA) gain for useful unattended
+	// discovery. VGA-only scanning was about 24 dB less sensitive than the tuner
+	// whenever the user had not saved a device calibration yet.
+	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
+		spec.LNAGainDB = 24
+		spec.VGAGainDB = 20
+	}
+	if calibration := device.Calibration; calibration != nil {
+		spec.PPMCorrection = calibration.PPMCorrection
+		spec.LNAGainDB, spec.VGAGainDB = calibration.LNAGainDB, calibration.VGAGainDB
+		spec.AmpEnabled = calibration.AmpEnabled
+	}
+	return spec
+}
+
 // measureSurveyTarget compares power inside the channel being tested with
 // nearby spectrum. Using raw capture power (or the largest individual IQ
 // sample) makes normal wideband noise look active and attributes one signal to
@@ -67,7 +85,11 @@ func surveyTuningOffset(sampleRate int, target surveyTarget) float64 {
 	// desired channel one eighth of the sampled span away from DC, leaving ample
 	// room for both the signal and adjacent-noise windows.
 	offset := float64(sampleRate) / 8
-	minimum := target.BandwidthHz
+	// The local noise estimator samples from one to two channel bandwidths on
+	// either side of the target. Keep receiver DC beyond that entire window;
+	// otherwise a wide-FM target at the old 1/8-span offset treated the center
+	// spur as noise and could never clear squelch.
+	minimum := target.BandwidthHz * 2.5
 	if minimum < 50_000 {
 		minimum = 50_000
 	}
@@ -100,6 +122,13 @@ func measureSurveyTarget(data []byte, format SampleFormat, sampleRate int, cente
 		return ChannelSpectrumLevel{}, false, err
 	}
 	level, measured := levels[channelID]
+	// A real narrow carrier or FM pilot can occupy only a few FFT bins inside a
+	// wide channel. Band-average power alone then misses it even when it is far
+	// above the local floor. Discount the peak by a conservative 12 dB before
+	// using it, which keeps random-noise peaks closed while retaining sparse RF.
+	if peakAdjusted := level.PeakDB - 12; peakAdjusted > level.SignalDB {
+		level.SignalDB = peakAdjusted
+	}
 	return level, measured, nil
 }
 
@@ -144,120 +173,199 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 		r.setRuntimeError("This profile has no analog channels or enabled scan frequencies.")
 		return
 	}
+	isMapper := profile.ID == "mapper-session" && r.mapper != nil
+	mapperConfig := MapperConfig{}
+	var mapperSessionID uint64
+	if isMapper {
+		mapperConfig = r.mapper.Config()
+		mapperSessionID = r.mapper.BeginSession(mapperConfig.Mode, len(targets))
+		defer r.mapper.EndSession(mapperSessionID)
+	}
 	for {
-		for _, target := range targets {
+		for index, target := range targets {
 			select {
 			case <-stop:
 				return
 			default:
 			}
-			rate := liveSampleRate(device, target)
-			tuningOffset := surveyTuningOffset(rate, target)
-			spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(target.FrequencyHz + tuningOffset)), SampleRateHz: rate, GainDB: 20}
-			if calibration := device.Calibration; calibration != nil {
-				spec.PPMCorrection = calibration.PPMCorrection
-				spec.LNAGainDB, spec.VGAGainDB = calibration.LNAGainDB, calibration.VGAGainDB
-				spec.AmpEnabled = calibration.AmpEnabled
+			listenFor := time.Duration(0)
+			if isMapper && mapperConfig.Mode == "decipher" {
+				listenFor = time.Duration(mapperConfig.DecipherListenSeconds) * time.Second
+				target.Dwell = minDuration(listenFor, 5*time.Second)
 			}
-			data, format, err := captureWindow(device, spec, target.Dwell, stop)
-			if err != nil {
-				select {
-				case <-stop:
+			if isMapper {
+				r.mapper.BeginTarget(mapperSessionID, index, len(targets), target.FrequencyHz, target.Label, listenFor)
+			}
+			deadline := time.Now().Add(listenFor)
+			for {
+				if !r.processSurveyTarget(stop, profile, device, target) {
 					return
-				default:
 				}
-				r.setRuntimeError(err.Error())
-				time.Sleep(350 * time.Millisecond)
+				if listenFor == 0 || !time.Now().Before(deadline) {
+					break
+				}
+			}
+		}
+		if isMapper {
+			r.mapper.CompletePass(mapperSessionID)
+		}
+	}
+}
+
+// processSurveyTarget captures one short window. Decipher mode calls this
+// repeatedly for the selected per-channel listen period, keeping memory use
+// bounded and Stop responsive even when the period is measured in days.
+func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget) bool {
+	rate := liveSampleRate(device, target)
+	spec := surveyCaptureSpec(device, target, rate)
+	data, format, err := captureWindow(device, spec, target.Dwell, stop)
+	if err != nil {
+		select {
+		case <-stop:
+			return false
+		default:
+		}
+		r.setRuntimeError(err.Error())
+		time.Sleep(350 * time.Millisecond)
+		return true
+	}
+	format = DetectSampleFormat(data, format)
+	// DC removal is the safe scan default, even before a receiver-specific
+	// calibration has been saved. It suppresses the HackRF/RTL center spur.
+	removeDC, iqGain, iqPhase, iqSwap := true, 1.0, 0.0, false
+	if calibration := device.Calibration; calibration != nil {
+		removeDC, iqGain, iqPhase, iqSwap = calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap
+	}
+	ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
+	r.updateSpectrum(spec, data, format)
+	result, err := DemodulateIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.Mode)
+	if err != nil {
+		r.setRuntimeError(err.Error())
+		return true
+	}
+	level, measured, err := measureSurveyTarget(data, format, rate, float64(spec.CenterFrequencyHz), target)
+	if err != nil {
+		r.setRuntimeError(err.Error())
+		return true
+	}
+	margin := profile.Settings.NoiseMarginDB
+	if margin < 6 {
+		margin = 6
+	}
+	snr := level.SignalDB - level.NoiseDB
+	active := measured && snr >= margin
+	if !active {
+		r.updateMixerActivity(target.FrequencyHz, 0, false)
+		if profile.ID == "mapper-session" && r.mapper != nil {
+			r.mapper.Observe(target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
+		}
+		return true
+	}
+	r.clearRuntimeError()
+	label := target.Label
+	mode := strings.ToUpper(target.Mode)
+	if mode == "" || mode == "AUTO" {
+		mode = "NFM"
+	}
+	protocol := target.Decoder
+	confidence := .72
+	identificationSource := ""
+	if profile.ID == "mapper-session" {
+		identifiedName, identifiedMode, identifiedProtocol, identifiedConfidence, source := r.identifyMapperFrequency(target.FrequencyHz)
+		if identifiedName != "" {
+			label = identifiedName
+		}
+		if identifiedMode != "" {
+			mode = identifiedMode
+		}
+		if identifiedProtocol != "" {
+			protocol = &identifiedProtocol
+		}
+		confidence = math.Max(confidence, identifiedConfidence)
+		identificationSource = source
+	}
+	if profile.ID == "mapper-session" && r.mapper != nil {
+		protocolName := ""
+		if protocol != nil {
+			protocolName = *protocol
+		}
+		r.mapper.Observe(target.FrequencyHz, true, level.SignalDB, level.NoiseDB, mode, protocolName, label, "")
+		r.mapper.SetIdentification(target.FrequencyHz, identificationSource, confidence)
+	}
+	mixerLevel := clamp((snr-margin)/24+.1, .08, 1)
+	r.updateMixerActivity(target.FrequencyHz, mixerLevel, true)
+	if channelID := r.mixerChannelID(target.FrequencyHz); channelID != "" && r.audioHub != nil {
+		r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: result.AudioRateHz, Samples: result.Audio})
+	}
+	if profile.ID == "mapper-session" && r.mapper != nil && !r.mapper.ShouldArchive(target.FrequencyHz, 30*time.Second) {
+		return true
+	}
+	event := TransmissionEvent{ID: NewID(), StartedAt: time.Now().Add(-target.Dwell), DurationSeconds: target.Dwell.Seconds(),
+		FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB,
+		NoiseDBFS: level.NoiseDB, Modulation: mode, ProtocolName: protocol, Label: &label,
+		DeviceID: device.ID, Confidence: confidence}
+	if profile.ID == "mapper-session" && r.mapper != nil {
+		event.Location = observationLocation(r.mapper.Config())
+	}
+	if profile.Settings.RecordAudio && len(result.Audio) > 0 {
+		filename := fmt.Sprintf("%s-%.0f-%s.wav", time.Now().UTC().Format("20060102T150405.000Z"), target.FrequencyHz, strings.ToLower(mode))
+		path := filepath.Join(r.dataDirectory, "Recordings", time.Now().UTC().Format("2006-01-02"), filename)
+		if err := WriteMonoWAV(path, result.Audio, result.AudioRateHz); err == nil {
+			event.AudioPath = &path
+		}
+	}
+	if err := r.Events.Append(event); err != nil {
+		r.setRuntimeError(err.Error())
+		return true
+	}
+	if profile.Settings.TranscribeVoice && event.AudioPath != nil {
+		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
+	}
+	return true
+}
+
+func (r *Runtime) identifyMapperFrequency(frequencyHz float64) (name, mode, protocol string, confidence float64, source string) {
+	for _, profile := range r.Profiles.All() {
+		if profile.ID == "mapper-session" {
+			continue
+		}
+		profileSource := "Saved profile · " + profile.Name
+		if strings.HasPrefix(profile.ID, "localdb-") {
+			profileSource = "Local database · " + profile.Name
+		} else if strings.Contains(strings.ToLower(profile.Summary), "radioreference") {
+			profileSource = "RadioReference import · " + profile.Name
+		}
+		for _, channel := range profile.Channels {
+			if math.Abs(channel.FrequencyHz-frequencyHz) > 1 {
 				continue
 			}
-			format = DetectSampleFormat(data, format)
-			// DC removal is the safe scan default, even before a receiver-specific
-			// calibration has been saved. It suppresses the HackRF/RTL center spur.
-			removeDC, iqGain, iqPhase, iqSwap := true, 1.0, 0.0, false
-			if calibration := device.Calibration; calibration != nil {
-				removeDC, iqGain, iqPhase, iqSwap = calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap
+			channelMode := strings.ToUpper(channel.Mode)
+			channelProtocol := ""
+			if channel.Decoder != nil {
+				channelProtocol = *channel.Decoder
 			}
-			ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
-			r.updateSpectrum(spec, data, format)
-			result, err := DemodulateIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.Mode)
-			if err != nil {
-				r.setRuntimeError(err.Error())
-				continue
-			}
-			level, measured, err := measureSurveyTarget(data, format, rate, float64(spec.CenterFrequencyHz), target)
-			if err != nil {
-				r.setRuntimeError(err.Error())
-				continue
-			}
-			margin := profile.Settings.NoiseMarginDB
-			if margin < 6 {
-				margin = 6
-			}
-			snr := level.SignalDB - level.NoiseDB
-			active := measured && snr >= margin
-			if !active {
-				r.updateMixerActivity(target.FrequencyHz, 0, false)
-				if profile.ID == "mapper-session" && r.mapper != nil {
-					r.mapper.Observe(target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
-				}
-				continue
-			}
-			r.clearRuntimeError()
-			label := target.Label
-			mode := strings.ToUpper(target.Mode)
-			if mode == "" || mode == "AUTO" {
-				mode = "NFM"
-			}
-			protocol := target.Decoder
-			confidence := .72
-			if profile.ID == "mapper-session" {
-				identifiedName, identifiedMode, identifiedProtocol, identifiedConfidence := identifyMappedFrequency(target.FrequencyHz)
-				if identifiedName != "" {
-					label = identifiedName
-				}
-				if identifiedMode != "" {
-					mode = identifiedMode
-				}
-				if identifiedProtocol != "" {
-					protocol = &identifiedProtocol
-				}
-				confidence = math.Max(confidence, identifiedConfidence)
-			}
-			event := TransmissionEvent{ID: NewID(), StartedAt: time.Now().Add(-target.Dwell), DurationSeconds: target.Dwell.Seconds(),
-				FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB,
-				NoiseDBFS: level.NoiseDB, Modulation: mode, ProtocolName: protocol, Label: &label,
-				DeviceID: device.ID, Confidence: confidence}
-			if profile.ID == "mapper-session" && r.mapper != nil {
-				event.Location = observationLocation(r.mapper.Config())
-			}
-			if profile.Settings.RecordAudio && len(result.Audio) > 0 {
-				filename := fmt.Sprintf("%s-%.0f-%s.wav", time.Now().UTC().Format("20060102T150405.000Z"), target.FrequencyHz, strings.ToLower(mode))
-				path := filepath.Join(r.dataDirectory, "Recordings", time.Now().UTC().Format("2006-01-02"), filename)
-				if err := WriteMonoWAV(path, result.Audio, result.AudioRateHz); err == nil {
-					event.AudioPath = &path
+			if channelProtocol == "" {
+				if channelMode == "AM" {
+					channelProtocol = "Analog AM"
+				} else if channelMode == "WFM" || channelMode == "NFM" || channelMode == "FM" {
+					channelProtocol = "Analog FM"
 				}
 			}
-			if err := r.Events.Append(event); err != nil {
-				r.setRuntimeError(err.Error())
-				continue
-			}
-			if profile.ID == "mapper-session" && r.mapper != nil {
-				protocolName := ""
-				if event.ProtocolName != nil {
-					protocolName = *event.ProtocolName
+			return channel.Name, channelMode, channelProtocol, .98, profileSource
+		}
+		for _, system := range profile.P25Systems {
+			for _, controlFrequency := range system.ControlChannelsHz {
+				if math.Abs(controlFrequency-frequencyHz) <= 1 {
+					return system.Name, "DIGITAL", "P25 trunked control", .99, profileSource
 				}
-				r.mapper.Observe(target.FrequencyHz, true, level.SignalDB, level.NoiseDB, mode, protocolName, label, "")
-			}
-			mixerLevel := clamp((snr-margin)/24+.1, .08, 1)
-			r.updateMixerActivity(target.FrequencyHz, mixerLevel, true)
-			if channelID := r.mixerChannelID(target.FrequencyHz); channelID != "" && r.audioHub != nil {
-				r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: result.AudioRateHz, Samples: result.Audio})
-			}
-			if profile.Settings.TranscribeVoice && event.AudioPath != nil {
-				go r.transcribeEvent(stop, event.ID, *event.AudioPath)
 			}
 		}
 	}
+	name, mode, protocol, confidence = identifyMappedFrequency(frequencyHz)
+	if name != "" {
+		source = "Built-in US band plan"
+	}
+	return
 }
 
 func identifyMappedFrequency(frequencyHz float64) (name, mode, protocol string, confidence float64) {
@@ -294,7 +402,7 @@ func (r *Runtime) mixerChannelID(frequencyHz float64) string {
 	return ""
 }
 
-func (r *Runtime) transcribeEvent(stop <-chan struct{}, eventID, wavPath string) {
+func (r *Runtime) transcribeEvent(stop <-chan struct{}, eventID string, frequencyHz float64, wavPath string) {
 	transcriptionContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -311,11 +419,21 @@ func (r *Runtime) transcribeEvent(stop <-chan struct{}, eventID, wavPath string)
 	}
 	if transcript != "" {
 		_ = r.Events.UpdateTranscript(eventID, transcript)
+		if r.mapper != nil {
+			r.mapper.SetTranscript(frequencyHz, transcript)
+		}
 	}
 }
 
 func maxFloat(a, b float64) float64 {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
 		return a
 	}
 	return b
@@ -653,6 +771,6 @@ func (r *Runtime) finishWidebandTransmission(stop <-chan struct{}, profile ScanP
 		return
 	}
 	if profile.Settings.TranscribeVoice && event.AudioPath != nil {
-		go r.transcribeEvent(stop, event.ID, *event.AudioPath)
+		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
 	}
 }

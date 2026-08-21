@@ -2,8 +2,10 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sdrTrunkTestProfile() ScanProfile {
@@ -22,6 +24,7 @@ func TestBuildSDRTrunkPlaylistCreatesP25ControlAndEventLogs(t *testing.T) {
 	text := string(data)
 	for _, expected := range []string{
 		`decodeConfigP25Phase1`, `<frequency>851012500</frequency>`, `<frequency>851262500</frequency>`,
+		`frequency_rotation_delay="1200"`,
 		`preferred_tuner="HackRF ONE 00000000-00000000-24B862DC-3140C5CB"`,
 		`<logger>DECODED_MESSAGE</logger>`, `<logger>TRAFFIC_CALL_EVENT</logger>`,
 		`name="County &amp; City P25"`, `name="Dispatch &lt;East&gt;"`,
@@ -29,6 +32,77 @@ func TestBuildSDRTrunkPlaylistCreatesP25ControlAndEventLogs(t *testing.T) {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("missing %q in generated playlist:\n%s", expected, text)
 		}
+	}
+}
+
+func TestInspectSDRTrunkEventsIgnoresPreviousSession(t *testing.T) {
+	directory := t.TempDir()
+	old := filepath.Join(directory, "old_decoded_messages.log")
+	if err := os.WriteFile(old, []byte("20260820 011029,PASSED,NAC:501/x1F5 TSBK1 NET_STATUS_BCAST\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(old, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	if locked, _ := inspectSDRTrunkEvents(directory, time.Now()); locked {
+		t.Fatal("a prior session must not make the current P25 session appear locked")
+	}
+	fresh := filepath.Join(directory, "fresh_decoded_messages.log")
+	if err := os.WriteFile(fresh, []byte("20260820 030134,PASSED,NAC:501/x1F5 TSBK1 NET_STATUS_BCAST\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if locked, _ := inspectSDRTrunkEvents(directory, time.Now().Add(-time.Second)); !locked {
+		t.Fatal("fresh P25 framing should report a current control-channel lock")
+	}
+}
+
+func TestOptimizeHackRFP25SampleRateReducesCompactSiteLoad(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "tuner_configuration.json")
+	input := `{"tunerConfigurations":[{"type":"hackRFTunerConfiguration","sampleRate":"RATE_10_0","amplifierEnabled":true},{"type":"e4KTunerConfiguration","sampleRate":"RATE_2_048MHZ"}]}`
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := optimizeHackRFP25SampleRate(root, sdrTrunkTestProfile()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"sampleRate": "RATE_5_0"`) || !strings.Contains(text, `"amplifierEnabled": true`) || !strings.Contains(text, `"sampleRate": "RATE_2_048MHZ"`) {
+		t.Fatalf("unexpected optimized tuner configuration:\n%s", text)
+	}
+}
+
+func TestOptimizeHackRFP25SampleRatePreservesWideSystem(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "tuner_configuration.json")
+	input := `{"tunerConfigurations":[{"type":"hackRFTunerConfiguration","sampleRate":"RATE_10_0"}]}`
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile := sdrTrunkTestProfile()
+	profile.P25Systems[0].ControlChannelsHz = []float64{770_000_000, 780_000_000}
+	if err := optimizeHackRFP25SampleRate(root, profile); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"sampleRate":"RATE_10_0"`) {
+		t.Fatalf("wide system sample rate was unexpectedly changed: %s", data)
 	}
 }
 

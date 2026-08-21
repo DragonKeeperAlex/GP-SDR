@@ -105,3 +105,32 @@ func TestMapperLocationUsesNativeBridgeWithWebFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestMapperShowsLiveProgressLongDecipherTimingAndExpandableEvidence(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{
+		`id="mapper-current-frequency"`, `id="mapper-pass-progress"`, `id="mapper-progress-bar"`,
+		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
+	} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("Mapper status or decipher timing control %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
+		"decipherListenSeconds", "expandedMapperFrequencies",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)
+		}
+	}
+}

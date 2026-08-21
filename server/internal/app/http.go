@@ -208,6 +208,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.SyncRangesNow())
 	case r.Method == "GET" && path == "/api/mapper":
 		writeJSON(w, 200, s.runtime.MapperStatus())
+	case r.Method == "GET" && path == "/api/mapper/progress":
+		writeJSON(w, 200, s.runtime.MapperProgress())
 	case r.Method == "PUT" && path == "/api/mapper":
 		var config MapperConfig
 		if !decodeBody(w, r, &config) {

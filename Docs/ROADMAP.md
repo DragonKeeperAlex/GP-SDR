@@ -12,7 +12,8 @@
 - [x] Bundled P25 Phase 1/2 engine, trunk following, call/talkgroup monitoring,
       per-talkgroup mixer state, and encrypted-call exclusion
 - [x] Persistent activity journal and signal grouping
-- [x] Mapper Discovery/Decipher workflows, occupancy counts, repeated sweeps,
+- [x] Mapper Discovery/Decipher workflows, live scan progress, adjustable
+      per-channel listening, hourly activity, expandable identification evidence,
       optional location tags, and Google Sheets payloads
 - [x] Built-in common bands plus arbitrary custom ranges/channels
 - [x] Versioned profile and single-channel import/export

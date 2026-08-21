@@ -198,6 +198,14 @@
       <section id="view-mapper" class="view">
         <article class="panel mapper-control-panel">
           <div class="panel-head"><div><h2>Range mapper</h2><span>Detect, identify, and consolidate active frequencies</span></div><span id="mapper-state" class="chip">Idle</span></div>
+          <div class="mapper-live" aria-live="polite">
+            <div class="mapper-live-frequency"><span>Current frequency</span><strong id="mapper-current-frequency">—</strong><small id="mapper-current-detail">Waiting to start</small></div>
+            <div><span>Pass progress</span><strong id="mapper-pass-progress">—</strong><small id="mapper-pass-count">0 / 0</small></div>
+            <div><span>Checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 passes</small></div>
+            <div><span>Hits</span><strong id="mapper-hits">0</strong><small id="mapper-last-activity">No activity yet</small></div>
+            <div><span>Elapsed</span><strong id="mapper-elapsed">—</strong><small id="mapper-channel-time">—</small></div>
+          </div>
+          <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
           <form id="mapper-form" class="mapper-controls">
             <label>Receiver<select id="mapper-device"></select></label>
             <label>Workflow<select id="mapper-workflow"><option value="discovery">Discovery</option><option value="decipher">Decipher</option></select></label>
@@ -205,6 +213,7 @@
             <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
             <label>Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
             <label>Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
+            <label id="mapper-listen-wrap" class="hidden">Listen per channel<div class="mapper-duration-input"><input id="mapper-listen-value" type="number" min="1" step="1" value="1"><select id="mapper-listen-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
             <label>Mode<select id="mapper-mode"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
             <label class="check-line"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
             <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
