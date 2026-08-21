@@ -65,6 +65,9 @@ frequency falls inside a known band.
 
 For the complete first-run checklist, receiver-driver steps, P25 setup, LAN
 access, and troubleshooting, see the [installation guide](Docs/INSTALL.md).
+The [GP-SDR Wiki](https://github.com/DragonKeeperAlex/GP-SDR/wiki) provides a
+detailed guide to every main page, receiver workflow, decoder, integration, and
+setup option.
 The [1.1 feature status](Docs/FEATURE_STATUS_1.1.0.md) separates live-hardware
 evidence from implemented features and external requirements.
 

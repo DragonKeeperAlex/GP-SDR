@@ -32,6 +32,15 @@ compatibility update for the native app and companion web interface.
 - Preserved receiver/job provenance, identification evidence, activity timing,
   location, transcript, callsign, and protocol fields in exported rows.
 
+## Documentation
+
+- Added a detailed GitHub Wiki covering installation, receiver setup, tuning,
+  RF and I/Q controls, profiles, multi-receiver Mapper jobs, P25 trunking,
+  optional decoders, imports, Google Sheets, RadioReference, remote access,
+  performance tuning, and troubleshooting.
+- Kept the complete Wiki source versioned in the repository for review and
+  future release updates.
+
 ## Packages
 
 - macOS Universal DMG and separate Apple Silicon and Intel ZIP packages
