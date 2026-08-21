@@ -13,7 +13,7 @@
       per-talkgroup mixer state, and encrypted-call exclusion
 - [x] Persistent activity journal and signal grouping
 - [x] Concurrent Mapper job workspace with explicit receiver ownership, split
-      Discovery ranges, simultaneous Discovery/Decipher, per-job progress/ETA,
+      Discovery ranges, simultaneous Discovery/Identify, per-job progress/ETA,
       saved job controls, combined result provenance and filters, adjustable
       per-channel listening, hourly activity, optional location, and Sheets payloads
 - [x] Built-in common bands plus arbitrary custom ranges/channels

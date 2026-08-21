@@ -309,7 +309,7 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 			targets = append(targets, surveyTarget{FrequencyHz: record.FrequencyHz, BandwidthHz: bandwidth, Mode: mode, Label: label, Dwell: 15 * time.Second, Decoder: decoder})
 		}
 		if len(targets) == 0 {
-			return nil, errors.New("Decipher has no discovered frequencies in this range. Run Discovery first or widen its range.")
+			return nil, errors.New("Identify has no discovered frequencies in this range. Run Discovery first or widen its filter.")
 		}
 		return targets, nil
 	}
@@ -400,7 +400,7 @@ func (r *Runtime) finishMapperJob(id string, handle *mapperJobRuntime, sessionID
 	r.mu.Unlock()
 }
 
-// processSurveyTarget captures one short window. Decipher mode calls this
+// processSurveyTarget captures one short window. Identify mode calls this
 // repeatedly for the selected per-channel listen period, keeping memory use
 // bounded and Stop responsive even when the period is measured in days.
 func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext) bool {

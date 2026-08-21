@@ -21,7 +21,7 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 			Note: ptr("Generates clearly marked sample activity for concurrent Mapper testing.")},
 			SDRDevice{ID: "simulator-1", Name: "Demo Receiver B", Kind: "Simulator",
 				Driver: "built-in", Connected: true, Available: true, SampleRateLimit: &limit,
-				Note: ptr("Second simulated receiver for simultaneous Discovery and Decipher testing.")})
+				Note: ptr("Second simulated receiver for simultaneous Discovery and Identify testing.")})
 	}
 	devices = append(devices, discoverHackRF()...)
 	devices = append(devices, discoverRTLSDR()...)

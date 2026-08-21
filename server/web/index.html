@@ -220,15 +220,21 @@
             <input id="mapper-job-id" type="hidden">
             <label>Job name<input id="mapper-job-name" maxlength="60" placeholder="UHF discovery"></label>
             <label>Receiver<select id="mapper-device"></select></label>
-            <label>Workflow<select id="mapper-workflow"><option value="discovery">Discovery</option><option value="decipher">Decipher</option></select></label>
-            <label>Start · MHz<input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
-            <label>End · MHz<input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
-            <label>Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
-            <label>Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
+            <fieldset id="mapper-workflow" class="mapper-workflow-toggle">
+              <legend>Workflow</legend>
+              <div role="radiogroup" aria-label="Mapper workflow">
+                <label title="Sweep a range to find active frequencies"><input type="radio" name="mapper-workflow" value="discovery" checked><span>Discovery</span></label>
+                <label title="Revisit found frequencies for identification, decoding, and transcription"><input type="radio" name="mapper-workflow" value="decipher"><span>Identify</span></label>
+              </div>
+            </fieldset>
+            <label><span id="mapper-start-caption">Start · MHz</span><input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
+            <label><span id="mapper-end-caption">End · MHz</span><input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
+            <label class="mapper-discovery-control">Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
+            <label class="mapper-discovery-control">Dwell<select id="mapper-dwell"><option value="200">Fast · 0.2 s</option><option value="500">Balanced · 0.5 s</option><option value="1200">Deep · 1.2 s</option></select></label>
             <label>Capture width<select id="mapper-rate" title="Receiver sample rate; wider rates show more spectrum but use more USB and CPU"><option value="0">Auto</option><option value="2000000">2 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
             <label id="mapper-listen-wrap" class="hidden">Listen per channel<div class="mapper-duration-input"><input id="mapper-listen-value" type="number" min="1" step="1" value="1"><select id="mapper-listen-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
             <label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
-            <label class="check-line"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
+            <label id="mapper-transcribe-wrap" class="check-line hidden"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
             <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
             <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>
             <label>Location name<input id="mapper-location-label" placeholder="Home, field site…"></label>
@@ -237,7 +243,7 @@
             <button id="mapper-current-location" type="button">Use current location</button>
             <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Save + start</button><button id="mapper-save-job" type="button">Save</button></div>
           </form>
-          <p id="mapper-workflow-detail" class="range-sync-detail">Discovery continuously sweeps this receiver's range. Add another job to use a second SDR at the same time.</p>
+          <p id="mapper-workflow-detail" class="mapper-workflow-detail"><strong>Discovery</strong> sweeps each step in the selected range and records active frequencies.</p>
         </article>
         <div id="mapper-job-grid" class="mapper-job-grid"></div>
         <article class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver"><option value="">All receivers</option></select><input id="mapper-filter-search" type="search" placeholder="Frequency or identity" aria-label="Filter Mapper results"><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></article>

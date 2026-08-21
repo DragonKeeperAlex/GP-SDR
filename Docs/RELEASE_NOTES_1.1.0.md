@@ -8,10 +8,10 @@ mobile-responsive companion interface.
 
 - Independent saved Mapper jobs assign one physical receiver each.
 - Multiple receivers can sweep different ranges concurrently, split Discovery
-  coverage, or run Discovery and Decipher at the same time.
+  coverage, or run Discovery and Identify at the same time.
 - Every job reports its current frequency, channel/pass progress, checks,
   activity, elapsed time, and next-pass ETA.
-- Decipher listening is adjustable from five seconds through multiple days.
+- Identify listening is adjustable from five seconds through multiple days.
 - Combined results retain receiver/job provenance and can be filtered,
   expanded, exported, saved locally, or queued to a configured Google Sheet.
 

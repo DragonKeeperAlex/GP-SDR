@@ -240,7 +240,7 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 		config.Mode = "discovery"
 	}
 	if config.Mode != "discovery" && config.Mode != "decipher" {
-		return config, errors.New("mapper workflow must be discovery or decipher")
+		return config, errors.New("Mapper workflow must be Discovery or Identify")
 	}
 	config.PreferredMode = strings.ToLower(strings.TrimSpace(config.PreferredMode))
 	if config.PreferredMode == "" {
@@ -267,7 +267,7 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 		config.DecipherListenSeconds = 60
 	}
 	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
-		return config, errors.New("decipher listen time must be between 5 seconds and 7 days")
+		return config, errors.New("Identify listen time must be between 5 seconds and 7 days")
 	}
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return config, errors.New("choose Auto or a supported Mapper sample rate")
@@ -297,7 +297,7 @@ func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
 	}
 	if job.Name == "" {
 		if config.Mode == "decipher" {
-			job.Name = "Decipher · found frequencies"
+			job.Name = "Identify · found frequencies"
 		} else {
 			job.Name = "Discovery · " + fmt.Sprintf("%.3f–%.3f MHz", config.StartHz/1e6, config.EndHz/1e6)
 		}
@@ -524,13 +524,13 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 		config.Mode = "discovery"
 	}
 	if config.Mode != "discovery" && config.Mode != "decipher" {
-		return MapperStatus{}, errors.New("mapper mode must be discovery or decipher")
+		return MapperStatus{}, errors.New("Mapper mode must be Discovery or Identify")
 	}
 	if config.DecipherListenSeconds == 0 {
 		config.DecipherListenSeconds = 60
 	}
 	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
-		return MapperStatus{}, errors.New("decipher listen time must be between 5 seconds and 7 days")
+		return MapperStatus{}, errors.New("Identify listen time must be between 5 seconds and 7 days")
 	}
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return MapperStatus{}, errors.New("choose Auto or a supported Mapper sample rate")

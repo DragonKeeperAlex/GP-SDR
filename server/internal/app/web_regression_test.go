@@ -106,19 +106,23 @@ func TestMapperLocationUsesNativeBridgeWithWebFallback(t *testing.T) {
 	}
 }
 
-func TestMapperShowsLiveProgressLongDecipherTimingAndExpandableEvidence(t *testing.T) {
+func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	index := string(indexData)
+	if strings.Contains(index, ">Decipher<") {
+		t.Fatal("Mapper still exposes the old Decipher workflow label")
+	}
 	for _, required := range []string{
 		`id="mapper-current-frequency"`, `id="mapper-pass-progress"`, `id="mapper-progress-bar"`,
 		`id="mapper-eta"`, `id="mapper-eta-time"`,
+		`id="mapper-workflow"`, `name="mapper-workflow" value="discovery"`, `name="mapper-workflow" value="decipher"`, `>Identify</span>`,
 		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
 	} {
 		if !strings.Contains(index, required) {
-			t.Fatalf("Mapper status or decipher timing control %q is missing", required)
+			t.Fatalf("Mapper status or Identify control %q is missing", required)
 		}
 	}
 	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))

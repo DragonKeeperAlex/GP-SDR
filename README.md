@@ -27,7 +27,7 @@ browser and is designed for phones and tablets.
 - Indexed Timeline search across transcripts, callsigns, protocols, labels,
   systems, and frequencies; configurable recording/IQ retention
 - Independent Mapper jobs per receiver: split ranges across SDRs, run parallel
-  Discovery sweeps, or run Discovery and Decipher simultaneously. Each job has
+  Discovery sweeps, or run Discovery and Identify simultaneously. Each job has
   live frequency/progress/ETA, 5-second-to-7-day per-channel listening, and
   receiver/job provenance in the combined result table and CSV export
 - Peak activity hours, expandable identification evidence, optional
