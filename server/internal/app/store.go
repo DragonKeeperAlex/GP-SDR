@@ -185,6 +185,11 @@ func validateProfile(profile ScanProfile) error {
 	if len(profile.Ranges) > 100 || len(profile.Channels) > 5000 || len(profile.P25Systems) > 20 {
 		return errors.New("profile contains too many ranges or channels")
 	}
+	if area := profile.ReferenceArea; area != nil {
+		if !strings.EqualFold(strings.TrimSpace(area.Provider), "RadioReference") || area.Latitude < -90 || area.Latitude > 90 || area.Longitude < -180 || area.Longitude > 180 || area.RadiusMiles < 1 || area.RadiusMiles > 100 {
+			return errors.New("profile reference area is invalid")
+		}
+	}
 	for _, item := range profile.Ranges {
 		if item.StartHz < 0 || item.EndHz <= item.StartHz || item.StepHz <= 0 || item.DwellMilliseconds < 20 {
 			return fmt.Errorf("invalid values in range %q", item.Name)

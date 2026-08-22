@@ -89,6 +89,32 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeJSON(w, 200, map[string]bool{"ok": true})
 		}
+	case r.Method == "GET" && path == "/api/calibrations/characterization":
+		writeJSON(w, 200, s.runtime.CharacterizationStatus())
+	case r.Method == "POST" && path == "/api/calibrations/characterization/start":
+		var request CharacterizationRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.StartCharacterization(request)
+		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/calibrations/characterization/stop":
+		writeJSON(w, 200, s.runtime.StopCharacterization())
+	case r.Method == "DELETE" && path == "/api/calibrations/characterization":
+		if err := s.runtime.ClearCharacterization(); err != nil {
+			writeError(w, 400, err.Error())
+		} else {
+			writeJSON(w, 200, s.runtime.CharacterizationStatus())
+		}
+	case r.Method == "GET" && path == "/api/calibrations/characterization/export":
+		data, err := s.runtime.CharacterizationCSV()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Receiver-Characterization.csv")
+		_, _ = w.Write(data)
 	case r.Method == "POST" && path == "/api/devices/refresh":
 		s.runtime.Refresh()
 		writeJSON(w, 200, s.runtime.Devices())
@@ -126,6 +152,26 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":
 		writeJSON(w, 200, s.runtime.Spectrum(intQuery(r, "bins", 512)))
+	case r.Method == "GET" && path == "/api/storage":
+		writeJSON(w, 200, s.runtime.StorageStatus())
+	case r.Method == "PUT" && path == "/api/storage/policy":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Storage cleanup settings can only be changed from the GP-SDR computer.")
+			return
+		}
+		var policy StoragePolicy
+		if !decodeBody(w, r, &policy) {
+			return
+		}
+		status, err := s.runtime.UpdateStoragePolicy(policy)
+		writeResult(w, status, err, 200)
+	case r.Method == "POST" && path == "/api/storage/cleanup":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Storage cleanup can only run from the GP-SDR computer.")
+			return
+		}
+		status, err := s.runtime.CleanStorageNow()
+		writeResult(w, status, err, 200)
 	case r.Method == "POST" && path == "/api/tuner/start":
 		var request TunerRequest
 		if !decodeBody(w, r, &request) {

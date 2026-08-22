@@ -20,6 +20,28 @@ current owner/job, center frequency, sample rate, gains, amplifier/bias state,
 stream health, dropped blocks, and overload or noise-only notices. Press
 **Refresh** after connecting hardware or installing a component.
 
+## Receiver and antenna lab
+
+The Hardware page can compare multiple connected receivers in parallel. Choose
+each receiver's complete nominal tuning range, an antenna-rated range, or a
+custom range. GP-SDR displays the current test frequency, progress and ETA,
+observed response/noise graph, best observed frequency, detection count,
+overload count, and a practical recommendation for every receiver. Export CSV
+before changing antennas or locations to retain comparable runs.
+
+Use the same antenna position, cable, gain, sample rate, point count, and dwell
+when comparing runs. Saved calibration is used by default. Advanced mode lets
+you instead hold generic gain or HackRF LNA/VGA/amplifier settings constant.
+Running a full 1 MHz–6 GHz HackRF sweep is intentionally sparse unless many test
+points are selected; an antenna-range test is usually faster and more useful.
+
+These are ambient-response measurements: they show what that receiver and
+antenna observe at that place and time. They cannot measure absolute receiver
+sensitivity or antenna gain because local transmitters and the noise environment
+are unknown. Absolute sensitivity testing requires a calibrated RF source and
+known attenuation. The tuner, Scanner, P25, and Mapper remain mutually exclusive
+with this test so two features cannot silently fight over one receiver.
+
 ## HackRF setup
 
 On a PortaPack, enter **HackRF USB mode** before refreshing GP-SDR. Start with:

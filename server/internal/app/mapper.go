@@ -20,57 +20,71 @@ import (
 )
 
 type MapperConfig struct {
-	WebhookURL            string   `json:"webhookURL"`
-	SheetURL              string   `json:"sheetURL,omitempty"`
-	Contributor           string   `json:"contributor,omitempty"`
-	Secret                string   `json:"secret,omitempty"`
-	AutoUpload            bool     `json:"autoUpload"`
-	Mode                  string   `json:"mode,omitempty"`
-	PreferredMode         string   `json:"preferredMode,omitempty"`
-	DeviceID              string   `json:"deviceID,omitempty"`
-	StartHz               float64  `json:"startHz,omitempty"`
-	EndHz                 float64  `json:"endHz,omitempty"`
-	StepHz                float64  `json:"stepHz,omitempty"`
-	DwellMilliseconds     int      `json:"dwellMilliseconds,omitempty"`
-	SampleRateHz          int      `json:"sampleRateHz,omitempty"`
-	ConcurrentChannels    int      `json:"concurrentChannels,omitempty"`
-	DecipherListenSeconds int64    `json:"decipherListenSeconds,omitempty"`
-	Transcribe            bool     `json:"transcribe"`
-	IncludeLocation       bool     `json:"includeLocation"`
-	LocationPrecision     string   `json:"locationPrecision,omitempty"`
-	Latitude              *float64 `json:"latitude,omitempty"`
-	Longitude             *float64 `json:"longitude,omitempty"`
-	LocationLabel         string   `json:"locationLabel,omitempty"`
+	WebhookURL               string   `json:"webhookURL"`
+	SheetURL                 string   `json:"sheetURL,omitempty"`
+	Contributor              string   `json:"contributor,omitempty"`
+	Secret                   string   `json:"secret,omitempty"`
+	AutoUpload               bool     `json:"autoUpload"`
+	UploadVerifiedOnly       bool     `json:"uploadVerifiedOnly"`
+	Mode                     string   `json:"mode,omitempty"`
+	PreferredMode            string   `json:"preferredMode,omitempty"`
+	DeviceID                 string   `json:"deviceID,omitempty"`
+	StartHz                  float64  `json:"startHz,omitempty"`
+	EndHz                    float64  `json:"endHz,omitempty"`
+	StepHz                   float64  `json:"stepHz,omitempty"`
+	DwellMilliseconds        int      `json:"dwellMilliseconds,omitempty"`
+	SampleRateHz             int      `json:"sampleRateHz,omitempty"`
+	ConcurrentChannels       int      `json:"concurrentChannels,omitempty"`
+	DecipherListenSeconds    int64    `json:"decipherListenSeconds,omitempty"`
+	IdentifyMinimumHits      int      `json:"identifyMinimumHits,omitempty"`
+	IdentifyHitSource        string   `json:"identifyHitSource,omitempty"`
+	IdentifyMinimumOccupancy float64  `json:"identifyMinimumOccupancy,omitempty"`
+	IdentifySeenWithinHours  int      `json:"identifySeenWithinHours,omitempty"`
+	IdentifyMaximumChannels  int      `json:"identifyMaximumChannels,omitempty"`
+	IdentifyOrder            string   `json:"identifyOrder,omitempty"`
+	Transcribe               bool     `json:"transcribe"`
+	IncludeLocation          bool     `json:"includeLocation"`
+	LocationPrecision        string   `json:"locationPrecision,omitempty"`
+	Latitude                 *float64 `json:"latitude,omitempty"`
+	Longitude                *float64 `json:"longitude,omitempty"`
+	LocationLabel            string   `json:"locationLabel,omitempty"`
 }
 
 type MapperFrequencyRecord struct {
-	FrequencyHz          float64              `json:"frequencyHz"`
-	FirstSeen            time.Time            `json:"firstSeen"`
-	LastSeen             time.Time            `json:"lastSeen"`
-	Checks               int                  `json:"checks"`
-	Hits                 int                  `json:"hits"`
-	Occupancy            float64              `json:"occupancy"`
-	StrongestDBFS        float64              `json:"strongestDBFS"`
-	NoiseDBFS            float64              `json:"noiseDBFS"`
-	Modulation           string               `json:"modulation"`
-	ProtocolName         string               `json:"protocolName,omitempty"`
-	Name                 string               `json:"name,omitempty"`
-	Callsigns            []string             `json:"callsigns,omitempty"`
-	Confidence           float64              `json:"confidence"`
-	IdentificationSource string               `json:"identificationSource,omitempty"`
-	CandidateDecoder     string               `json:"candidateDecoder,omitempty"`
-	DetectionStatus      string               `json:"detectionStatus,omitempty"`
-	DetectionEvidence    string               `json:"detectionEvidence,omitempty"`
-	DecoderReady         bool                 `json:"decoderReady"`
-	AnalysisEngine       string               `json:"analysisEngine,omitempty"`
-	AnalysisSummary      string               `json:"analysisSummary,omitempty"`
-	AnalysisEvidence     []string             `json:"analysisEvidence,omitempty"`
-	HourlyHits           [24]int              `json:"hourlyHits"`
-	ActivityTimeZone     string               `json:"activityTimeZone,omitempty"`
-	Location             *ObservationLocation `json:"location,omitempty"`
-	LastTranscript       string               `json:"lastTranscript,omitempty"`
-	JobIDs               []string             `json:"jobIDs,omitempty"`
-	DeviceIDs            []string             `json:"deviceIDs,omitempty"`
+	FrequencyHz            float64              `json:"frequencyHz"`
+	FirstSeen              time.Time            `json:"firstSeen"`
+	LastSeen               time.Time            `json:"lastSeen"`
+	Checks                 int                  `json:"checks"`
+	Hits                   int                  `json:"hits"`
+	DiscoveryChecks        int                  `json:"discoveryChecks,omitempty"`
+	DiscoveryHits          int                  `json:"discoveryHits,omitempty"`
+	IdentifyChecks         int                  `json:"identifyChecks,omitempty"`
+	IdentifyHits           int                  `json:"identifyHits,omitempty"`
+	Occupancy              float64              `json:"occupancy"`
+	StrongestDBFS          float64              `json:"strongestDBFS"`
+	NoiseDBFS              float64              `json:"noiseDBFS"`
+	Modulation             string               `json:"modulation"`
+	ProtocolName           string               `json:"protocolName,omitempty"`
+	Name                   string               `json:"name,omitempty"`
+	Callsigns              []string             `json:"callsigns,omitempty"`
+	Confidence             float64              `json:"confidence"`
+	IdentificationSource   string               `json:"identificationSource,omitempty"`
+	IdentificationVerified bool                 `json:"identificationVerified"`
+	VerificationReason     string               `json:"verificationReason,omitempty"`
+	ReferenceDistanceMiles *float64             `json:"referenceDistanceMiles,omitempty"`
+	CandidateDecoder       string               `json:"candidateDecoder,omitempty"`
+	DetectionStatus        string               `json:"detectionStatus,omitempty"`
+	DetectionEvidence      string               `json:"detectionEvidence,omitempty"`
+	DecoderReady           bool                 `json:"decoderReady"`
+	AnalysisEngine         string               `json:"analysisEngine,omitempty"`
+	AnalysisSummary        string               `json:"analysisSummary,omitempty"`
+	AnalysisEvidence       []string             `json:"analysisEvidence,omitempty"`
+	HourlyHits             [24]int              `json:"hourlyHits"`
+	ActivityTimeZone       string               `json:"activityTimeZone,omitempty"`
+	Location               *ObservationLocation `json:"location,omitempty"`
+	LastTranscript         string               `json:"lastTranscript,omitempty"`
+	JobIDs                 []string             `json:"jobIDs,omitempty"`
+	DeviceIDs              []string             `json:"deviceIDs,omitempty"`
 }
 
 type MapperJob struct {
@@ -85,12 +99,13 @@ type MapperJob struct {
 }
 
 type MapperStatus struct {
-	Config       MapperConfig            `json:"config"`
-	LastUpload   *time.Time              `json:"lastUpload,omitempty"`
-	LastError    string                  `json:"lastError,omitempty"`
-	UploadedRows int                     `json:"uploadedRows"`
-	Records      []MapperFrequencyRecord `json:"records"`
-	Jobs         []MapperJob             `json:"jobs"`
+	Config          MapperConfig            `json:"config"`
+	LastUpload      *time.Time              `json:"lastUpload,omitempty"`
+	LastError       string                  `json:"lastError,omitempty"`
+	UploadedRows    int                     `json:"uploadedRows"`
+	VerifiedRecords int                     `json:"verifiedRecords"`
+	Records         []MapperFrequencyRecord `json:"records"`
+	Jobs            []MapperJob             `json:"jobs"`
 }
 
 type MapperProgress struct {
@@ -143,8 +158,18 @@ type MapperManager struct {
 
 func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	m := &MapperManager{path: filepath.Join(dataDirectory, "Data", "mapper.json"), recordsPath: filepath.Join(dataDirectory, "Data", "mapper-records.json"), jobsPath: filepath.Join(dataDirectory, "Data", "mapper-jobs.json"), events: events, client: &http.Client{Timeout: 12 * time.Second}, lastSeen: make(map[string]time.Time), records: make(map[string]MapperFrequencyRecord), jobs: make(map[string]MapperJob), jobSessions: make(map[string]uint64), lastArchived: make(map[string]time.Time)}
+	configLoaded := false
 	if data, err := os.ReadFile(m.path); err == nil {
-		_ = json.Unmarshal(data, &m.config)
+		configLoaded = json.Unmarshal(data, &m.config) == nil
+		var rawConfig map[string]json.RawMessage
+		if json.Unmarshal(data, &rawConfig) == nil {
+			if _, exists := rawConfig["uploadVerifiedOnly"]; !exists {
+				m.config.UploadVerifiedOnly = true
+			}
+		}
+	}
+	if !configLoaded {
+		m.config.UploadVerifiedOnly = true
 	}
 	if data, err := os.ReadFile(m.recordsPath); err == nil {
 		_ = json.Unmarshal(data, &m.records)
@@ -207,7 +232,13 @@ func (m *MapperManager) Status() MapperStatus {
 		}
 		return jobs[i].CreatedAt.Before(jobs[j].CreatedAt)
 	})
-	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, Records: records, Jobs: jobs}
+	verifiedRecords := 0
+	for _, record := range records {
+		if mapperRecordFullyIdentified(record) {
+			verifiedRecords++
+		}
+	}
+	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, VerifiedRecords: verifiedRecords, Records: records, Jobs: jobs}
 }
 
 func (m *MapperManager) Progress() MapperProgress {
@@ -273,6 +304,35 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	}
 	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
 		return config, errors.New("Identify listen time must be between 5 seconds and 7 days")
+	}
+	if config.Mode == "decipher" && config.IdentifyMinimumHits == 0 {
+		config.IdentifyMinimumHits = 2
+	}
+	if config.IdentifyMinimumHits < 0 || config.IdentifyMinimumHits > 10_000 {
+		return config, errors.New("Identify minimum hits must be between 1 and 10,000, or zero for the default")
+	}
+	config.IdentifyHitSource = strings.ToLower(strings.TrimSpace(config.IdentifyHitSource))
+	if config.IdentifyHitSource == "" {
+		config.IdentifyHitSource = "discovery"
+	}
+	if config.IdentifyHitSource != "discovery" && config.IdentifyHitSource != "combined" {
+		return config, errors.New("Identify hit source must be Discovery or combined history")
+	}
+	if config.IdentifyMinimumOccupancy < 0 || config.IdentifyMinimumOccupancy > 1 {
+		return config, errors.New("Identify minimum occupancy must be between 0 and 100 percent")
+	}
+	if config.IdentifySeenWithinHours < 0 || config.IdentifySeenWithinHours > 24*365 {
+		return config, errors.New("Identify recent activity window must be between zero and one year")
+	}
+	if config.IdentifyMaximumChannels < 0 || config.IdentifyMaximumChannels > 10_000 {
+		return config, errors.New("Identify channel limit must be between zero and 10,000")
+	}
+	config.IdentifyOrder = strings.ToLower(strings.TrimSpace(config.IdentifyOrder))
+	if config.IdentifyOrder == "" {
+		config.IdentifyOrder = "hits"
+	}
+	if config.IdentifyOrder != "hits" && config.IdentifyOrder != "recent" && config.IdentifyOrder != "occupancy" && config.IdentifyOrder != "frequency" && config.IdentifyOrder != "oldest" {
+		return config, errors.New("choose a supported Identify channel order")
 	}
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return config, errors.New("choose Auto or a supported Mapper sample rate")
@@ -639,8 +699,19 @@ func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, 
 		record = MapperFrequencyRecord{FrequencyHz: frequencyHz, FirstSeen: now, StrongestDBFS: -200}
 	}
 	record.Checks++
+	identifyObservation := strings.EqualFold(config.Mode, "decipher")
+	if identifyObservation {
+		record.IdentifyChecks++
+	} else {
+		record.DiscoveryChecks++
+	}
 	if active {
 		record.Hits++
+		if identifyObservation {
+			record.IdentifyHits++
+		} else {
+			record.DiscoveryHits++
+		}
 		record.LastSeen = now
 		record.HourlyHits[now.Hour()]++
 		record.ActivityTimeZone = now.Location().String()
@@ -675,12 +746,24 @@ func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, 
 }
 
 func (m *MapperManager) SetIdentification(frequencyHz float64, source string, confidence float64) {
+	m.SetIdentificationEvidence(frequencyHz, source, confidence, false, "", nil)
+}
+
+func (m *MapperManager) SetIdentificationEvidence(frequencyHz float64, source string, confidence float64, verified bool, reason string, distanceMiles *float64) {
 	key := fmt.Sprintf("%.0f", frequencyHz)
 	m.mu.Lock()
 	record, exists := m.records[key]
 	if exists {
 		record.IdentificationSource = strings.TrimSpace(source)
 		record.Confidence = math.Max(record.Confidence, confidence)
+		if verified {
+			record.IdentificationVerified = true
+			record.VerificationReason = strings.TrimSpace(reason)
+			if distanceMiles != nil {
+				distance := *distanceMiles
+				record.ReferenceDistanceMiles = &distance
+			}
+		}
 		m.records[key] = record
 	}
 	m.mu.Unlock()
@@ -734,6 +817,9 @@ func (m *MapperManager) SetDecodedMessages(frequencyHz float64, decoderID string
 		record.DetectionStatus = "confirmed"
 		record.DecoderReady = true
 		record.ProtocolName = messages[0].Protocol
+		if strings.TrimSpace(record.Name) == "" {
+			record.Name = firstNonEmpty(messages[0].Protocol, canonicalDecoderID(decoderID))
+		}
 		record.Confidence = math.Max(record.Confidence, messages[0].Confidence)
 		evidence := make([]string, 0, len(messages))
 		for _, message := range messages {
@@ -741,6 +827,8 @@ func (m *MapperManager) SetDecodedMessages(frequencyHz float64, decoderID string
 			record.Callsigns = mergeUniqueStrings(record.Callsigns, message.Callsigns)
 		}
 		record.DetectionEvidence = strings.Join(evidence, " · ")
+		record.IdentificationVerified = true
+		record.VerificationReason = "Valid " + firstNonEmpty(messages[0].Protocol, canonicalDecoderID(decoderID)) + " decoder output"
 		m.records[key] = record
 	}
 	m.mu.Unlock()
@@ -813,7 +901,7 @@ func (m *MapperManager) UploadNow() MapperStatus {
 		return m.Status()
 	}
 	m.mu.Unlock()
-	m.upload()
+	m.upload(true)
 	return m.Status()
 }
 
@@ -840,7 +928,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
-	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone", "mapper_job_ids", "receiver_ids"}
+	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone", "mapper_job_ids", "receiver_ids", "discovery_checks", "discovery_hits", "identify_checks", "identify_hits", "fully_identified", "verification_reason", "reference_distance_miles"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -860,6 +948,8 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 			strconv.FormatFloat(record.Confidence, 'f', 3, 64), safeSpreadsheetText(record.LastTranscript), latitude, longitude, locationName, locationPrecision,
 			safeSpreadsheetText(record.IdentificationSource), safeSpreadsheetText(mapperPeakHours(record.HourlyHits)), safeSpreadsheetText(record.ActivityTimeZone),
 			safeSpreadsheetText(strings.Join(record.JobIDs, " | ")), safeSpreadsheetText(strings.Join(record.DeviceIDs, " | ")),
+			strconv.Itoa(record.DiscoveryChecks), strconv.Itoa(record.DiscoveryHits), strconv.Itoa(record.IdentifyChecks), strconv.Itoa(record.IdentifyHits),
+			strconv.FormatBool(mapperRecordFullyIdentified(record)), safeSpreadsheetText(record.VerificationReason), optionalFloat(record.ReferenceDistanceMiles, 2),
 		}
 		if err := writer.Write(row); err != nil {
 			return nil, 0, err
@@ -870,6 +960,13 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 		return nil, 0, err
 	}
 	return output.Bytes(), len(records), nil
+}
+
+func optionalFloat(value *float64, precision int) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*value, 'f', precision, 64)
 }
 
 func mapperPeakHours(hourly [24]int) string {
@@ -928,7 +1025,7 @@ func (m *MapperManager) loop() {
 		enabled := m.config.AutoUpload
 		m.mu.RUnlock()
 		if enabled {
-			m.upload()
+			m.upload(false)
 		}
 		m.persistRecords()
 	}
@@ -961,7 +1058,7 @@ func (m *MapperManager) persistJobs() {
 	}
 }
 
-func (m *MapperManager) upload() {
+func (m *MapperManager) upload(manual bool) {
 	m.mu.RLock()
 	config := m.config
 	m.mu.RUnlock()
@@ -974,10 +1071,18 @@ func (m *MapperManager) upload() {
 		if !signal.LastSeen.After(m.lastSeen[key]) {
 			continue
 		}
+		if config.UploadVerifiedOnly && !mapperRecordFullyIdentified(signal) {
+			continue
+		}
 		rows = append(rows, signal)
 	}
 	m.mu.RUnlock()
 	if len(rows) == 0 {
+		if manual && config.UploadVerifiedOnly {
+			m.mu.Lock()
+			m.lastError = "no new fully identified frequencies are ready to send"
+			m.mu.Unlock()
+		}
 		return
 	}
 	err := m.postRows(config, rows)
@@ -1002,10 +1107,24 @@ func (m *MapperManager) UploadFrequency(frequencyHz float64) MapperStatus {
 		m.mu.Unlock()
 		return m.Status()
 	}
+	if config.UploadVerifiedOnly && !mapperRecordFullyIdentified(record) {
+		m.mu.Lock()
+		m.lastError = "this frequency is not fully identified; turn off Identified only or collect authoritative evidence"
+		m.mu.Unlock()
+		return m.Status()
+	}
 	rows := []MapperFrequencyRecord{record}
 	err := m.postRows(config, rows)
 	m.finishUpload(rows, err)
 	return m.Status()
+}
+
+func mapperRecordFullyIdentified(record MapperFrequencyRecord) bool {
+	if !record.IdentificationVerified || strings.TrimSpace(record.Name) == "" {
+		return false
+	}
+	classification := strings.ToLower(strings.TrimSpace(firstNonEmpty(record.ProtocolName, record.Modulation)))
+	return classification != "" && classification != "unknown" && classification != "auto" && !strings.Contains(classification, "candidate") && !strings.Contains(classification, "likely")
 }
 
 func (m *MapperManager) postRows(config MapperConfig, rows []MapperFrequencyRecord) error {
@@ -1080,7 +1199,16 @@ func mapperAdditionRow(record MapperFrequencyRecord, config MapperConfig) map[st
 	if record.Hits >= 3 {
 		confidence = "Repeated observation"
 	}
+	if mapperRecordFullyIdentified(record) {
+		confidence = "Fully identified"
+	}
 	notes := fmt.Sprintf("GP-SDR Identify: signal %.1f dBFS; local noise %.1f dBFS; confidence %.0f%%", record.StrongestDBFS, record.NoiseDBFS, record.Confidence*100)
+	if record.VerificationReason != "" {
+		notes += "; verified: " + record.VerificationReason
+	}
+	if record.ReferenceDistanceMiles != nil {
+		notes += fmt.Sprintf("; reference distance %.1f mi", *record.ReferenceDistanceMiles)
+	}
 	if record.AnalysisSummary != "" {
 		notes += "; " + record.AnalysisSummary
 	}

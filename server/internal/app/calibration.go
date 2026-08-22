@@ -116,8 +116,8 @@ func (r *Runtime) AutoCalibrate(request CalibrationRequest) (DeviceCalibration, 
 	if request.ReferenceHz <= 0 {
 		return DeviceCalibration{}, errors.New("enter a known active reference frequency")
 	}
-	r.Stop()
 	r.mu.RLock()
+	busy := r.running || len(r.mapperJobs) > 0
 	var device *SDRDevice
 	for index := range r.devices {
 		if r.devices[index].ID == request.DeviceID && r.devices[index].Connected {
@@ -127,6 +127,9 @@ func (r *Runtime) AutoCalibrate(request CalibrationRequest) (DeviceCalibration, 
 		}
 	}
 	r.mu.RUnlock()
+	if busy || r.characterization != nil && r.characterization.Status().Running {
+		return DeviceCalibration{}, errors.New("stop Tuner, scanning, P25, Mapper, and antenna tests before auto calibration")
+	}
 	if device == nil {
 		return DeviceCalibration{}, errors.New("the selected receiver is not connected")
 	}

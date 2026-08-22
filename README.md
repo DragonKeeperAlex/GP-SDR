@@ -33,7 +33,12 @@ browser and is designed for phones and tablets.
   targets share one IQ capture with a configurable 1–32 software-VFO limit
 - Mapper shows the current workflow, receiver, batch, every software VFO being
   checked, and the latest receiver spectrum/waterfall; results can be collapsed,
-  searched across decoded evidence, filtered, and sorted
+  searched across decoded evidence, filtered to repeated activity, and sorted.
+  Identify eligibility can require a chosen hit count, 10–100% successful-check
+  rate, recent activity, and a bounded/prioritized channel list
+- Parallel receiver and antenna characterization across full nominal, antenna,
+  or custom ranges with live frequency, ETA, response/noise plots, overload
+  detection, saved-calibration/manual-gain modes, recommendations, and CSV export
 - Peak activity hours, expandable identification evidence, optional
   location/transcription, filters, saved job controls, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
@@ -102,7 +107,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.1.2_amd64.deb
+sudo apt install ./gp-sdr_1.2.0_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -236,7 +241,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.1.2
+Scripts/build_release.sh 1.2.0
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -266,7 +271,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.1.2.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.2.0.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

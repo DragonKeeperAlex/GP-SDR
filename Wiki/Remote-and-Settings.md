@@ -50,9 +50,18 @@ audio processing are not tied to every visual frame.
 ## Storage and retention
 
 The Data card separates total GP-SDR use, recordings, IQ evidence, and
-journal/profile data. Profiles control capture choices and retention. Forever
-is useful for carefully managed servers but is not recommended for unattended
-IQ recording without external storage monitoring.
+journal/profile data. Set separate caps for Recordings and IQ, choose an age
+limit, and optionally enable automatic cleanup. Zero disables a particular
+limit. **Clean now** applies the saved policy immediately after confirmation.
+Files modified during the last ten minutes are protected so an active capture
+is not removed. Cleanup stays inside GP-SDR's Recordings and IQ directories;
+profiles, Mapper history, calibration, local channel databases, and range sync
+data are never targets. Automatic cleanup is off until explicitly enabled.
+
+Raw IQ is high-rate noise-like data and often compresses poorly while consuming
+extra CPU. Bounded retention is therefore the predictable default for an
+unattended receiver. Keep only evidence you expect to review, or move selected
+captures to archival storage before running cleanup.
 
 ## Integration status
 

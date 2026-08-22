@@ -35,6 +35,7 @@ type Runtime struct {
 	installer         *Installer
 	rangeSync         *RangeSyncManager
 	calibrations      *CalibrationStore
+	characterization  *CharacterizationManager
 	mapper            *MapperManager
 	mapperJobs        map[string]*mapperJobRuntime
 	remoteReceivers   *RemoteReceiverStore
@@ -47,6 +48,9 @@ type Runtime struct {
 	receiverTelemetry *ReceiverTelemetry
 	storage           StorageStatus
 	storageRefreshing bool
+	storagePolicy     StoragePolicy
+	storageCleanup    StorageCleanupResult
+	storagePruning    bool
 }
 
 type mapperJobRuntime struct {
@@ -74,7 +78,9 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	}
 	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
-		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations}
+		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
+		characterization: NewCharacterizationManager(dataDirectory)}
+	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
 	runtimeState.installer = NewInstaller(dataDirectory, runtimeState.Refresh)
@@ -87,7 +93,21 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	return runtimeState, nil
 }
 
-func (r *Runtime) RangeSyncStatus() RangeSyncStatus { return r.rangeSync.Status() }
+func (r *Runtime) RangeSyncStatus() RangeSyncStatus               { return r.rangeSync.Status() }
+func (r *Runtime) CharacterizationStatus() CharacterizationStatus { return r.characterization.Status() }
+func (r *Runtime) StartCharacterization(request CharacterizationRequest) (CharacterizationStatus, error) {
+	r.mu.RLock()
+	busy := r.running || len(r.mapperJobs) > 0
+	devices := append([]SDRDevice(nil), r.devices...)
+	r.mu.RUnlock()
+	if busy {
+		return r.characterization.Status(), errors.New("stop Tuner, scanning, P25, and Mapper jobs before starting a receiver characterization")
+	}
+	return r.characterization.Start(devices, request, r.calibrations)
+}
+func (r *Runtime) StopCharacterization() CharacterizationStatus { return r.characterization.Stop() }
+func (r *Runtime) ClearCharacterization() error                 { return r.characterization.Clear() }
+func (r *Runtime) CharacterizationCSV() ([]byte, error)         { return r.characterization.CSV() }
 func (r *Runtime) UpdateRangeSync(config RangeSyncConfig) (RangeSyncStatus, error) {
 	return r.rangeSync.Update(config)
 }
@@ -120,6 +140,9 @@ func (r *Runtime) DeleteMapperJob(id string) error {
 }
 
 func (r *Runtime) StartMapperJob(id string) (MapperStatus, error) {
+	if r.characterization != nil && r.characterization.Status().Running {
+		return r.mapper.Status(), errors.New("this receiver is being characterized; stop the calibration lab first")
+	}
 	job, ok := r.mapper.Job(strings.TrimSpace(id))
 	if !ok {
 		return r.mapper.Status(), ErrNotFound
@@ -250,7 +273,8 @@ func (r *Runtime) Refresh() {
 	r.mu.RLock()
 	mapperRunning := len(r.mapperJobs) > 0
 	r.mu.RUnlock()
-	if !running && !mapperRunning {
+	characterizing := r.characterization != nil && r.characterization.Status().Running
+	if !running && !mapperRunning && !characterizing {
 		devices = DiscoverDevices(r.demo)
 		devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
 	}
@@ -361,6 +385,9 @@ func (r *Runtime) healthNoticesLocked() []HealthNotice {
 }
 
 func (r *Runtime) Start(profileID string) error {
+	if r.characterization != nil && r.characterization.Status().Running {
+		return errors.New("stop the receiver characterization before starting a scan")
+	}
 	profile, ok := r.Profiles.Get(profileID)
 	if !ok {
 		return ErrNotFound
@@ -376,6 +403,9 @@ func firstChannelMode(profile ScanProfile) string {
 }
 
 func (r *Runtime) Tune(request TunerRequest) error {
+	if r.characterization != nil && r.characterization.Status().Running {
+		return errors.New("stop the receiver characterization before tuning")
+	}
 	request.Mode = strings.ToLower(strings.TrimSpace(request.Mode))
 	if request.Mode == "fm" {
 		request.Mode = "wfm"
@@ -1093,10 +1123,10 @@ func (r *Runtime) simulationLoop(stop <-chan struct{}) {
 					mapperTargetEndsAt = time.Now().Add(listenFor)
 				}
 				active := rand.Intn(4) == 0
-				name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
-				r.mapper.Observe(target.FrequencyHz, active, -40+rand.Float64()*12, -82+rand.Float64()*5, mode, protocol, name, "")
+				identity := r.identifyMapperFrequencyAt(target.FrequencyHz, observationLocation(mapperConfig))
+				r.mapper.Observe(target.FrequencyHz, active, -40+rand.Float64()*12, -82+rand.Float64()*5, identity.Mode, identity.Protocol, identity.Name, "")
 				if active {
-					r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+					r.mapper.SetIdentificationEvidence(target.FrequencyHz, identity.Source, identity.Confidence, identity.Verified, identity.Reason, identity.DistanceMiles)
 				}
 				if listenFor == 0 || !time.Now().Before(mapperTargetEndsAt) {
 					mapperIndex++

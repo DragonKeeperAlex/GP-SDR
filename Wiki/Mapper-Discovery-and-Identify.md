@@ -51,6 +51,19 @@ It attempts modulation/type classification, decoder matching, callsign and
 identity extraction, local transcription when enabled, and comparison with
 available local/reference data.
 
+Use the eligibility controls to avoid spending time on one-off noise:
+
+- **Minimum hits** requires a chosen number of successful observations.
+- **Hit history** can use Discovery only, preventing Identify revisits from
+  promoting a one-off result, or use the combined Discovery + Identify history.
+- **Successful checks** requires 10–100% occupancy, calculated as hits divided
+  by checks; **Any percentage** disables that threshold.
+- **Last active**, **Maximum channels**, and **Channel order** bound and
+  prioritize each Identify pass.
+
+Identify observations still increment the combined hit/check totals and are
+shown separately from Discovery totals in the expanded evidence view and CSV.
+
 Identify can monitor nearby found frequencies at the same instant when they fit
 inside the SDR's sampled bandwidth. Auto uses up to four at once because
 classification, demodulation, decoder matching, recording, and transcription
@@ -69,10 +82,22 @@ The result table expands when a frequency is clicked. Details include:
 - Last observation and optional location
 - Local analysis and offline transcript
 
+The top bar separately counts **Successfully identified** frequencies. This is
+a deliberately stricter result than a classifier guess: it requires either a
+valid decoder message or an exact frequency match in a RadioReference profile
+whose imported search area is close enough to the Mapper observation location.
+Band-plan labels, likely modulation, decoder candidates, and distant reference
+matches remain useful evidence but do not increase the verified count.
+
 Results can also be searched across frequency, names, protocols, modulation,
 callsigns, decoder evidence, automatic analysis, and transcription. Job,
 receiver, type, identification/activity, and sort controls can be combined.
-Collapse the complete results area when only live Mapper progress is needed.
+Enable **Repeated only** to hide every frequency with one or zero hits. More
+specific result filters can show one-offs, repeats, 10+ hits, recently seen
+channels, decoder evidence, transcripts, or callsigns. Results can be ordered
+by hits, checks, occupancy, signal level, SNR, confidence, receiver count,
+identity, discovery time, recency, or frequency. Collapse the complete results
+area when only live Mapper progress is needed.
 
 Protocol labels remain evidence-based. A signal inside an ADS-B or P25 band is
 only a candidate until the matching decoder produces valid frames or metadata.
@@ -89,8 +114,13 @@ and settings; both actions use an in-app confirmation dialog.
 - **Save CSV** writes under the server's `Exports/Mapper` directory.
 - **Download** saves the CSV to the current client device.
 - **Queue** sends one reviewed observation to a configured Google Sheet.
-- **Send all** queues pending results.
+- **Send eligible now** queues pending results.
 - **Auto upload** appends new observations automatically when configured.
+- **Identified only** (recommended) permits only successfully identified rows.
+
+The CSV always includes `fully_identified`, `verification_reason`, and
+`reference_distance_miles` columns so a saved file can be audited independently
+of the interface.
 
 Mapper writes to an **Additions Queue**, never directly to a trusted master
 channel list. Rows remain `New` until a person verifies them. See
