@@ -41,3 +41,9 @@ From this directory:
 ```sh
 swift test
 ```
+
+## iPad app
+
+Generate the installable Xcode project with `xcodegen generate`, then build or
+run the `GPSDRMobile` scheme on an iPad or iPad simulator. The generated project
+is intentionally ignored; `project.yml` is the reviewable source of truth.
