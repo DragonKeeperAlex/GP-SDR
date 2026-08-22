@@ -120,6 +120,9 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-eta"`, `id="mapper-eta-time"`,
 		`id="mapper-workflow"`, `name="mapper-workflow" value="discovery"`, `name="mapper-workflow" value="decipher"`, `>Identify</span>`,
 		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
+		`id="mapper-concurrent"`, `32 · highest CPU`,
+		`id="mapper-operation"`, `id="mapper-channel-list"`, `id="mapper-spectrum"`, `id="mapper-waterfall"`,
+		`id="mapper-results-toggle"`, `id="mapper-results-content"`, `id="mapper-filter-type"`, `id="mapper-filter-state"`, `id="mapper-sort"`, `id="mapper-filter-reset"`,
 		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
 		if !strings.Contains(index, required) {
@@ -136,7 +139,8 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	}
 	for _, required := range []string{
 		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
-		"decipherListenSeconds", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
+		"decipherListenSeconds", "concurrentChannels", "mapperBatchReadout", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
+		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)

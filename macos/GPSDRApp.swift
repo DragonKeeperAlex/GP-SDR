@@ -185,8 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 guard let self else { return }
                 if ready {
                     self.webView.load(URLRequest(url: url))
-                } else if attempt < 30 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.loadConsole(attempt: attempt + 1) }
+                } else if attempt < 120 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.loadConsole(attempt: attempt + 1) }
                 } else {
                     self.showFailure("GP-SDR could not connect to its local receiver service.")
                 }
@@ -197,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private func showFailure(_ message: String) {
         let html = """
         <html><body style="margin:0;background:#0b0d10;color:#edf1f5;font:14px -apple-system;display:grid;place-items:center;height:100vh">
-        <div style="max-width:430px;text-align:center"><h2>GP-SDR</h2><p style="color:#87909c;line-height:1.5">\(message)</p></div>
+        <div style="max-width:430px;text-align:center"><h2>GP-SDR</h2><p style="color:#87909c;line-height:1.5">\(message)</p><button onclick="window.webkit.messageHandlers.gpsdrNative.postMessage({action:'retryInterface'})" style="margin-top:12px;padding:9px 16px;border:1px solid #2c3540;border-radius:7px;background:#151a20;color:#edf1f5;font:600 13px -apple-system;cursor:pointer">Retry</button></div>
         </body></html>
         """
         webView?.loadHTMLString(html, baseURL: nil)
@@ -215,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc private func showDecoders() { show(view: "decoders") }
     @objc private func showHardware() { show(view: "hardware") }
     @objc private func showSettings() { show(view: "settings") }
-    @objc private func reloadInterface() { webView?.reload() }
+    @objc private func reloadInterface() { loadConsole(attempt: 0) }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "gpsdrNative", let body = message.body as? [String: Any], let action = body["action"] as? String else { return }
@@ -226,6 +226,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             requestCurrentLocation()
         case "openLocationSettings":
             openLocationSettings()
+        case "retryInterface":
+            loadConsole(attempt: 0)
         default:
             break
         }

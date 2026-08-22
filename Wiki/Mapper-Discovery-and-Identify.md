@@ -20,11 +20,24 @@ Configure:
 - Dwell time per step
 - Preferred mode or Auto
 - Capture width/sample rate
+- Channels at once (1–32, or Auto)
 - Optional location and precision
+
+Nearby frequency steps are measured from the same wide IQ capture instead of
+retuning once for every step. Auto monitors up to 16 Discovery steps at once.
+The actual batch may be smaller when the selected sample rate cannot contain
+all requested frequencies. One receiver process remains in control, so this
+increases DSP work without multiplying USB bandwidth.
 
 The job card shows current frequency, pass and channel progress, elapsed time,
 hits, and an ETA for the current pass. Because Discovery loops, ETA is the end
 of the pass—not the end of the job.
+
+The live operation strip lists the current workflow, receiver capture width,
+batch number, and every software VFO being checked. The spectrum marks those
+VFOs over the latest IQ capture, while the waterfall shows activity over time.
+With multiple receiver jobs, this display follows the job matching the most
+recent capture and labels the receiver responsible for it.
 
 For a 10 MHz–6 GHz survey, use realistic steps and expect a long pass. Splitting
 the spectrum by antenna and receiver produces more useful results than one
@@ -38,6 +51,13 @@ It attempts modulation/type classification, decoder matching, callsign and
 identity extraction, local transcription when enabled, and comparison with
 available local/reference data.
 
+Identify can monitor nearby found frequencies at the same instant when they fit
+inside the SDR's sampled bandwidth. Auto uses up to four at once because
+classification, demodulation, decoder matching, recording, and transcription
+cost more CPU than Discovery. Select 1 for the lightest load, or raise the limit
+through 32 on a faster computer. Frequencies outside the current sample window
+are automatically split into later capture batches.
+
 The result table expands when a frequency is clicked. Details include:
 
 - Identified name and evidence source
@@ -48,6 +68,11 @@ The result table expands when a frequency is clicked. Details include:
 - Decoded or transcript-derived callsigns
 - Last observation and optional location
 - Local analysis and offline transcript
+
+Results can also be searched across frequency, names, protocols, modulation,
+callsigns, decoder evidence, automatic analysis, and transcription. Job,
+receiver, type, identification/activity, and sort controls can be combined.
+Collapse the complete results area when only live Mapper progress is needed.
 
 Protocol labels remain evidence-based. A signal inside an ADS-B or P25 band is
 only a candidate until the matching decoder produces valid frames or metadata.

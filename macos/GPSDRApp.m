@@ -191,8 +191,8 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             if (ready) {
                 [self.webView loadRequest:[NSURLRequest requestWithURL:url]];
-            } else if (attempt < 30) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self loadConsoleWithAttempt:attempt + 1]; });
+            } else if (attempt < 120) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self loadConsoleWithAttempt:attempt + 1]; });
             } else {
                 [self showFailure:@"GP-SDR could not connect to its local receiver service."];
             }
@@ -201,7 +201,7 @@
 }
 
 - (void)showFailure:(NSString *)message {
-    NSString *html = [NSString stringWithFormat:@"<html><body style='margin:0;background:#0b0d10;color:#edf1f5;font:14px -apple-system;display:grid;place-items:center;height:100vh'><div style='max-width:430px;text-align:center'><h2>GP-SDR</h2><p style='color:#87909c;line-height:1.5'>%@</p></div></body></html>", message];
+    NSString *html = [NSString stringWithFormat:@"<html><body style='margin:0;background:#0b0d10;color:#edf1f5;font:14px -apple-system;display:grid;place-items:center;height:100vh'><div style='max-width:430px;text-align:center'><h2>GP-SDR</h2><p style='color:#87909c;line-height:1.5'>%@</p><button onclick=\"window.webkit.messageHandlers.gpsdrNative.postMessage({action:'retryInterface'})\" style='margin-top:12px;padding:9px 16px;border:1px solid #2c3540;border-radius:7px;background:#151a20;color:#edf1f5;font:600 13px -apple-system;cursor:pointer'>Retry</button></div></body></html>", message];
     [self.webView loadHTMLString:html baseURL:nil];
 }
 
@@ -214,7 +214,7 @@
 - (void)showDecoders { [self showView:@"decoders"]; }
 - (void)showHardware { [self showView:@"hardware"]; }
 - (void)showSettings { [self showView:@"settings"]; }
-- (void)reloadInterface { [self.webView reload]; }
+- (void)reloadInterface { [self loadConsoleWithAttempt:0]; }
 
 - (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
     if (![message.name isEqualToString:@"gpsdrNative"] || ![message.body isKindOfClass:NSDictionary.class]) return;
@@ -222,6 +222,7 @@
     if ([action isEqualToString:@"chooseLocalDatabaseFolder"]) [self chooseLocalDatabaseFolder];
     else if ([action isEqualToString:@"requestLocation"]) [self requestCurrentLocation];
     else if ([action isEqualToString:@"openLocationSettings"]) [self openLocationSettings];
+    else if ([action isEqualToString:@"retryInterface"]) [self loadConsoleWithAttempt:0];
 }
 
 - (void)chooseLocalDatabaseFolder {

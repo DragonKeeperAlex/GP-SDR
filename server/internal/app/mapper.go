@@ -33,6 +33,7 @@ type MapperConfig struct {
 	StepHz                float64  `json:"stepHz,omitempty"`
 	DwellMilliseconds     int      `json:"dwellMilliseconds,omitempty"`
 	SampleRateHz          int      `json:"sampleRateHz,omitempty"`
+	ConcurrentChannels    int      `json:"concurrentChannels,omitempty"`
 	DecipherListenSeconds int64    `json:"decipherListenSeconds,omitempty"`
 	Transcribe            bool     `json:"transcribe"`
 	IncludeLocation       bool     `json:"includeLocation"`
@@ -96,9 +97,13 @@ type MapperProgress struct {
 	Running            bool       `json:"running"`
 	Mode               string     `json:"mode,omitempty"`
 	CurrentFrequencyHz float64    `json:"currentFrequencyHz,omitempty"`
+	CurrentFrequencies []float64  `json:"currentFrequenciesHz,omitempty"`
 	CurrentLabel       string     `json:"currentLabel,omitempty"`
 	CurrentIndex       int        `json:"currentIndex"`
 	TotalTargets       int        `json:"totalTargets"`
+	CurrentBatch       int        `json:"currentBatch"`
+	TotalBatches       int        `json:"totalBatches"`
+	MonitoredChannels  int        `json:"monitoredChannels"`
 	ChecksCompleted    int64      `json:"checksCompleted"`
 	PassesCompleted    int        `json:"passesCompleted"`
 	PassStartedAt      *time.Time `json:"passStartedAt,omitempty"`
@@ -272,6 +277,12 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return config, errors.New("choose Auto or a supported Mapper sample rate")
 	}
+	if config.ConcurrentChannels == 0 {
+		config.ConcurrentChannels = defaultMapperConcurrentChannels(config.Mode)
+	}
+	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 32 {
+		return config, errors.New("simultaneous Mapper channels must be between 1 and 32")
+	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {
 			return config, errors.New("add a valid latitude and longitude or turn location tagging off")
@@ -281,6 +292,13 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 		}
 	}
 	return config, nil
+}
+
+func defaultMapperConcurrentChannels(mode string) int {
+	if strings.EqualFold(mode, "decipher") {
+		return 4
+	}
+	return 16
 }
 
 func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
@@ -361,7 +379,7 @@ func (m *MapperManager) MarkJobStopping(id string) {
 	m.mu.Unlock()
 }
 
-func (m *MapperManager) BeginJobSession(id string, totalTargets int) uint64 {
+func (m *MapperManager) BeginJobSession(id string, totalTargets, totalBatches int) uint64 {
 	now := time.Now()
 	m.mu.Lock()
 	m.sessionID++
@@ -370,7 +388,7 @@ func (m *MapperManager) BeginJobSession(id string, totalTargets int) uint64 {
 	if job, ok := m.jobs[id]; ok {
 		job.State = "running"
 		job.LastError = ""
-		job.Progress = MapperProgress{Running: true, Mode: job.Config.Mode, CurrentIndex: -1, TotalTargets: totalTargets, StartedAt: &now, PassStartedAt: &now}
+		job.Progress = MapperProgress{Running: true, Mode: job.Config.Mode, CurrentIndex: -1, CurrentBatch: -1, TotalTargets: totalTargets, TotalBatches: totalBatches, StartedAt: &now, PassStartedAt: &now}
 		job.UpdatedAt = now
 		m.jobs[id] = job
 	}
@@ -378,7 +396,7 @@ func (m *MapperManager) BeginJobSession(id string, totalTargets int) uint64 {
 	return sessionID
 }
 
-func (m *MapperManager) BeginJobTarget(id string, sessionID uint64, index, totalTargets int, frequencyHz float64, label string, listenFor time.Duration) {
+func (m *MapperManager) BeginJobBatch(id string, sessionID uint64, batchIndex, totalBatches, targetIndex, totalTargets int, frequencies []float64, label string, listenFor time.Duration) {
 	now := time.Now()
 	m.mu.Lock()
 	if m.jobSessions[id] != sessionID {
@@ -392,31 +410,41 @@ func (m *MapperManager) BeginJobTarget(id string, sessionID uint64, index, total
 	}
 	progress := &job.Progress
 	progress.Running = true
-	progress.CurrentIndex = index
+	progress.CurrentIndex = targetIndex
 	progress.TotalTargets = totalTargets
-	progress.CurrentFrequencyHz = frequencyHz
+	progress.CurrentBatch = batchIndex
+	progress.TotalBatches = totalBatches
+	progress.MonitoredChannels = len(frequencies)
+	progress.CurrentFrequencies = append([]float64(nil), frequencies...)
+	if len(frequencies) > 0 {
+		progress.CurrentFrequencyHz = frequencies[0]
+	}
 	progress.CurrentLabel = label
 	progress.TargetStartedAt = &now
-	if index == 0 || progress.PassStartedAt == nil {
+	if batchIndex == 0 || progress.PassStartedAt == nil {
 		progress.PassStartedAt = &now
 		progress.EstimatedPassEndAt = nil
 	}
 	if listenFor > 0 {
 		endsAt := now.Add(listenFor)
 		progress.TargetEndsAt = &endsAt
-		estimated := now.Add(time.Duration(totalTargets-index) * listenFor)
+		estimated := now.Add(time.Duration(totalBatches-batchIndex) * listenFor)
 		progress.EstimatedPassEndAt = &estimated
 	} else {
 		progress.TargetEndsAt = nil
-		if index > 0 && progress.PassStartedAt != nil {
-			average := now.Sub(*progress.PassStartedAt) / time.Duration(index)
-			estimated := now.Add(average * time.Duration(totalTargets-index))
+		if batchIndex > 0 && progress.PassStartedAt != nil {
+			average := now.Sub(*progress.PassStartedAt) / time.Duration(batchIndex)
+			estimated := now.Add(average * time.Duration(totalBatches-batchIndex))
 			progress.EstimatedPassEndAt = &estimated
 		}
 	}
 	job.Progress = *progress
 	m.jobs[id] = job
 	m.mu.Unlock()
+}
+
+func (m *MapperManager) BeginJobTarget(id string, sessionID uint64, index, totalTargets int, frequencyHz float64, label string, listenFor time.Duration) {
+	m.BeginJobBatch(id, sessionID, index, totalTargets, index, totalTargets, []float64{frequencyHz}, label, listenFor)
 }
 
 func (m *MapperManager) CompleteJobPass(id string, sessionID uint64) {
@@ -534,6 +562,12 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	}
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return MapperStatus{}, errors.New("choose Auto or a supported Mapper sample rate")
+	}
+	if config.ConcurrentChannels == 0 {
+		config.ConcurrentChannels = defaultMapperConcurrentChannels(config.Mode)
+	}
+	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 32 {
+		return MapperStatus{}, errors.New("simultaneous Mapper channels must be between 1 and 32")
 	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {

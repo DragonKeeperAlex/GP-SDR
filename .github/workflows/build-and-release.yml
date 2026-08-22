@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to package, such as 1.1.1
+        description: Version to package, such as 1.1.2
         required: true
-        default: 1.1.1
+        default: 1.1.2
       publish:
         description: Publish or replace the matching GitHub release
         type: boolean
@@ -61,7 +61,7 @@ jobs:
           elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
             VERSION="${{ inputs.version }}"
           else
-            VERSION="1.1.1-dev.${GITHUB_RUN_NUMBER}"
+            VERSION="1.1.2-dev.${GITHUB_RUN_NUMBER}"
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release version: $VERSION" >&2

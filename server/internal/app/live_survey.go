@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,6 +20,11 @@ type surveyTarget struct {
 	Label       string
 	Dwell       time.Duration
 	Decoder     *string
+}
+
+type surveyTargetBatch struct {
+	Targets    []surveyTarget
+	SampleRate int
 }
 
 type mapperRunContext struct {
@@ -136,6 +142,97 @@ func surveyCaptureSpec(device SDRDevice, target surveyTarget, sampleRate int) Ca
 		spec.AmpEnabled = calibration.AmpEnabled
 	}
 	return spec
+}
+
+func mapperBatchSampleRate(device SDRDevice, config MapperConfig, targets []surveyTarget) int {
+	automatic := 1_000_000
+	for _, target := range targets {
+		if candidate := liveSampleRate(device, target); candidate > automatic {
+			automatic = candidate
+		}
+	}
+	return compatibleUserSampleRate(device, config.SampleRateHz, automatic)
+}
+
+func mapperTargetsFitSampleWindow(targets []surveyTarget, sampleRate int) bool {
+	if len(targets) == 0 || sampleRate <= 0 {
+		return false
+	}
+	minimum, maximum := math.MaxFloat64, -math.MaxFloat64
+	for _, target := range targets {
+		bandwidth := math.Max(target.BandwidthHz, 12_500)
+		// Local activity detection samples noise as far as two channel widths
+		// from the target, so that evidence must fit in the usable passband too.
+		minimum = math.Min(minimum, target.FrequencyHz-bandwidth*2)
+		maximum = math.Max(maximum, target.FrequencyHz+bandwidth*2)
+	}
+	return maximum-minimum <= float64(sampleRate)*.84
+}
+
+func mapperJobTargetBatches(job MapperJob, device SDRDevice, targets []surveyTarget) []surveyTargetBatch {
+	limit := job.Config.ConcurrentChannels
+	if limit == 0 {
+		limit = defaultMapperConcurrentChannels(job.Config.Mode)
+	}
+	limit = maxInt(1, minInt(32, limit))
+	ordered := append([]surveyTarget(nil), targets...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].FrequencyHz < ordered[j].FrequencyHz })
+	batches := make([]surveyTargetBatch, 0, (len(ordered)+limit-1)/limit)
+	for len(ordered) > 0 {
+		count := 1
+		for count < len(ordered) && count < limit {
+			candidate := ordered[:count+1]
+			rate := mapperBatchSampleRate(device, job.Config, candidate)
+			if !mapperTargetsFitSampleWindow(candidate, rate) {
+				break
+			}
+			count++
+		}
+		group := append([]surveyTarget(nil), ordered[:count]...)
+		batches = append(batches, surveyTargetBatch{Targets: group, SampleRate: mapperBatchSampleRate(device, job.Config, group)})
+		ordered = ordered[count:]
+	}
+	return batches
+}
+
+func mapperBatchCaptureSpec(device SDRDevice, batch surveyTargetBatch) (CaptureSpec, bool) {
+	if len(batch.Targets) == 0 || batch.SampleRate <= 0 {
+		return CaptureSpec{}, false
+	}
+	if len(batch.Targets) == 1 {
+		return surveyCaptureSpec(device, batch.Targets[0], batch.SampleRate), true
+	}
+	minimum, maximum := math.MaxFloat64, -math.MaxFloat64
+	for _, target := range batch.Targets {
+		bandwidth := math.Max(target.BandwidthHz, 12_500)
+		minimum = math.Min(minimum, target.FrequencyHz-bandwidth*2)
+		maximum = math.Max(maximum, target.FrequencyHz+bandwidth*2)
+	}
+	halfUsable := float64(batch.SampleRate) * .42
+	lowerCenter, upperCenter := maximum-halfUsable, minimum+halfUsable
+	if lowerCenter > upperCenter {
+		return CaptureSpec{}, false
+	}
+	clampCenter := func(value float64) float64 { return math.Max(lowerCenter, math.Min(upperCenter, value)) }
+	midpoint := (minimum + maximum) / 2
+	candidates := []float64{lowerCenter, upperCenter, midpoint, clampCenter(midpoint - float64(batch.SampleRate)*.12), clampCenter(midpoint + float64(batch.SampleRate)*.12)}
+	for _, target := range batch.Targets {
+		guard := math.Max(50_000, target.BandwidthHz*2.5)
+		candidates = append(candidates, clampCenter(target.FrequencyHz-guard), clampCenter(target.FrequencyHz+guard))
+	}
+	center, bestDistance := midpoint, -1.0
+	for _, candidate := range candidates {
+		nearest := math.MaxFloat64
+		for _, target := range batch.Targets {
+			nearest = math.Min(nearest, math.Abs(candidate-target.FrequencyHz))
+		}
+		if nearest > bestDistance {
+			center, bestDistance = candidate, nearest
+		}
+	}
+	spec := surveyCaptureSpec(device, batch.Targets[0], batch.SampleRate)
+	spec.CenterFrequencyHz = int64(math.Round(center))
+	return spec, true
 }
 
 // measureSurveyTarget compares power inside the channel being tested with
@@ -334,11 +431,17 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 		r.finishMapperJob(job.ID, handle, 0, err)
 		return
 	}
-	sessionID := r.mapper.BeginJobSession(job.ID, len(targets))
 	config := job.Config
+	batches := mapperJobTargetBatches(job, device, targets)
+	if len(batches) == 0 {
+		r.finishMapperJob(job.ID, handle, 0, errors.New("Mapper could not create a receiver pass for these frequencies"))
+		return
+	}
+	sessionID := r.mapper.BeginJobSession(job.ID, len(targets), len(batches))
 	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: 6, RecordAudio: config.Mode == "decipher", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
 	for {
-		for index, target := range targets {
+		targetIndex := 0
+		for batchIndex, batch := range batches {
 			select {
 			case <-handle.stop:
 				r.finishMapperJob(job.ID, handle, sessionID, nil)
@@ -348,13 +451,23 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 			listenFor := time.Duration(0)
 			if config.Mode == "decipher" {
 				listenFor = time.Duration(config.DecipherListenSeconds) * time.Second
-				target.Dwell = minDuration(listenFor, 15*time.Second)
+				for index := range batch.Targets {
+					batch.Targets[index].Dwell = minDuration(listenFor, 15*time.Second)
+				}
 			}
-			r.mapper.BeginJobTarget(job.ID, sessionID, index, len(targets), target.FrequencyHz, target.Label, listenFor)
+			frequencies := make([]float64, 0, len(batch.Targets))
+			for _, target := range batch.Targets {
+				frequencies = append(frequencies, target.FrequencyHz)
+			}
+			label := batch.Targets[0].Label
+			if len(batch.Targets) > 1 {
+				label = fmt.Sprintf("%d channels in %.1f MHz capture", len(batch.Targets), float64(batch.SampleRate)/1e6)
+			}
+			r.mapper.BeginJobBatch(job.ID, sessionID, batchIndex, len(batches), targetIndex, len(targets), frequencies, label, listenFor)
 			deadline := time.Now().Add(listenFor)
 			for {
 				if device.Kind == "Simulator" {
-					wait := target.Dwell
+					wait := batch.Targets[0].Dwell
 					if wait > 500*time.Millisecond {
 						wait = 500 * time.Millisecond
 					}
@@ -367,13 +480,15 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 					// Every simulated receiver exposes one stable active target per
 					// pass so concurrent-job and provenance behavior is testable even
 					// when a job contains fewer than four frequencies.
-					active := index == int(sessionID%uint64(len(targets)))
-					name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
-					r.mapper.ObserveJob(job.ID, device.ID, config, target.FrequencyHz, active, -46+rand.Float64()*14, -84+rand.Float64()*4, mode, protocol, name, "")
-					if active {
-						r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+					for offset, target := range batch.Targets {
+						active := targetIndex+offset == int(sessionID%uint64(len(targets)))
+						name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
+						r.mapper.ObserveJob(job.ID, device.ID, config, target.FrequencyHz, active, -46+rand.Float64()*14, -84+rand.Float64()*4, mode, protocol, name, "")
+						if active {
+							r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+						}
 					}
-				} else if !r.processSurveyTarget(handle.stop, profile, device, target, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config}) {
+				} else if !r.processSurveyBatch(handle.stop, profile, device, batch, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config}) {
 					r.finishMapperJob(job.ID, handle, sessionID, nil)
 					return
 				}
@@ -381,6 +496,7 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 					break
 				}
 			}
+			targetIndex += len(batch.Targets)
 		}
 		r.mapper.CompleteJobPass(job.ID, sessionID)
 	}
@@ -408,8 +524,25 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	if mapperRun != nil {
 		rate = compatibleUserSampleRate(device, mapperRun.Config.SampleRateHz, rate)
 	}
-	spec := surveyCaptureSpec(device, target, rate)
-	data, format, err := captureWindow(device, spec, target.Dwell, stop)
+	return r.processSurveyBatch(stop, profile, device, surveyTargetBatch{Targets: []surveyTarget{target}, SampleRate: rate}, mapperRun)
+}
+
+// processSurveyBatch captures one IQ window and fans it out through a bounded
+// number of software VFOs. Every target therefore observes the same instant in
+// time without opening competing receiver processes or multiplying USB load.
+func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, device SDRDevice, batch surveyTargetBatch, mapperRun *mapperRunContext) bool {
+	spec, ok := mapperBatchCaptureSpec(device, batch)
+	if !ok {
+		r.setRuntimeError("Mapper channels do not fit inside the selected receiver bandwidth")
+		return true
+	}
+	duration := time.Duration(0)
+	for _, target := range batch.Targets {
+		if target.Dwell > duration {
+			duration = target.Dwell
+		}
+	}
+	data, format, err := captureWindow(device, spec, duration, stop)
 	if err != nil {
 		select {
 		case <-stop:
@@ -429,6 +562,21 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	}
 	ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
 	r.updateSpectrum(spec, data, format)
+	for _, target := range batch.Targets {
+		select {
+		case <-stop:
+			return false
+		default:
+		}
+		if !r.processSurveyTargetCapture(stop, profile, device, target, mapperRun, spec, data, format) {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat) bool {
+	rate := spec.SampleRateHz
 	analysis := AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
 	demodulationMode := target.Mode
 	if strings.EqualFold(demodulationMode, "auto") || strings.TrimSpace(demodulationMode) == "" {

@@ -29,7 +29,11 @@ browser and is designed for phones and tablets.
 - Independent Mapper jobs per receiver: split ranges across SDRs, run parallel
   Discovery sweeps, or run Discovery and Identify simultaneously. Each job has
   live frequency/progress/ETA, 5-second-to-7-day per-channel listening, and
-  receiver/job provenance in the combined result table and CSV export
+  receiver/job provenance in the combined result table and CSV export. Nearby
+  targets share one IQ capture with a configurable 1–32 software-VFO limit
+- Mapper shows the current workflow, receiver, batch, every software VFO being
+  checked, and the latest receiver spectrum/waterfall; results can be collapsed,
+  searched across decoded evidence, filtered, and sorted
 - Peak activity hours, expandable identification evidence, optional
   location/transcription, filters, saved job controls, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,
@@ -98,7 +102,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.1.1_amd64.deb
+sudo apt install ./gp-sdr_1.1.2_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -232,7 +236,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.1.1
+Scripts/build_release.sh 1.1.2
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -262,7 +266,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.1.1.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.1.2.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

@@ -25,9 +25,9 @@ unrelated USB devices.
 Install the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.1.1_amd64.deb
+sudo apt install ./gp-sdr_1.1.2_amd64.deb
 # 64-bit ARM:
-sudo apt install ./gp-sdr_1.1.1_arm64.deb
+sudo apt install ./gp-sdr_1.1.2_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
