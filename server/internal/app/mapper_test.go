@@ -76,6 +76,21 @@ func TestMapperRejectsDecipherListenPeriodsOutsideFiveSecondsToSevenDays(t *test
 	}
 }
 
+func TestMapperAppliesSafeWorkflowConcurrencyDefaultsAndLimits(t *testing.T) {
+	manager := &MapperManager{path: filepath.Join(t.TempDir(), "mapper.json"), records: make(map[string]MapperFrequencyRecord)}
+	discovery, err := manager.Update(MapperConfig{Mode: "discovery", DecipherListenSeconds: 5})
+	if err != nil || discovery.Config.ConcurrentChannels != 16 {
+		t.Fatalf("expected Discovery to default to 16 simultaneous channels: status=%+v error=%v", discovery, err)
+	}
+	identify, err := manager.Update(MapperConfig{Mode: "decipher", DecipherListenSeconds: 5})
+	if err != nil || identify.Config.ConcurrentChannels != 4 {
+		t.Fatalf("expected Identify to default to 4 simultaneous channels: status=%+v error=%v", identify, err)
+	}
+	if _, err := manager.Update(MapperConfig{Mode: "discovery", DecipherListenSeconds: 5, ConcurrentChannels: 33}); err == nil {
+		t.Fatal("expected more than 32 simultaneous channels to be rejected")
+	}
+}
+
 func TestMapperIgnoresQuietFrequenciesUntilActivityIsSeen(t *testing.T) {
 	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord)}
 	manager.Observe(123_450_000, false, -82, -84, "", "", "", "")

@@ -50,6 +50,12 @@ demodulation, squelch, audio fan-out, recording, and event components. A fitting
 fixed channel bank consumes one wide IQ stream while maintaining independent
 activity, mute, solo, volume, and log state for every channel.
 
+Mapper uses the same one-capture/many-software-VFO design. It groups only
+targets that fit within 84% of the selected sample rate, keeps them away from
+the receiver's DC center when possible, and bounds DSP fan-out to the job's
+1–32 channel limit. Discovery defaults to 16 channels and Identify defaults to
+4; neither setting opens another hardware stream.
+
 ## Data and trust boundary
 
 Versioned JSON profiles are untrusted on import, so their size, counts,

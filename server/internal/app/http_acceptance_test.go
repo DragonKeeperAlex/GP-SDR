@@ -85,11 +85,11 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 	rangeConfig := RangeSyncConfig{Enabled: false, SheetURL: "https://docs.google.com/spreadsheets/d/test/edit", IntervalMinutes: 15}
 	acceptanceRequest(t, server, http.MethodPut, "/api/range-sync", rangeConfig, http.StatusOK)
 	mapperConfig := MapperConfig{Mode: "discovery", DeviceID: "simulator-0", StartHz: 100e6, EndHz: 101e6,
-		StepHz: 200e3, DwellMilliseconds: 200, LocationPrecision: "approximate"}
+		StepHz: 200e3, DwellMilliseconds: 200, ConcurrentChannels: 8, LocationPrecision: "approximate"}
 	acceptanceRequest(t, server, http.MethodPut, "/api/mapper", mapperConfig, http.StatusOK)
 	mapperJob := decodeAcceptance[MapperJob](t, acceptanceRequest(t, server, http.MethodPost, "/api/mapper/jobs", MapperJob{Name: "Acceptance Mapper", Config: mapperConfig}, http.StatusCreated))
 	exportedJob := decodeAcceptance[MapperJob](t, acceptanceRequest(t, server, http.MethodGet, "/api/mapper/jobs/export?id="+mapperJob.ID, nil, http.StatusOK))
-	if exportedJob.ID != "" || exportedJob.Name != mapperJob.Name || exportedJob.Config.DeviceID != "simulator-0" {
+	if exportedJob.ID != "" || exportedJob.Name != mapperJob.Name || exportedJob.Config.DeviceID != "simulator-0" || exportedJob.Config.ConcurrentChannels != 8 {
 		t.Fatalf("unexpected portable Mapper job: %+v", exportedJob)
 	}
 	acceptanceRequest(t, server, http.MethodPost, "/api/mapper/jobs/start", map[string]string{"id": mapperJob.ID}, http.StatusOK)
