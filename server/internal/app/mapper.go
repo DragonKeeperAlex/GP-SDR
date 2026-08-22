@@ -20,27 +20,33 @@ import (
 )
 
 type MapperConfig struct {
-	WebhookURL            string   `json:"webhookURL"`
-	SheetURL              string   `json:"sheetURL,omitempty"`
-	Contributor           string   `json:"contributor,omitempty"`
-	Secret                string   `json:"secret,omitempty"`
-	AutoUpload            bool     `json:"autoUpload"`
-	Mode                  string   `json:"mode,omitempty"`
-	PreferredMode         string   `json:"preferredMode,omitempty"`
-	DeviceID              string   `json:"deviceID,omitempty"`
-	StartHz               float64  `json:"startHz,omitempty"`
-	EndHz                 float64  `json:"endHz,omitempty"`
-	StepHz                float64  `json:"stepHz,omitempty"`
-	DwellMilliseconds     int      `json:"dwellMilliseconds,omitempty"`
-	SampleRateHz          int      `json:"sampleRateHz,omitempty"`
-	ConcurrentChannels    int      `json:"concurrentChannels,omitempty"`
-	DecipherListenSeconds int64    `json:"decipherListenSeconds,omitempty"`
-	Transcribe            bool     `json:"transcribe"`
-	IncludeLocation       bool     `json:"includeLocation"`
-	LocationPrecision     string   `json:"locationPrecision,omitempty"`
-	Latitude              *float64 `json:"latitude,omitempty"`
-	Longitude             *float64 `json:"longitude,omitempty"`
-	LocationLabel         string   `json:"locationLabel,omitempty"`
+	WebhookURL               string   `json:"webhookURL"`
+	SheetURL                 string   `json:"sheetURL,omitempty"`
+	Contributor              string   `json:"contributor,omitempty"`
+	Secret                   string   `json:"secret,omitempty"`
+	AutoUpload               bool     `json:"autoUpload"`
+	Mode                     string   `json:"mode,omitempty"`
+	PreferredMode            string   `json:"preferredMode,omitempty"`
+	DeviceID                 string   `json:"deviceID,omitempty"`
+	StartHz                  float64  `json:"startHz,omitempty"`
+	EndHz                    float64  `json:"endHz,omitempty"`
+	StepHz                   float64  `json:"stepHz,omitempty"`
+	DwellMilliseconds        int      `json:"dwellMilliseconds,omitempty"`
+	SampleRateHz             int      `json:"sampleRateHz,omitempty"`
+	ConcurrentChannels       int      `json:"concurrentChannels,omitempty"`
+	DecipherListenSeconds    int64    `json:"decipherListenSeconds,omitempty"`
+	IdentifyMinimumHits      int      `json:"identifyMinimumHits,omitempty"`
+	IdentifyHitSource        string   `json:"identifyHitSource,omitempty"`
+	IdentifyMinimumOccupancy float64  `json:"identifyMinimumOccupancy,omitempty"`
+	IdentifySeenWithinHours  int      `json:"identifySeenWithinHours,omitempty"`
+	IdentifyMaximumChannels  int      `json:"identifyMaximumChannels,omitempty"`
+	IdentifyOrder            string   `json:"identifyOrder,omitempty"`
+	Transcribe               bool     `json:"transcribe"`
+	IncludeLocation          bool     `json:"includeLocation"`
+	LocationPrecision        string   `json:"locationPrecision,omitempty"`
+	Latitude                 *float64 `json:"latitude,omitempty"`
+	Longitude                *float64 `json:"longitude,omitempty"`
+	LocationLabel            string   `json:"locationLabel,omitempty"`
 }
 
 type MapperFrequencyRecord struct {
@@ -49,6 +55,10 @@ type MapperFrequencyRecord struct {
 	LastSeen             time.Time            `json:"lastSeen"`
 	Checks               int                  `json:"checks"`
 	Hits                 int                  `json:"hits"`
+	DiscoveryChecks      int                  `json:"discoveryChecks,omitempty"`
+	DiscoveryHits        int                  `json:"discoveryHits,omitempty"`
+	IdentifyChecks       int                  `json:"identifyChecks,omitempty"`
+	IdentifyHits         int                  `json:"identifyHits,omitempty"`
 	Occupancy            float64              `json:"occupancy"`
 	StrongestDBFS        float64              `json:"strongestDBFS"`
 	NoiseDBFS            float64              `json:"noiseDBFS"`
@@ -273,6 +283,35 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	}
 	if config.DecipherListenSeconds < 5 || config.DecipherListenSeconds > 7*24*60*60 {
 		return config, errors.New("Identify listen time must be between 5 seconds and 7 days")
+	}
+	if config.Mode == "decipher" && config.IdentifyMinimumHits == 0 {
+		config.IdentifyMinimumHits = 2
+	}
+	if config.IdentifyMinimumHits < 0 || config.IdentifyMinimumHits > 10_000 {
+		return config, errors.New("Identify minimum hits must be between 1 and 10,000, or zero for the default")
+	}
+	config.IdentifyHitSource = strings.ToLower(strings.TrimSpace(config.IdentifyHitSource))
+	if config.IdentifyHitSource == "" {
+		config.IdentifyHitSource = "discovery"
+	}
+	if config.IdentifyHitSource != "discovery" && config.IdentifyHitSource != "combined" {
+		return config, errors.New("Identify hit source must be Discovery or combined history")
+	}
+	if config.IdentifyMinimumOccupancy < 0 || config.IdentifyMinimumOccupancy > 1 {
+		return config, errors.New("Identify minimum occupancy must be between 0 and 100 percent")
+	}
+	if config.IdentifySeenWithinHours < 0 || config.IdentifySeenWithinHours > 24*365 {
+		return config, errors.New("Identify recent activity window must be between zero and one year")
+	}
+	if config.IdentifyMaximumChannels < 0 || config.IdentifyMaximumChannels > 10_000 {
+		return config, errors.New("Identify channel limit must be between zero and 10,000")
+	}
+	config.IdentifyOrder = strings.ToLower(strings.TrimSpace(config.IdentifyOrder))
+	if config.IdentifyOrder == "" {
+		config.IdentifyOrder = "hits"
+	}
+	if config.IdentifyOrder != "hits" && config.IdentifyOrder != "recent" && config.IdentifyOrder != "occupancy" && config.IdentifyOrder != "frequency" && config.IdentifyOrder != "oldest" {
+		return config, errors.New("choose a supported Identify channel order")
 	}
 	if !supportedUserSampleRate(config.SampleRateHz) {
 		return config, errors.New("choose Auto or a supported Mapper sample rate")
@@ -639,8 +678,19 @@ func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, 
 		record = MapperFrequencyRecord{FrequencyHz: frequencyHz, FirstSeen: now, StrongestDBFS: -200}
 	}
 	record.Checks++
+	identifyObservation := strings.EqualFold(config.Mode, "decipher")
+	if identifyObservation {
+		record.IdentifyChecks++
+	} else {
+		record.DiscoveryChecks++
+	}
 	if active {
 		record.Hits++
+		if identifyObservation {
+			record.IdentifyHits++
+		} else {
+			record.DiscoveryHits++
+		}
 		record.LastSeen = now
 		record.HourlyHits[now.Hour()]++
 		record.ActivityTimeZone = now.Location().String()
@@ -840,7 +890,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
-	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone", "mapper_job_ids", "receiver_ids"}
+	header := []string{"frequency_hz", "frequency_mhz", "name", "modulation", "protocol", "candidate_decoder", "detection_status", "detection_evidence", "decoder_ready", "analysis_engine", "analysis_summary", "analysis_evidence", "callsigns", "first_seen", "last_seen", "checks", "hits", "occupancy", "strongest_dbfs", "noise_dbfs", "confidence", "transcript", "latitude", "longitude", "location_name", "location_precision", "identification_source", "peak_activity_hours", "activity_time_zone", "mapper_job_ids", "receiver_ids", "discovery_checks", "discovery_hits", "identify_checks", "identify_hits"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -860,6 +910,7 @@ func (m *MapperManager) CSV() ([]byte, int, error) {
 			strconv.FormatFloat(record.Confidence, 'f', 3, 64), safeSpreadsheetText(record.LastTranscript), latitude, longitude, locationName, locationPrecision,
 			safeSpreadsheetText(record.IdentificationSource), safeSpreadsheetText(mapperPeakHours(record.HourlyHits)), safeSpreadsheetText(record.ActivityTimeZone),
 			safeSpreadsheetText(strings.Join(record.JobIDs, " | ")), safeSpreadsheetText(strings.Join(record.DeviceIDs, " | ")),
+			strconv.Itoa(record.DiscoveryChecks), strconv.Itoa(record.DiscoveryHits), strconv.Itoa(record.IdentifyChecks), strconv.Itoa(record.IdentifyHits),
 		}
 		if err := writer.Write(row); err != nil {
 			return nil, 0, err

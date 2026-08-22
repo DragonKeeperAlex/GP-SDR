@@ -51,6 +51,19 @@ It attempts modulation/type classification, decoder matching, callsign and
 identity extraction, local transcription when enabled, and comparison with
 available local/reference data.
 
+Use the eligibility controls to avoid spending time on one-off noise:
+
+- **Minimum hits** requires a chosen number of successful observations.
+- **Hit history** can use Discovery only, preventing Identify revisits from
+  promoting a one-off result, or use the combined Discovery + Identify history.
+- **Successful checks** requires 10–100% occupancy, calculated as hits divided
+  by checks; **Any percentage** disables that threshold.
+- **Last active**, **Maximum channels**, and **Channel order** bound and
+  prioritize each Identify pass.
+
+Identify observations still increment the combined hit/check totals and are
+shown separately from Discovery totals in the expanded evidence view and CSV.
+
 Identify can monitor nearby found frequencies at the same instant when they fit
 inside the SDR's sampled bandwidth. Auto uses up to four at once because
 classification, demodulation, decoder matching, recording, and transcription
@@ -72,7 +85,12 @@ The result table expands when a frequency is clicked. Details include:
 Results can also be searched across frequency, names, protocols, modulation,
 callsigns, decoder evidence, automatic analysis, and transcription. Job,
 receiver, type, identification/activity, and sort controls can be combined.
-Collapse the complete results area when only live Mapper progress is needed.
+Enable **Repeated only** to hide every frequency with one or zero hits. More
+specific result filters can show one-offs, repeats, 10+ hits, recently seen
+channels, decoder evidence, transcripts, or callsigns. Results can be ordered
+by hits, checks, occupancy, signal level, SNR, confidence, receiver count,
+identity, discovery time, recency, or frequency. Collapse the complete results
+area when only live Mapper progress is needed.
 
 Protocol labels remain evidence-based. A signal inside an ADS-B or P25 band is
 only a candidate until the matching decoder produces valid frames or metadata.

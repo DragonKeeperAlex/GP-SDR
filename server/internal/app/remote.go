@@ -107,7 +107,9 @@ func remoteDevices(items []RemoteReceiver) []SDRDevice {
 		if connected {
 			note = "Remote rtl_tcp receiver is online; tuner, audio, spectrum, scanning, and Mapper are available."
 		}
-		result = append(result, SDRDevice{ID: item.ID, Name: item.Name, Kind: "RTL-TCP", Driver: "rtl_tcp", Host: item.Host, Port: item.Port, Available: true, Connected: connected, SampleRateLimit: &limit, Note: &note})
+		device := SDRDevice{ID: item.ID, Name: item.Name, Kind: "RTL-TCP", Driver: "rtl_tcp", Host: item.Host, Port: item.Port, Available: true, Connected: connected, SampleRateLimit: &limit, Note: &note}
+		applyNominalFrequencyRange(&device)
+		result = append(result, device)
 	}
 	return result
 }

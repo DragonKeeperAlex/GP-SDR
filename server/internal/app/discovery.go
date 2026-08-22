@@ -26,7 +26,43 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 	devices = append(devices, discoverHackRF()...)
 	devices = append(devices, discoverRTLSDR()...)
 	devices = append(devices, discoverSoapy()...)
-	return uniquePhysicalDevices(devices)
+	devices = uniquePhysicalDevices(devices)
+	for index := range devices {
+		applyNominalFrequencyRange(&devices[index])
+	}
+	return devices
+}
+
+// applyNominalFrequencyRange reports the commonly supported tuning range for
+// known receiver families. It is intentionally labelled nominal: RTL-SDR and
+// SoapySDR limits can vary with the fitted tuner, firmware, and driver.
+func applyNominalFrequencyRange(device *SDRDevice) {
+	switch device.Kind {
+	case "HackRF":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e6, 6e9
+		device.FrequencyRangeNote = "Nominal HackRF One tuning range"
+	case "RTL-SDR", "RTL-TCP":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 24e6, 1.766e9
+		device.FrequencyRangeNote = "Typical R820T/R860 range; tuner variants may differ"
+	case "Airspy":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 24e6, 1.8e9
+		device.FrequencyRangeNote = "Nominal family range; verify the exact model"
+	case "SDRplay":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e3, 2e9
+		device.FrequencyRangeNote = "Nominal family range; verify the exact model"
+	case "LimeSDR":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 100e3, 3.8e9
+		device.FrequencyRangeNote = "Nominal family range; verify the exact model"
+	case "bladeRF":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 47e6, 6e9
+		device.FrequencyRangeNote = "Nominal family range; verify the exact model"
+	case "PlutoSDR":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 325e6, 3.8e9
+		device.FrequencyRangeNote = "Stock nominal range; firmware variants may differ"
+	case "Simulator":
+		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e6, 6e9
+		device.FrequencyRangeNote = "Simulated wideband test range"
+	}
 }
 
 func uniquePhysicalDevices(devices []SDRDevice) []SDRDevice {

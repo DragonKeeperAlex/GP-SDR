@@ -89,6 +89,32 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeJSON(w, 200, map[string]bool{"ok": true})
 		}
+	case r.Method == "GET" && path == "/api/calibrations/characterization":
+		writeJSON(w, 200, s.runtime.CharacterizationStatus())
+	case r.Method == "POST" && path == "/api/calibrations/characterization/start":
+		var request CharacterizationRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.StartCharacterization(request)
+		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/calibrations/characterization/stop":
+		writeJSON(w, 200, s.runtime.StopCharacterization())
+	case r.Method == "DELETE" && path == "/api/calibrations/characterization":
+		if err := s.runtime.ClearCharacterization(); err != nil {
+			writeError(w, 400, err.Error())
+		} else {
+			writeJSON(w, 200, s.runtime.CharacterizationStatus())
+		}
+	case r.Method == "GET" && path == "/api/calibrations/characterization/export":
+		data, err := s.runtime.CharacterizationCSV()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Receiver-Characterization.csv")
+		_, _ = w.Write(data)
 	case r.Method == "POST" && path == "/api/devices/refresh":
 		s.runtime.Refresh()
 		writeJSON(w, 200, s.runtime.Devices())

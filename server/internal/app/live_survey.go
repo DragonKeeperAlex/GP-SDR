@@ -381,11 +381,42 @@ func (r *Runtime) liveSurveyLoop(stop <-chan struct{}, profile ScanProfile, devi
 func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyTarget, error) {
 	config := job.Config
 	if config.Mode == "decipher" {
-		targets := make([]surveyTarget, 0, len(records))
+		eligible := make([]MapperFrequencyRecord, 0, len(records))
+		cutoff := time.Time{}
+		if config.IdentifySeenWithinHours > 0 {
+			cutoff = time.Now().Add(-time.Duration(config.IdentifySeenWithinHours) * time.Hour)
+		}
 		for _, record := range records {
-			if record.Hits == 0 || config.StartHz > 0 && record.FrequencyHz < config.StartHz || config.EndHz > 0 && record.FrequencyHz > config.EndHz {
+			hits, _, occupancy := mapperIdentifyHistory(record, config.IdentifyHitSource)
+			if hits < config.IdentifyMinimumHits || occupancy < config.IdentifyMinimumOccupancy ||
+				config.StartHz > 0 && record.FrequencyHz < config.StartHz || config.EndHz > 0 && record.FrequencyHz > config.EndHz ||
+				!cutoff.IsZero() && record.LastSeen.Before(cutoff) {
 				continue
 			}
+			eligible = append(eligible, record)
+		}
+		sort.SliceStable(eligible, func(i, j int) bool {
+			a, b := eligible[i], eligible[j]
+			aHits, _, aOccupancy := mapperIdentifyHistory(a, config.IdentifyHitSource)
+			bHits, _, bOccupancy := mapperIdentifyHistory(b, config.IdentifyHitSource)
+			switch config.IdentifyOrder {
+			case "recent":
+				return a.LastSeen.After(b.LastSeen)
+			case "oldest":
+				return a.LastSeen.Before(b.LastSeen)
+			case "occupancy":
+				return aOccupancy > bOccupancy || aOccupancy == bOccupancy && aHits > bHits
+			case "frequency":
+				return a.FrequencyHz < b.FrequencyHz
+			default:
+				return aHits > bHits || aHits == bHits && a.LastSeen.After(b.LastSeen)
+			}
+		})
+		if config.IdentifyMaximumChannels > 0 && len(eligible) > config.IdentifyMaximumChannels {
+			eligible = eligible[:config.IdentifyMaximumChannels]
+		}
+		targets := make([]surveyTarget, 0, len(eligible))
+		for _, record := range eligible {
 			mode := strings.ToLower(strings.TrimSpace(record.Modulation))
 			if config.PreferredMode != "" && config.PreferredMode != "auto" {
 				mode = config.PreferredMode
@@ -406,7 +437,7 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 			targets = append(targets, surveyTarget{FrequencyHz: record.FrequencyHz, BandwidthHz: bandwidth, Mode: mode, Label: label, Dwell: 15 * time.Second, Decoder: decoder})
 		}
 		if len(targets) == 0 {
-			return nil, errors.New("Identify has no discovered frequencies in this range. Run Discovery first or widen its filter.")
+			return nil, errors.New("Identify has no frequencies matching its hit, occupancy, age, and range filters. Lower a filter or run Discovery longer.")
 		}
 		return targets, nil
 	}
@@ -423,6 +454,21 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: maxFloat(config.StepHz, 12_500), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell})
 	}
 	return targets, nil
+}
+
+func mapperIdentifyHistory(record MapperFrequencyRecord, source string) (hits, checks int, occupancy float64) {
+	hits, checks = record.DiscoveryHits, record.DiscoveryChecks
+	if source == "combined" {
+		hits, checks = record.Hits, record.Checks
+	} else if hits == 0 && checks == 0 {
+		// Records created before per-workflow counters were added retain their
+		// combined history so upgrades never silently discard existing data.
+		hits, checks = record.Hits, record.Checks
+	}
+	if checks > 0 {
+		occupancy = float64(hits) / float64(checks)
+	}
+	return hits, checks, occupancy
 }
 
 func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJobRuntime) {

@@ -18,6 +18,9 @@ type SDRDevice struct {
 	Connected          bool               `json:"connected"`
 	Available          bool               `json:"available"`
 	SampleRateLimit    *float64           `json:"sampleRateLimit"`
+	FrequencyMinimumHz float64            `json:"frequencyMinimumHz,omitempty"`
+	FrequencyMaximumHz float64            `json:"frequencyMaximumHz,omitempty"`
+	FrequencyRangeNote string             `json:"frequencyRangeNote,omitempty"`
 	HelperArchitecture *string            `json:"helperArchitecture"`
 	Note               *string            `json:"note"`
 	Calibration        *DeviceCalibration `json:"calibration,omitempty"`

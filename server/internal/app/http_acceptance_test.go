@@ -58,7 +58,7 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 
 	for _, endpoint := range []string{
 		"/api/status", "/api/devices", "/api/decoders", "/api/integrations", "/api/setup",
-		"/api/p25/status", "/api/spectrum?bins=64", "/api/calibrations", "/api/remote-receivers",
+		"/api/p25/status", "/api/spectrum?bins=64", "/api/calibrations", "/api/calibrations/characterization", "/api/remote-receivers",
 		"/api/range-sync", "/api/local-database", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
 		"/api/events?limit=10", "/api/signals?limit=10", "/api/mixer", "/api/receiver-plan",
 	} {

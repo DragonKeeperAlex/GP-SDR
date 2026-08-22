@@ -33,7 +33,12 @@ browser and is designed for phones and tablets.
   targets share one IQ capture with a configurable 1–32 software-VFO limit
 - Mapper shows the current workflow, receiver, batch, every software VFO being
   checked, and the latest receiver spectrum/waterfall; results can be collapsed,
-  searched across decoded evidence, filtered, and sorted
+  searched across decoded evidence, filtered to repeated activity, and sorted.
+  Identify eligibility can require a chosen hit count, 10–100% successful-check
+  rate, recent activity, and a bounded/prioritized channel list
+- Parallel receiver and antenna characterization across full nominal, antenna,
+  or custom ranges with live frequency, ETA, response/noise plots, overload
+  detection, saved-calibration/manual-gain modes, recommendations, and CSV export
 - Peak activity hours, expandable identification evidence, optional
   location/transcription, filters, saved job controls, and Sheets upload
 - Dedicated pages for Analog, P25, DSD-FME, rtl_433, dump1090, multimon-ng,

@@ -41,7 +41,7 @@ func saveMapperTestJob(t *testing.T, runtimeState *Runtime, name, deviceID, mode
 	t.Helper()
 	job, err := runtimeState.SaveMapperJob(MapperJob{Name: name, Config: MapperConfig{
 		Mode: mode, DeviceID: deviceID, StartHz: startHz, EndHz: endHz, StepHz: 100_000,
-		DwellMilliseconds: 200, DecipherListenSeconds: 5,
+		DwellMilliseconds: 200, DecipherListenSeconds: 5, IdentifyMinimumHits: 1,
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +139,41 @@ func TestMapperRecordsReceiverAndJobProvenance(t *testing.T) {
 	record := manager.Status().Records[0]
 	if len(record.JobIDs) != 2 || len(record.DeviceIDs) != 2 {
 		t.Fatalf("expected merged provenance from both jobs: %+v", record)
+	}
+}
+
+func TestIdentifyCountsHitsWithoutPromotingDiscoveryOneOffs(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), jobs: make(map[string]MapperJob)}
+	manager.ObserveJob("discovery", "receiver-a", MapperConfig{Mode: "discovery"}, 462_675_000, true, -30, -80, "NFM", "Analog FM", "GMRS", "")
+	manager.ObserveJob("identify", "receiver-b", MapperConfig{Mode: "decipher"}, 462_675_000, true, -28, -81, "NFM", "Analog FM", "GMRS", "")
+	record := manager.Status().Records[0]
+	if record.Hits != 2 || record.DiscoveryHits != 1 || record.IdentifyHits != 1 || record.DiscoveryChecks != 1 || record.IdentifyChecks != 1 {
+		t.Fatalf("expected combined and per-workflow hit history: %+v", record)
+	}
+	job := MapperJob{Config: MapperConfig{Mode: "decipher", IdentifyMinimumHits: 2, IdentifyHitSource: "discovery"}}
+	if _, err := mapperJobTargets(job, []MapperFrequencyRecord{record}); err == nil {
+		t.Fatal("one Discovery hit should remain ineligible even after an Identify hit")
+	}
+	job.Config.IdentifyHitSource = "combined"
+	if targets, err := mapperJobTargets(job, []MapperFrequencyRecord{record}); err != nil || len(targets) != 1 {
+		t.Fatalf("combined history should include both hit sources: targets=%+v error=%v", targets, err)
+	}
+}
+
+func TestIdentifyFiltersBySuccessfulCheckPercentageAndLimit(t *testing.T) {
+	now := time.Now()
+	records := []MapperFrequencyRecord{
+		{FrequencyHz: 150e6, LastSeen: now, Hits: 8, Checks: 10, DiscoveryHits: 8, DiscoveryChecks: 10},
+		{FrequencyHz: 151e6, LastSeen: now, Hits: 3, Checks: 10, DiscoveryHits: 3, DiscoveryChecks: 10},
+		{FrequencyHz: 152e6, LastSeen: now, Hits: 9, Checks: 10, DiscoveryHits: 9, DiscoveryChecks: 10},
+	}
+	job := MapperJob{Config: MapperConfig{Mode: "decipher", IdentifyMinimumHits: 2, IdentifyHitSource: "discovery", IdentifyMinimumOccupancy: .5, IdentifyMaximumChannels: 1, IdentifyOrder: "occupancy"}}
+	targets, err := mapperJobTargets(job, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || targets[0].FrequencyHz != 152e6 {
+		t.Fatalf("expected only the highest successful-check channel, got %+v", targets)
 	}
 }
 

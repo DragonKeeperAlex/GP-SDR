@@ -123,6 +123,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-concurrent"`, `32 · highest CPU`,
 		`id="mapper-operation"`, `id="mapper-channel-list"`, `id="mapper-spectrum"`, `id="mapper-waterfall"`,
 		`id="mapper-results-toggle"`, `id="mapper-results-content"`, `id="mapper-filter-type"`, `id="mapper-filter-state"`, `id="mapper-sort"`, `id="mapper-filter-reset"`,
+		`id="mapper-filter-repeated"`, `id="mapper-identify-min-hits"`, `id="mapper-identify-hit-source"`, `id="mapper-identify-occupancy"`, `100% only`,
 		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
 		if !strings.Contains(index, required) {
@@ -140,10 +141,33 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	for _, required := range []string{
 		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
 		"decipherListenSeconds", "concurrentChannels", "mapperBatchReadout", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
-		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort",
+		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort", "identifyMinimumHits", "identifyMinimumOccupancy", "mapper-filter-repeated",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)
+		}
+	}
+}
+
+func TestHardwareIncludesReceiverAndAntennaCharacterizationLab(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="characterization-form"`, `id="characterization-devices"`, `id="characterization-range-mode"`, `id="characterization-antenna-min"`, `id="characterization-points"`, `id="characterization-results"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("receiver characterization control %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"renderCharacterization", "drawCharacterizationChart", "/api/calibrations/characterization/start", "Ambient comparison"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("receiver characterization behavior %q is missing", required)
 		}
 	}
 }
