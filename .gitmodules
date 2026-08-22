@@ -1,0 +1,3 @@
+[submodule "mobile/Drivers/RTL-SDR-USB-iPadOS"]
+	path = mobile/Drivers/RTL-SDR-USB-iPadOS
+	url = https://github.com/arvedviehweger/RTL-SDR-USB-iPadOS.git
