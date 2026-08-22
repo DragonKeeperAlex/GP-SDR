@@ -48,6 +48,9 @@ type Runtime struct {
 	receiverTelemetry *ReceiverTelemetry
 	storage           StorageStatus
 	storageRefreshing bool
+	storagePolicy     StoragePolicy
+	storageCleanup    StorageCleanupResult
+	storagePruning    bool
 }
 
 type mapperJobRuntime struct {
@@ -77,6 +80,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory)}
+	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
 	runtimeState.installer = NewInstaller(dataDirectory, runtimeState.Refresh)
@@ -1119,10 +1123,10 @@ func (r *Runtime) simulationLoop(stop <-chan struct{}) {
 					mapperTargetEndsAt = time.Now().Add(listenFor)
 				}
 				active := rand.Intn(4) == 0
-				name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
-				r.mapper.Observe(target.FrequencyHz, active, -40+rand.Float64()*12, -82+rand.Float64()*5, mode, protocol, name, "")
+				identity := r.identifyMapperFrequencyAt(target.FrequencyHz, observationLocation(mapperConfig))
+				r.mapper.Observe(target.FrequencyHz, active, -40+rand.Float64()*12, -82+rand.Float64()*5, identity.Mode, identity.Protocol, identity.Name, "")
 				if active {
-					r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+					r.mapper.SetIdentificationEvidence(target.FrequencyHz, identity.Source, identity.Confidence, identity.Verified, identity.Reason, identity.DistanceMiles)
 				}
 				if listenFor == 0 || !time.Now().Before(mapperTargetEndsAt) {
 					mapperIndex++

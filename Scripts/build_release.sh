@@ -2,9 +2,9 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-1.1.2-dev}
+VERSION=${1:-1.2.0-dev}
 BUNDLE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')
-if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.1.2; fi
+if [ -z "$BUNDLE_VERSION" ]; then BUNDLE_VERSION=1.2.0; fi
 BUILD_ROOT="$PROJECT_ROOT/build/release"
 DIST_ROOT="$PROJECT_ROOT/dist"
 SERVER_ROOT="$PROJECT_ROOT/server"

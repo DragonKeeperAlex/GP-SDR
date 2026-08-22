@@ -82,6 +82,13 @@ The result table expands when a frequency is clicked. Details include:
 - Last observation and optional location
 - Local analysis and offline transcript
 
+The top bar separately counts **Successfully identified** frequencies. This is
+a deliberately stricter result than a classifier guess: it requires either a
+valid decoder message or an exact frequency match in a RadioReference profile
+whose imported search area is close enough to the Mapper observation location.
+Band-plan labels, likely modulation, decoder candidates, and distant reference
+matches remain useful evidence but do not increase the verified count.
+
 Results can also be searched across frequency, names, protocols, modulation,
 callsigns, decoder evidence, automatic analysis, and transcription. Job,
 receiver, type, identification/activity, and sort controls can be combined.
@@ -107,8 +114,13 @@ and settings; both actions use an in-app confirmation dialog.
 - **Save CSV** writes under the server's `Exports/Mapper` directory.
 - **Download** saves the CSV to the current client device.
 - **Queue** sends one reviewed observation to a configured Google Sheet.
-- **Send all** queues pending results.
+- **Send eligible now** queues pending results.
 - **Auto upload** appends new observations automatically when configured.
+- **Identified only** (recommended) permits only successfully identified rows.
+
+The CSV always includes `fully_identified`, `verification_reason`, and
+`reference_distance_miles` columns so a saved file can be audited independently
+of the interface.
 
 Mapper writes to an **Additions Queue**, never directly to a trusted master
 channel list. Rows remain `New` until a person verifies them. See

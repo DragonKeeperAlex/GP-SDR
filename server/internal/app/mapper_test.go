@@ -133,12 +133,43 @@ func TestMapperBandIdentification(t *testing.T) {
 
 func TestMapperIdentificationPrefersRadioReferenceProfileEvidence(t *testing.T) {
 	store := &ProfileStore{profiles: map[string]ScanProfile{
-		"rr-test": {ID: "rr-test", Name: "County public safety", Summary: "RadioReference location import", Channels: []ChannelDefinition{{Name: "County dispatch", FrequencyHz: 155_250_000, BandwidthHz: 12_500, Mode: "nfm", Enabled: true}}},
+		"rr-test": {ID: "rr-test", Name: "County public safety", Summary: "RadioReference location import",
+			ReferenceArea: &ProfileReferenceArea{Provider: "RadioReference", Latitude: 37.77, Longitude: -122.42, RadiusMiles: 25, Label: "San Francisco"},
+			Channels:      []ChannelDefinition{{Name: "County dispatch", FrequencyHz: 155_250_000, BandwidthHz: 12_500, Mode: "nfm", Enabled: true}}},
 	}}
 	runtimeState := &Runtime{Profiles: store}
-	name, mode, protocol, confidence, source := runtimeState.identifyMapperFrequency(155_250_000)
-	if name != "County dispatch" || mode != "NFM" || protocol != "Analog FM" || confidence != .98 || !strings.HasPrefix(source, "RadioReference import") {
-		t.Fatalf("unexpected RadioReference identification: %q %q %q %.2f %q", name, mode, protocol, confidence, source)
+	identity := runtimeState.identifyMapperFrequencyAt(155_250_000, &ObservationLocation{Latitude: 37.80, Longitude: -122.40, Precision: "exact"})
+	if identity.Name != "County dispatch" || identity.Mode != "NFM" || identity.Protocol != "Analog FM" || identity.Confidence != .98 || !identity.Verified || !strings.HasPrefix(identity.Source, "RadioReference import") {
+		t.Fatalf("unexpected RadioReference identification: %+v", identity)
+	}
+	far := runtimeState.identifyMapperFrequencyAt(155_250_000, &ObservationLocation{Latitude: 34.05, Longitude: -118.24, Precision: "exact"})
+	if far.Verified || strings.HasPrefix(far.Source, "RadioReference import") {
+		t.Fatalf("distant same-frequency RadioReference entry must be rejected: %+v", far)
+	}
+}
+
+func TestMapperVerifiedStatusRequiresAuthoritativeEvidence(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	manager.Observe(155_250_000, true, -31, -76, "NFM", "Analog FM", "County dispatch", "")
+	manager.SetIdentification(155_250_000, "Built-in US band plan", .99)
+	if manager.Status().VerifiedRecords != 0 {
+		t.Fatal("a high-confidence band guess must not count as fully identified")
+	}
+	distance := 3.2
+	manager.SetIdentificationEvidence(155_250_000, "RadioReference import · Local", .98, true, "nearby reference match", &distance)
+	status := manager.Status()
+	if status.VerifiedRecords != 1 || !mapperRecordFullyIdentified(status.Records[0]) {
+		t.Fatalf("authoritative match should count as fully identified: %+v", status)
+	}
+}
+
+func TestMapperValidDecoderFramesAreFullyIdentified(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	manager.Observe(1090_000_000, true, -25, -70, "DIGITAL", "", "", "")
+	manager.SetDecodedMessages(1090_000_000, "dump1090", []DecoderMessage{{Protocol: "ADS-B", Summary: "valid Mode S frame", Confidence: .99}})
+	record := manager.Status().Records[0]
+	if !mapperRecordFullyIdentified(record) || record.DetectionStatus != "confirmed" {
+		t.Fatalf("valid decoder output should verify the identity: %+v", record)
 	}
 }
 
@@ -243,5 +274,35 @@ func TestMapperUploadRequiresConfiguredWebhook(t *testing.T) {
 	status := manager.UploadNow()
 	if !strings.Contains(status.LastError, "webhook URL") {
 		t.Fatalf("expected actionable setup error, got %+v", status)
+	}
+}
+
+func TestMapperIdentifiedOnlyUploadFiltersUnverifiedRows(t *testing.T) {
+	var received int
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		var payload struct {
+			Signals []MapperFrequencyRecord `json:"signals"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		received = len(payload.Signals)
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time), client: server.Client(),
+		config: MapperConfig{WebhookURL: server.URL, UploadVerifiedOnly: true}}
+	manager.Observe(155_250_000, true, -30, -75, "NFM", "Analog FM", "Unverified channel", "")
+	manager.Observe(162_550_000, true, -25, -70, "NFM", "Analog FM", "NOAA Weather", "")
+	manager.SetIdentificationEvidence(162_550_000, "RadioReference import · Local", .98, true, "nearby reference match", nil)
+	status := manager.UploadNow()
+	if status.LastError != "" || received != 1 || status.UploadedRows != 1 {
+		t.Fatalf("identified-only upload sent the wrong rows: received=%d status=%+v", received, status)
+	}
+	status = manager.UploadFrequency(155_250_000)
+	if !strings.Contains(status.LastError, "not fully identified") {
+		t.Fatalf("single-row upload should enforce the same filter: %+v", status)
 	}
 }

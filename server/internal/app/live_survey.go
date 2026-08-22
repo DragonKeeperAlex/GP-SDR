@@ -28,9 +28,10 @@ type surveyTargetBatch struct {
 }
 
 type mapperRunContext struct {
-	JobID     string
-	SessionID uint64
-	Config    MapperConfig
+	JobID          string
+	SessionID      uint64
+	Config         MapperConfig
+	Identification mapperIdentification
 }
 
 func surveyTargets(profile ScanProfile) []surveyTarget {
@@ -528,10 +529,10 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 					// when a job contains fewer than four frequencies.
 					for offset, target := range batch.Targets {
 						active := targetIndex+offset == int(sessionID%uint64(len(targets)))
-						name, mode, protocol, confidence, source := r.identifyMapperFrequency(target.FrequencyHz)
-						r.mapper.ObserveJob(job.ID, device.ID, config, target.FrequencyHz, active, -46+rand.Float64()*14, -84+rand.Float64()*4, mode, protocol, name, "")
+						identity := r.identifyMapperFrequencyAt(target.FrequencyHz, observationLocation(config))
+						r.mapper.ObserveJob(job.ID, device.ID, config, target.FrequencyHz, active, -46+rand.Float64()*14, -84+rand.Float64()*4, identity.Mode, identity.Protocol, identity.Name, "")
 						if active {
-							r.mapper.SetIdentification(target.FrequencyHz, source, confidence)
+							r.mapper.SetIdentificationEvidence(target.FrequencyHz, identity.Source, identity.Confidence, identity.Verified, identity.Reason, identity.DistanceMiles)
 						}
 					}
 				} else if !r.processSurveyBatch(handle.stop, profile, device, batch, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config}) {
@@ -646,6 +647,10 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		margin = 6
 	}
 	snr := level.SignalDB - level.NoiseDB
+	// A complete capture and measurement clears transient USB/EOF notices even
+	// when this particular channel is only noise. Otherwise one brief receiver
+	// reset can leave the whole app showing an error indefinitely.
+	r.clearRuntimeError()
 	active := measured && snr >= margin
 	if !active {
 		r.updateMixerActivity(target.FrequencyHz, 0, false)
@@ -654,7 +659,6 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		}
 		return true
 	}
-	r.clearRuntimeError()
 	label := target.Label
 	mode := strings.ToUpper(target.Mode)
 	if mode == "" || mode == "AUTO" {
@@ -668,18 +672,19 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	identificationSource := ""
 	candidate, hasCandidate := decoderCandidate(target.FrequencyHz, stringValue(target.Decoder))
 	if mapperRun != nil {
-		identifiedName, identifiedMode, identifiedProtocol, identifiedConfidence, source := r.identifyMapperFrequency(target.FrequencyHz)
-		if identifiedName != "" {
-			label = identifiedName
+		identity := r.identifyMapperFrequencyAt(target.FrequencyHz, observationLocation(mapperRun.Config))
+		if identity.Name != "" {
+			label = identity.Name
 		}
-		if identifiedMode != "" {
-			mode = identifiedMode
+		if identity.Mode != "" {
+			mode = identity.Mode
 		}
-		if identifiedProtocol != "" {
-			protocol = &identifiedProtocol
+		if identity.Protocol != "" {
+			protocol = &identity.Protocol
 		}
-		confidence = math.Max(confidence, identifiedConfidence)
-		identificationSource = source
+		confidence = math.Max(confidence, identity.Confidence)
+		identificationSource = identity.Source
+		mapperRun.Identification = identity
 	}
 	if hasCandidate {
 		protocol = &candidate.Protocol
@@ -699,7 +704,8 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 			protocolName = *protocol
 		}
 		r.mapper.ObserveJob(mapperRun.JobID, device.ID, mapperRun.Config, target.FrequencyHz, true, level.SignalDB, level.NoiseDB, mode, protocolName, label, "")
-		r.mapper.SetIdentification(target.FrequencyHz, identificationSource, confidence)
+		identity := mapperRun.Identification
+		r.mapper.SetIdentificationEvidence(target.FrequencyHz, identificationSource, confidence, identity.Verified, identity.Reason, identity.DistanceMiles)
 		r.mapper.SetSignalIntelligence(target.FrequencyHz, analysis)
 		if hasCandidate {
 			r.mapper.SetDecoderEvidence(target.FrequencyHz, candidate.DecoderID, "candidate", candidate.Reason, r.decoderReady(candidate.DecoderID))
@@ -781,16 +787,37 @@ func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, dec
 	}
 }
 
+type mapperIdentification struct {
+	Name          string
+	Mode          string
+	Protocol      string
+	Confidence    float64
+	Source        string
+	Verified      bool
+	Reason        string
+	DistanceMiles *float64
+}
+
 func (r *Runtime) identifyMapperFrequency(frequencyHz float64) (name, mode, protocol string, confidence float64, source string) {
+	identity := r.identifyMapperFrequencyAt(frequencyHz, nil)
+	return identity.Name, identity.Mode, identity.Protocol, identity.Confidence, identity.Source
+}
+
+func (r *Runtime) identifyMapperFrequencyAt(frequencyHz float64, location *ObservationLocation) mapperIdentification {
 	for _, profile := range r.Profiles.All() {
 		if profile.ID == "mapper-session" {
 			continue
 		}
 		profileSource := "Saved profile · " + profile.Name
+		verified, reason, distance, allowed := false, "", (*float64)(nil), true
 		if strings.HasPrefix(profile.ID, "localdb-") {
 			profileSource = "Local database · " + profile.Name
 		} else if strings.Contains(strings.ToLower(profile.Summary), "radioreference") {
 			profileSource = "RadioReference import · " + profile.Name
+			verified, reason, distance, allowed = radioReferenceProfileEligibility(profile, location)
+			if !allowed {
+				continue
+			}
 		}
 		for _, channel := range profile.Channels {
 			if math.Abs(channel.FrequencyHz-frequencyHz) > 1 {
@@ -801,7 +828,12 @@ func (r *Runtime) identifyMapperFrequency(frequencyHz float64) (name, mode, prot
 			if channel.Decoder != nil {
 				channelProtocol = *channel.Decoder
 				if candidate, ok := decoderCandidate(frequencyHz, channelProtocol); ok {
-					return firstNonEmpty(channel.Name, candidate.Label), candidate.Mode, candidate.Protocol, .64, "Decoder target · " + candidate.DecoderID
+					source := profileSource
+					if !verified {
+						source = "Decoder target · " + candidate.DecoderID
+					}
+					return mapperIdentification{Name: firstNonEmpty(channel.Name, candidate.Label), Mode: candidate.Mode, Protocol: candidate.Protocol,
+						Confidence: map[bool]float64{true: .98, false: .64}[verified], Source: source, Verified: verified, Reason: reason, DistanceMiles: distance}
 				}
 			}
 			if channelProtocol == "" {
@@ -811,17 +843,20 @@ func (r *Runtime) identifyMapperFrequency(frequencyHz float64) (name, mode, prot
 					channelProtocol = "Analog FM"
 				}
 			}
-			return channel.Name, channelMode, channelProtocol, .98, profileSource
+			return mapperIdentification{Name: channel.Name, Mode: channelMode, Protocol: channelProtocol, Confidence: .98,
+				Source: profileSource, Verified: verified, Reason: reason, DistanceMiles: distance}
 		}
 		for _, system := range profile.P25Systems {
 			for _, controlFrequency := range system.ControlChannelsHz {
 				if math.Abs(controlFrequency-frequencyHz) <= 1 {
-					return system.Name, "DIGITAL", "P25 trunked control", .99, profileSource
+					return mapperIdentification{Name: system.Name, Mode: "DIGITAL", Protocol: "P25 trunked control", Confidence: .99,
+						Source: profileSource, Verified: verified, Reason: reason, DistanceMiles: distance}
 				}
 			}
 		}
 	}
-	name, mode, protocol, confidence = identifyMappedFrequency(frequencyHz)
+	name, mode, protocol, confidence := identifyMappedFrequency(frequencyHz)
+	source := ""
 	if candidate, ok := decoderCandidate(frequencyHz, ""); ok {
 		if name == "" {
 			name = candidate.Label
@@ -840,7 +875,26 @@ func (r *Runtime) identifyMapperFrequency(frequencyHz float64) (name, mode, prot
 			source = "Built-in US band plan"
 		}
 	}
-	return
+	return mapperIdentification{Name: name, Mode: mode, Protocol: protocol, Confidence: confidence, Source: source}
+}
+
+func radioReferenceProfileEligibility(profile ScanProfile, location *ObservationLocation) (verified bool, reason string, distanceMiles *float64, allowed bool) {
+	area := profile.ReferenceArea
+	if area == nil || !strings.EqualFold(strings.TrimSpace(area.Provider), "RadioReference") || location == nil {
+		return false, "", nil, false
+	}
+	distance := haversineMiles(location.Latitude, location.Longitude, area.Latitude, area.Longitude)
+	allowedRadius := math.Max(5, area.RadiusMiles)
+	if location.Precision == "city" {
+		allowedRadius += 10
+	} else if location.Precision == "approximate" {
+		allowedRadius += 2
+	}
+	if distance > allowedRadius {
+		return false, "", &distance, false
+	}
+	reason = fmt.Sprintf("RadioReference frequency match %.1f miles from the imported %s area", distance, firstNonEmpty(area.Label, profile.Name))
+	return true, reason, &distance, true
 }
 
 func identifyMappedFrequency(frequencyHz float64) (name, mode, protocol string, confidence float64) {

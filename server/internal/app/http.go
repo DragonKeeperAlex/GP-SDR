@@ -152,6 +152,26 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":
 		writeJSON(w, 200, s.runtime.Spectrum(intQuery(r, "bins", 512)))
+	case r.Method == "GET" && path == "/api/storage":
+		writeJSON(w, 200, s.runtime.StorageStatus())
+	case r.Method == "PUT" && path == "/api/storage/policy":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Storage cleanup settings can only be changed from the GP-SDR computer.")
+			return
+		}
+		var policy StoragePolicy
+		if !decodeBody(w, r, &policy) {
+			return
+		}
+		status, err := s.runtime.UpdateStoragePolicy(policy)
+		writeResult(w, status, err, 200)
+	case r.Method == "POST" && path == "/api/storage/cleanup":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Storage cleanup can only run from the GP-SDR computer.")
+			return
+		}
+		status, err := s.runtime.CleanStorageNow()
+		writeResult(w, status, err, 200)
 	case r.Method == "POST" && path == "/api/tuner/start":
 		var request TunerRequest
 		if !decodeBody(w, r, &request) {

@@ -43,7 +43,9 @@ In Mapper:
 
 The script locks simultaneous appends and neutralizes spreadsheet-formula
 prefixes in decoded text. Keep the webhook URL and secret private. GP-SDR marks
-new observations `New`; it never self-verifies a frequency.
+new observations `New`; it never changes the sheet's human review status. Keep
+**Identified only** enabled when you want the app to send only records backed by
+valid decoder output or a nearby authoritative RadioReference match.
 
 ## RadioReference
 
@@ -57,11 +59,25 @@ Two supported paths are intentionally separate:
 
 Location import supports 5, 10, 25, 50, or 100 miles and a custom 1–100-mile
 radius. Review the returned counties, conventional channels, and P25 sites
-before creating profiles. Database terms still apply to downloaded data.
+before creating profiles. The import saves its center, radius, and provider in
+the profile. Mapper will not use that RadioReference identity as verification
+unless the current observation location is inside the imported area (with a
+small allowance for approximate or city-level locations). This prevents a
+same-frequency listing in another state from being accepted as the local use.
+
+RadioReference does not offer a licensed one-click global mirror through a
+normal Premium account. Its standard web service requires an approved
+application key and each user must have their own Premium subscription; its
+published terms also prohibit recreating or mirroring the database without a
+separate commercial license. GP-SDR therefore supports authorized live lookup
+and user-supplied official exports, not site scraping or an embedded global
+database.
 
 ## Activity data
 
 Activity offers indexed search across frequency, label, transcript, callsign,
 protocol, system, talkgroup, and decoder output. Recordings and IQ files remain
-in GP-SDR-owned storage. Use Settings to monitor size and Profiles to choose a
-retention period.
+in GP-SDR-owned storage. The Settings Data card can enforce separate Recording
+and IQ caps, age-based retention, and optional automatic cleanup. Cleanup is
+off by default and removes oldest captures only; Mapper results, profiles,
+calibration, range data, and imported channel files are preserved.

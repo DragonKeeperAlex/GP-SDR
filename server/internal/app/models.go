@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.1.2"
+var Version = "1.2.0"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -124,16 +124,30 @@ type SurveySettings struct {
 }
 
 type ScanProfile struct {
-	SchemaVersion     int                 `json:"schemaVersion"`
-	ID                string              `json:"id"`
-	Name              string              `json:"name"`
-	Summary           string              `json:"summary"`
-	Ranges            []ScanRange         `json:"ranges"`
-	Channels          []ChannelDefinition `json:"channels"`
-	DeviceAssignments []DeviceAssignment  `json:"deviceAssignments"`
-	P25Systems        []P25SystemConfig   `json:"p25Systems,omitempty"`
-	Settings          SurveySettings      `json:"settings"`
-	BuiltIn           bool                `json:"builtIn"`
+	SchemaVersion     int                   `json:"schemaVersion"`
+	ID                string                `json:"id"`
+	Name              string                `json:"name"`
+	Summary           string                `json:"summary"`
+	ReferenceArea     *ProfileReferenceArea `json:"referenceArea,omitempty"`
+	Ranges            []ScanRange           `json:"ranges"`
+	Channels          []ChannelDefinition   `json:"channels"`
+	DeviceAssignments []DeviceAssignment    `json:"deviceAssignments"`
+	P25Systems        []P25SystemConfig     `json:"p25Systems,omitempty"`
+	Settings          SurveySettings        `json:"settings"`
+	BuiltIn           bool                  `json:"builtIn"`
+}
+
+// ProfileReferenceArea preserves the geographic scope used when reference
+// data was imported. Mapper requires this evidence before treating a
+// RadioReference frequency match as verified, preventing an identical
+// frequency in another state from being accepted merely by number.
+type ProfileReferenceArea struct {
+	Provider    string    `json:"provider"`
+	Latitude    float64   `json:"latitude"`
+	Longitude   float64   `json:"longitude"`
+	RadiusMiles float64   `json:"radiusMiles"`
+	Label       string    `json:"label,omitempty"`
+	ImportedAt  time.Time `json:"importedAt,omitempty"`
 }
 
 type TransmissionEvent struct {
@@ -260,12 +274,15 @@ type RuntimeStatus struct {
 }
 
 type StorageStatus struct {
-	JournalBytes   int64     `json:"journalBytes"`
-	RecordingBytes int64     `json:"recordingBytes"`
-	IQBytes        int64     `json:"iqBytes"`
-	ProfileBytes   int64     `json:"profileBytes"`
-	TotalBytes     int64     `json:"totalBytes"`
-	CheckedAt      time.Time `json:"checkedAt"`
+	JournalBytes   int64                `json:"journalBytes"`
+	RecordingBytes int64                `json:"recordingBytes"`
+	IQBytes        int64                `json:"iqBytes"`
+	ProfileBytes   int64                `json:"profileBytes"`
+	TotalBytes     int64                `json:"totalBytes"`
+	CheckedAt      time.Time            `json:"checkedAt"`
+	Policy         StoragePolicy        `json:"policy"`
+	LastCleanup    StorageCleanupResult `json:"lastCleanup"`
+	CleanupRunning bool                 `json:"cleanupRunning"`
 }
 
 type HealthNotice struct {

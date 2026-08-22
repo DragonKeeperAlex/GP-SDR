@@ -58,11 +58,21 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 
 	for _, endpoint := range []string{
 		"/api/status", "/api/devices", "/api/decoders", "/api/integrations", "/api/setup",
-		"/api/p25/status", "/api/spectrum?bins=64", "/api/calibrations", "/api/calibrations/characterization", "/api/remote-receivers",
+		"/api/p25/status", "/api/spectrum?bins=64", "/api/storage", "/api/calibrations", "/api/calibrations/characterization", "/api/remote-receivers",
 		"/api/range-sync", "/api/local-database", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
 		"/api/events?limit=10", "/api/signals?limit=10", "/api/mixer", "/api/receiver-plan",
 	} {
 		acceptanceRequest(t, server, http.MethodGet, endpoint, nil, http.StatusOK)
+	}
+
+	storagePolicy := StoragePolicy{AutoCleanup: false, MaxCaptureDays: 14, RecordingCapBytes: 8 * gibibyte, IQCapBytes: 4 * gibibyte}
+	storage := decodeAcceptance[StorageStatus](t, acceptanceRequest(t, server, http.MethodPut, "/api/storage/policy", storagePolicy, http.StatusOK))
+	if storage.Policy != storagePolicy {
+		t.Fatalf("storage policy was not applied: got %+v want %+v", storage.Policy, storagePolicy)
+	}
+	storage = decodeAcceptance[StorageStatus](t, acceptanceRequest(t, server, http.MethodPost, "/api/storage/cleanup", map[string]any{}, http.StatusOK))
+	if storage.LastCleanup.CompletedAt.IsZero() {
+		t.Fatal("manual storage cleanup did not report completion")
 	}
 
 	calibration := DeviceCalibration{DeviceID: "simulator-0", DeviceKind: "Simulator", PPMCorrection: 2,

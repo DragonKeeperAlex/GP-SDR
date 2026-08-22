@@ -107,7 +107,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.1.2_amd64.deb
+sudo apt install ./gp-sdr_1.2.0_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -241,7 +241,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.1.2
+Scripts/build_release.sh 1.2.0
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -271,7 +271,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.1.2.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.2.0.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license
