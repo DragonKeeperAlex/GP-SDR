@@ -66,6 +66,9 @@ Decoders pages show whether each executable is bundled, installed, optional, or
 missing, with Install/How-to actions where available. A frequency matching a
 known decoder target is only a candidate until valid output is received.
 
+Installation and verification instructions for every decoder are in [Optional
+Components](Optional-Components).
+
 ### DMR
 
 Choose **DMR** in Tuner for one known channel, or open **Decoders → DSD-FME →

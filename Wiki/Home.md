@@ -18,6 +18,10 @@ headless computer.
 4. [Choose or import a scan profile](Profiles-and-Mixer).
 5. Use [Mapper](Mapper-Discovery-and-Identify) for unattended discovery.
 6. Use [P25 and decoder pages](P25-and-Decoders) for digital systems.
+7. Use [Server Setup](Server-Setup-Linux-and-Windows) for an always-on Linux or
+   Windows host.
+8. Use [Optional Components](Optional-Components) to enable additional protocol
+   decoders and offline transcription.
 
 ## Main pages
 

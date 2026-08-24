@@ -31,3 +31,9 @@ To use the mobile interface on a trusted LAN:
 
 The console prints a URL with a random access token. Keep it private. Use a VPN
 or authenticated HTTPS reverse proxy for access outside a trusted network.
+
+For unattended Task Scheduler setup, a persistent token, a private-network-only
+Windows Firewall rule, optional decoder installation, updates, logs, and
+backups, see:
+https://github.com/DragonKeeperAlex/GP-SDR/wiki/Server-Setup-Linux-and-Windows
+https://github.com/DragonKeeperAlex/GP-SDR/wiki/Optional-Components

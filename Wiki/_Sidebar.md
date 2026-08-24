@@ -9,6 +9,8 @@
 - [P25 and Decoders](P25-and-Decoders)
 - [Data and Integrations](Data-and-Integrations)
 - [Remote and Settings](Remote-and-Settings)
+- [Linux and Windows Server Setup](Server-Setup-Linux-and-Windows)
+- [Optional Components](Optional-Components)
 - [Troubleshooting](Troubleshooting-and-Limits)
 
 - [Install guide](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/INSTALL.md)

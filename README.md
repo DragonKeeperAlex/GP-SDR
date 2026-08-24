@@ -91,7 +91,13 @@ For the complete first-run checklist, receiver-driver steps, P25 setup, LAN
 access, and troubleshooting, see the [installation guide](Docs/INSTALL.md).
 The [GP-SDR Wiki](https://github.com/DragonKeeperAlex/GP-SDR/wiki) provides a
 detailed guide to every main page, receiver workflow, decoder, integration, and
-setup option.
+setup option. Start with [Getting
+Started](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Getting-Started), use
+[Linux and Windows Server
+Setup](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Server-Setup-Linux-and-Windows)
+for an always-on or headless host, and see [Optional
+Components](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Optional-Components)
+for platform-specific decoder and transcription setup.
 The [1.1 feature status](Docs/FEATURE_STATUS_1.1.0.md) separates live-hardware
 evidence from implemented features and external requirements.
 
@@ -122,7 +128,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.2.0_amd64.deb
+sudo apt install ./gp-sdr_1.2.2_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -256,7 +262,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.2.0
+Scripts/build_release.sh 1.2.2
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS

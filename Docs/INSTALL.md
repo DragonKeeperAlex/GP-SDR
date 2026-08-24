@@ -15,7 +15,7 @@ provided by user-space receiver tools or the operating system's USB driver.
 
 ## macOS 13 or newer
 
-Use `GP-SDR-1.2.0-macos-universal.dmg` unless you specifically need the smaller
+Use the current `GP-SDR-*-macos-universal.dmg` unless you specifically need the smaller
 Apple Silicon (`arm64`) or Intel (`x86_64`) package.
 
 1. Open the DMG and drag **GP-SDR.app** to Applications.
@@ -70,14 +70,20 @@ For a Mac that will keep the receivers connected permanently:
 Windows Firewall permission is needed only if you intentionally enable access
 from another device. Local use does not require a public-network firewall rule.
 
+For an unattended Windows host, use Task Scheduler to start GP-SDR at boot or
+sign-in with an explicit data directory and access token. Do not expose port
+8073 directly to the public internet. The complete procedure, private-network
+firewall rule, updates, logs, and backup steps are in the [Linux and Windows
+server guide](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Server-Setup-Linux-and-Windows).
+
 ## Debian and Ubuntu
 
 Choose the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.2.0_amd64.deb
+sudo apt install ./gp-sdr_1.2.2_amd64.deb
 # or, on 64-bit ARM:
-sudo apt install ./gp-sdr_1.2.0_arm64.deb
+sudo apt install ./gp-sdr_1.2.2_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -89,6 +95,13 @@ udev permissions and reconnect the receiver.
 To expose the interface on a trusted LAN, override the service with a listen
 address of `0.0.0.0`. Preserve the generated access token and use a VPN or an
 authenticated HTTPS reverse proxy outside a trusted LAN.
+
+The packaged service uses a restricted dynamic account and stores data under
+`/var/lib/gp-sdr/GP-SDR`. Some distributions grant USB SDR access through the
+`plugdev` group; if so, add that group through a systemd override. Exact
+commands for the override, token, firewall, USB permissions, logs, updates, and
+backups are in the [Linux and Windows server
+guide](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Server-Setup-Linux-and-Windows).
 
 ## First signal checklist
 
@@ -148,6 +161,13 @@ Open the displayed tokenized URL from a phone on the same trusted network.
 - **Other decoders:** cards show **Install** or **How to** only when GP-SDR can
   safely automate or explain the platform-specific setup.
 
+The Wiki's [Optional Components
+guide](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Optional-Components)
+contains a platform matrix, installation paths, executable names, verification
+commands, Mapper routing behavior, and troubleshooting for every supported
+decoder. Linux and Windows intentionally show **How to** when no safe,
+maintained automatic installer exists for that platform.
+
 ### Optional decoders on macOS
 
 In the packaged app, open **Hardware** and press **Install** on any missing
@@ -196,7 +216,7 @@ On Windows PowerShell, compare this result with the matching line in
 `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\GP-SDR-1.2.0-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\GP-SDR-1.2.2-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ## Build from source
@@ -214,9 +234,11 @@ To create all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.2.0
+Scripts/build_release.sh 1.2.2
 ```
 
 Do not build a source checkout from a cloud-synced folder while it is resolving
 conflicts. The release script stops if duplicate conflict copies are detected.
 All third-party code and licenses are listed in `THIRD_PARTY.md`.
+Before publishing a release, follow `Docs/RELEASE_CHECKLIST.md`; updating the
+versioned Wiki source and live GitHub Wiki is part of the release gate.

@@ -22,6 +22,11 @@ native app. Keep both devices on the same trusted LAN or VPN.
 Do not expose the port directly to the public internet. For remote access, use
 a VPN or an authenticated HTTPS reverse proxy that preserves the GP-SDR token.
 
+For a complete Debian/Ubuntu systemd deployment or an unattended Windows Task
+Scheduler deployment, use [Linux and Windows Server
+Setup](Server-Setup-Linux-and-Windows). It includes service overrides, USB
+permissions, private-network firewall rules, logs, updates, and backups.
+
 ## Always-on setup
 
 1. Put GP-SDR in Applications or install the Linux service.
@@ -74,6 +79,9 @@ Integration cards show Ready, Optional, Missing, or Setup state for Live DSP,
 SoapySDR, P25, transcription, RadioReference, and protocol decoders. Optional
 components do not block navigation or basic analog use. Use **Install** where
 automated setup is supported or **How to** for vendor/OS steps.
+
+See [Optional Components](Optional-Components) for the supported executable
+names and platform-specific setup and verification steps.
 
 ## Security model
 

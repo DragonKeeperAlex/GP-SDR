@@ -20,19 +20,28 @@ Extract the complete x86_64 ZIP and keep its files together. Run
 exact SDR interface; follow the Hardware page rather than replacing drivers on
 unrelated USB devices.
 
+For an always-on Windows receiver, follow [Linux and Windows Server
+Setup](Server-Setup-Linux-and-Windows). It covers Task Scheduler, a persistent
+token, private-network firewall access, updates, logs, and backups.
+
 ### Debian or Ubuntu
 
 Install the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.1.2_amd64.deb
+sudo apt install ./gp-sdr_1.2.2_amd64.deb
 # 64-bit ARM:
-sudo apt install ./gp-sdr_1.1.2_arm64.deb
+sudo apt install ./gp-sdr_1.2.2_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
 Open `http://127.0.0.1:8073/`. The service binds to this computer only by
 default.
+
+Continue with [Linux and Windows Server
+Setup](Server-Setup-Linux-and-Windows) before enabling LAN access. Optional
+decoders and transcription are covered separately in [Optional
+Components](Optional-Components).
 
 ## First-run checklist
 
