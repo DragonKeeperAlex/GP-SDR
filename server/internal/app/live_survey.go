@@ -42,7 +42,7 @@ func surveyTargets(profile ScanProfile) []surveyTarget {
 			continue
 		}
 		mode := strings.ToLower(channel.Mode)
-		if mode == "digital" || mode == "p25" || mode == "dmr" {
+		if (mode == "digital" || mode == "p25" || mode == "dmr") && channel.Decoder == nil {
 			continue
 		}
 		targets = append(targets, surveyTarget{FrequencyHz: channel.FrequencyHz, BandwidthHz: channel.BandwidthHz,
@@ -432,10 +432,14 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 			}
 			label := firstNonEmpty(record.Name, record.ProtocolName, "Mapped frequency")
 			var decoder *string
-			if record.CandidateDecoder != "" {
+			if config.PreferredDecoder != "" {
+				value := config.PreferredDecoder
+				decoder = &value
+			} else if record.CandidateDecoder != "" {
 				value := record.CandidateDecoder
 				decoder = &value
 			}
+			bandwidth = decoderBandwidthHz(stringValue(decoder), bandwidth)
 			targets = append(targets, surveyTarget{FrequencyHz: record.FrequencyHz, BandwidthHz: bandwidth, Mode: mode, Label: label, Dwell: 15 * time.Second, Decoder: decoder})
 		}
 		if len(targets) == 0 {
@@ -453,7 +457,7 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 	targets := make([]surveyTarget, 0, count)
 	dwell := time.Duration(config.DwellMilliseconds) * time.Millisecond
 	for frequency := config.StartHz; frequency <= config.EndHz+config.StepHz*.001; frequency += config.StepHz {
-		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: maxFloat(config.StepHz, 12_500), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell})
+		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: decoderBandwidthHz(config.PreferredDecoder, config.StepHz), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell, Decoder: optionalString(config.PreferredDecoder)})
 	}
 	return targets, nil
 }
@@ -641,7 +645,10 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat) bool {
 	rate := spec.SampleRateHz
 	analysis := AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
-	demodulationMode := target.Mode
+	if mapperRun != nil && target.Decoder == nil && analysis.Modulation == "DIGITAL" {
+		target.Decoder = ptr("dsd-fme")
+	}
+	demodulationMode := demodulationModeForDecoder(target.Mode, stringValue(target.Decoder))
 	if strings.EqualFold(demodulationMode, "auto") || strings.TrimSpace(demodulationMode) == "" {
 		demodulationMode = strings.ToLower(analysis.Modulation)
 		if demodulationMode != "am" && demodulationMode != "wfm" && demodulationMode != "nfm" {
@@ -781,7 +788,7 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	if mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {
 		go r.deepAnalyzeMapperEvent(stop, event, candidate, hasCandidate && r.decoderReady(candidate.DecoderID), result.Audio, result.AudioRateHz, evidenceSpec, profile.Settings.TranscribeVoice)
 	} else if hasCandidate && r.decoderReady(candidate.DecoderID) {
-		go r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, spec)
+		go r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, evidenceSpec)
 	}
 	if !(mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil) && profile.Settings.TranscribeVoice && event.AudioPath != nil {
 		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
@@ -845,7 +852,21 @@ func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, dec
 	if event.IQPath != nil {
 		iqPath = *event.IQPath
 	}
-	messages, _ := runCandidateDecoder(decoderContext, decoderID, audio, audioRate, iqPath, event.FrequencyHz, spec)
+	var messages []DecoderMessage
+	if canonicalDecoderID(decoderID) == "dsd-fme" {
+		hint := firstNonEmpty(digitalVoiceProtocol(event.Modulation), digitalVoiceProtocol(stringValue(event.ProtocolName)), decoderID)
+		decoded, _ := runDSDFME(decoderContext, hint, audio, audioRate)
+		messages = decoded.Messages
+		if len(decoded.Audio) > 0 && decoded.SampleRate > 0 && r.audioHub != nil {
+			channelID := r.mixerChannelID(event.FrequencyHz)
+			if channelID == "" {
+				channelID = "quick-tune-channel"
+			}
+			r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: decoded.SampleRate, Samples: decoded.Audio})
+		}
+	} else {
+		messages, _ = runCandidateDecoder(decoderContext, decoderID, audio, audioRate, iqPath, event.FrequencyHz, spec)
+	}
 	// Several command-line decoders return a non-zero exit code after EOF even
 	// when they emitted valid frames. Parsed frames are the authoritative result.
 	if len(messages) == 0 {
@@ -998,6 +1019,7 @@ func stringValue(value *string) string {
 }
 
 func (r *Runtime) decoderReady(id string) bool {
+	id = canonicalDecoderID(id)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, decoder := range r.decoders {
@@ -1070,12 +1092,20 @@ type widebandTransmission struct {
 	noiseDB   float64
 }
 
+type tunerDecoderBatchResult struct {
+	frequencyHz float64
+	mode        string
+	messages    []DecoderMessage
+	audio       []int16
+	audioRate   int
+}
+
 func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []ChannelDefinition, bool) {
 	channels := make([]ChannelDefinition, 0)
 	minimum, maximum, widest := math.MaxFloat64, 0.0, 0.0
 	for _, channel := range profile.Channels {
 		mode := strings.ToLower(channel.Mode)
-		if !channel.Enabled || mode == "digital" || mode == "p25" || mode == "dmr" {
+		if !channel.Enabled || ((mode == "digital" || mode == "p25" || mode == "dmr") && channel.Decoder == nil) {
 			continue
 		}
 		channels = append(channels, channel)
@@ -1183,7 +1213,7 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 				continue
 			}
 			result, err := DemodulateIQ(data, format, spec.SampleRateHz,
-				channel.FrequencyHz-float64(spec.CenterFrequencyHz), channel.Mode)
+				channel.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationModeForDecoder(channel.Mode, stringValue(channel.Decoder)))
 			if err != nil {
 				r.setRuntimeError(err.Error())
 				continue
@@ -1196,12 +1226,12 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			}
 			transmission.signalDB = math.Max(transmission.signalDB, level.SignalDB)
 			transmission.noiseDB = level.NoiseDB
-			if profile.Settings.RecordAudio || profile.Settings.TranscribeVoice {
+			if profile.Settings.RecordAudio || profile.Settings.TranscribeVoice || channel.Decoder != nil {
 				transmission.audio = append(transmission.audio, result.Audio...)
 			}
 			mixerLevel := clamp((snr-profile.Settings.NoiseMarginDB)/24+.1, .08, 1)
 			r.updateMixerActivity(channel.FrequencyHz, mixerLevel, true)
-			if r.audioHub != nil {
+			if r.audioHub != nil && channel.Decoder == nil {
 				r.audioHub.Publish(AudioFrame{ChannelID: channel.ID, SampleRate: result.AudioRateHz, Samples: result.Audio})
 			}
 			if time.Since(transmission.startedAt) >= 2*time.Minute {
@@ -1256,13 +1286,36 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 	noiseFloor := -150.0
 	analysisFrames := 0
 	latestAnalysis := SignalIntelligence{}
+	decoderResults := make(chan tunerDecoderBatchResult, 1)
+	decoderAudio := make([]int16, 0, 48_000*3)
+	decoderBusy := false
 	for {
 		select {
 		case next := <-updates:
-			request.FrequencyHz, request.Mode, request.BandwidthHz = next.FrequencyHz, next.Mode, next.BandwidthHz
+			request.FrequencyHz, request.Mode, request.Decoder, request.BandwidthHz = next.FrequencyHz, next.Mode, next.Decoder, next.BandwidthHz
 			request.SquelchDB, request.MonitorOpen, request.AutoGain = next.SquelchDB, next.MonitorOpen, next.AutoGain
 			request.NoiseReduction = next.NoiseReduction
 			noiseFloor = -150
+			decoderAudio = decoderAudio[:0]
+		default:
+		}
+		select {
+		case decoded := <-decoderResults:
+			decoderBusy = false
+			if math.Abs(decoded.frequencyHz-request.FrequencyHz) <= 1 && len(decoded.messages) > 0 {
+				label := strings.ToUpper(decoded.mode) + " decoded"
+				protocol := decoded.messages[0].Protocol
+				event := TransmissionEvent{ID: NewID(), StartedAt: time.Now(), DurationSeconds: 2.5, FrequencyHz: request.FrequencyHz,
+					BandwidthHz: request.BandwidthHz, Modulation: strings.ToUpper(request.Mode), ProtocolName: &protocol,
+					Label: &label, DeviceID: device.ID, Confidence: decoded.messages[0].Confidence, DecoderMessages: decoded.messages}
+				_ = r.Events.Append(event)
+				if r.mapper != nil {
+					r.mapper.SetDecodedMessages(request.FrequencyHz, firstNonEmpty(request.Decoder, decoderForMode(request.Mode)), decoded.messages)
+				}
+			}
+			if math.Abs(decoded.frequencyHz-request.FrequencyHz) <= 1 && len(decoded.audio) > 0 && decoded.audioRate > 0 && r.audioHub != nil {
+				r.audioHub.Publish(AudioFrame{ChannelID: "quick-tune-channel", SampleRate: decoded.audioRate, Samples: decoded.audio})
+			}
 		default:
 		}
 		data := make([]byte, frameBytes)
@@ -1283,7 +1336,8 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 			latestAnalysis = AnalyzeSignalIQ(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), request.BandwidthHz)
 			analysisFrames = 1
 		}
-		demodulationMode := request.Mode
+		decoderID := firstNonEmpty(request.Decoder, decoderForMode(request.Mode))
+		demodulationMode := demodulationModeForDecoder(request.Mode, decoderID)
 		if demodulationMode == "auto" {
 			demodulationMode = strings.ToLower(latestAnalysis.Modulation)
 			if demodulationMode != "am" && demodulationMode != "nfm" && demodulationMode != "wfm" {
@@ -1316,13 +1370,40 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		}
 		r.clearRuntimeError()
 		level := clamp((result.SignalDBFS-noiseFloor)/25, .08, 1)
-		if request.AutoGain {
-			applyAudioAGC(result.Audio)
-		}
-		applyNoiseReduction(result.Audio, result.AudioRateHz, request.NoiseReduction)
 		r.updateMixerActivity(request.FrequencyHz, level, true)
-		if r.audioHub != nil {
-			r.audioHub.Publish(AudioFrame{ChannelID: "quick-tune-channel", SampleRate: result.AudioRateHz, Samples: result.Audio})
+		if decoderID == "" {
+			if request.AutoGain {
+				applyAudioAGC(result.Audio)
+			}
+			applyNoiseReduction(result.Audio, result.AudioRateHz, request.NoiseReduction)
+			if r.audioHub != nil {
+				r.audioHub.Publish(AudioFrame{ChannelID: "quick-tune-channel", SampleRate: result.AudioRateHz, Samples: result.Audio})
+			}
+		}
+		if decoderID != "" && (canonicalDecoderID(decoderID) == "dsd-fme" || canonicalDecoderID(decoderID) == "multimon-ng" || canonicalDecoderID(decoderID) == "acarsdec") {
+			decoderAudio = append(decoderAudio, result.Audio...)
+			minimumSamples := result.AudioRateHz * 5 / 2
+			if len(decoderAudio) >= minimumSamples && !decoderBusy {
+				batch := append([]int16(nil), decoderAudio...)
+				decoderAudio = decoderAudio[:0]
+				decoderBusy = true
+				frequency, mode, rate := request.FrequencyHz, request.Mode, result.AudioRateHz
+				go func(decoderID string) {
+					decoded := tunerDecoderBatchResult{frequencyHz: frequency, mode: mode}
+					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer cancel()
+					if canonicalDecoderID(decoderID) == "dsd-fme" {
+						result, _ := runDSDFME(ctx, mode, batch, rate)
+						decoded.messages, decoded.audio, decoded.audioRate = result.Messages, result.Audio, result.SampleRate
+					} else {
+						decoded.messages, _ = runCandidateDecoder(ctx, decoderID, batch, rate, "", frequency, spec)
+					}
+					select {
+					case decoderResults <- decoded:
+					case <-stop:
+					}
+				}(decoderID)
+			}
 		}
 	}
 }

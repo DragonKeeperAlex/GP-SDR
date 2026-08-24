@@ -28,6 +28,7 @@ type MapperConfig struct {
 	UploadVerifiedOnly       bool     `json:"uploadVerifiedOnly"`
 	Mode                     string   `json:"mode,omitempty"`
 	PreferredMode            string   `json:"preferredMode,omitempty"`
+	PreferredDecoder         string   `json:"preferredDecoder,omitempty"`
 	DeviceID                 string   `json:"deviceID,omitempty"`
 	StartHz                  float64  `json:"startHz,omitempty"`
 	EndHz                    float64  `json:"endHz,omitempty"`
@@ -306,7 +307,20 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 		config.PreferredMode = "auto"
 	}
 	if config.PreferredMode != "auto" && config.PreferredMode != "am" && config.PreferredMode != "nfm" && config.PreferredMode != "wfm" {
-		return config, errors.New("Mapper modulation must be Auto, AM, NFM, or WFM")
+		if digitalVoiceProtocol(config.PreferredMode) == "" {
+			return config, errors.New("Mapper modulation is not supported")
+		}
+	}
+	config.PreferredDecoder = strings.ToLower(strings.TrimSpace(config.PreferredDecoder))
+	if config.PreferredDecoder == "auto" {
+		config.PreferredDecoder = ""
+	}
+	if config.PreferredDecoder != "" {
+		known := map[string]bool{"dsd-fme": true, "dmr": true, "nxdn": true, "d-star": true, "ysf": true, "m17": true,
+			"rtl-433": true, "dump1090": true, "multimon-ng": true, "acarsdec": true, "ais": true}
+		if !known[config.PreferredDecoder] {
+			return config, errors.New("Mapper decoder is not supported")
+		}
 	}
 	if strings.TrimSpace(config.DeviceID) == "" {
 		return config, errors.New("choose a receiver for this Mapper job")

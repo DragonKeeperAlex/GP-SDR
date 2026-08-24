@@ -194,8 +194,8 @@ func TestMapperCSVIncludesCompleteRecordsAndEscapesFormulas(t *testing.T) {
 
 func TestDecoderTargetsAddProfilesAndMapperCandidateEvidence(t *testing.T) {
 	profiles := decoderScanProfiles()
-	if len(profiles) != 6 {
-		t.Fatalf("expected six decoder scan profiles, got %d", len(profiles))
+	if len(profiles) != 7 {
+		t.Fatalf("expected seven decoder scan profiles, got %d", len(profiles))
 	}
 	for _, id := range []string{"dsd-fme", "rtl-433", "dump1090", "multimon-ng", "acarsdec", "ais"} {
 		found := false
@@ -218,6 +218,17 @@ func TestDecoderTargetsAddProfilesAndMapperCandidateEvidence(t *testing.T) {
 	record := manager.Status().Records[0]
 	if record.CandidateDecoder != "dump1090" || record.DetectionStatus != "candidate" || !record.DecoderReady {
 		t.Fatalf("unexpected decoder evidence: %+v", record)
+	}
+}
+
+func TestMapperAcceptsForcedDMRDecoder(t *testing.T) {
+	config, err := validateMapperScanConfig(MapperConfig{Mode: "discovery", DeviceID: "receiver", StartHz: 450e6, EndHz: 451e6,
+		StepHz: 12_500, DwellMilliseconds: 2500, PreferredMode: "dmr", PreferredDecoder: "dmr", DecipherListenSeconds: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PreferredDecoder != "dmr" || canonicalDecoderID(config.PreferredDecoder) != "dsd-fme" {
+		t.Fatalf("DMR decoder was not preserved: %#v", config)
 	}
 }
 

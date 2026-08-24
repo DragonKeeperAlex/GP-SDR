@@ -219,6 +219,29 @@ func TestNativeTunerSeparatesHardwareCenterAndSoftwareVFO(t *testing.T) {
 	}
 }
 
+func TestDMRControlsAreAvailableAcrossNativeWorkspaces(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="live-mode"`, `id="tuner-mode"`, `value="dmr"`, `id="mapper-decoder"`, `value="discovery"`, `value="decipher"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("DMR or Mapper control %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"decoderForSelectedMode", "preferredDecoder:", "decoder-new-profile", "message.timeSlot", "message.colorCode"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("DMR behavior %q is missing", required)
+		}
+	}
+}
+
 func TestTopBarHasPersistentMasterAudioControls(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {

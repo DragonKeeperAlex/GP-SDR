@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -22,11 +23,17 @@ type DecoderMessage struct {
 	Protocol   string   `json:"protocol"`
 	Summary    string   `json:"summary"`
 	Callsigns  []string `json:"callsigns,omitempty"`
+	TimeSlot   int      `json:"timeSlot,omitempty"`
+	ColorCode  int      `json:"colorCode,omitempty"`
+	Talkgroup  int      `json:"talkgroup,omitempty"`
+	SourceID   int      `json:"sourceID,omitempty"`
+	Encrypted  bool     `json:"encrypted,omitempty"`
 	RawText    string   `json:"rawText,omitempty"`
 	Confidence float64  `json:"confidence"`
 }
 
 func runCandidateDecoder(parent context.Context, decoderID string, audio []int16, audioRate int, iqPath string, frequencyHz float64, spec CaptureSpec) ([]DecoderMessage, error) {
+	requestedDecoder := strings.ToLower(strings.TrimSpace(decoderID))
 	decoderID = canonicalDecoderID(decoderID)
 	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	defer cancel()
@@ -46,22 +53,8 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 		output, err := command.CombinedOutput()
 		return parseTextDecoderOutput(decoderID, string(output)), decoderCommandError(err, output)
 	case "dsd-fme":
-		executable, err := findTool("dsd-fme")
-		if err != nil {
-			return nil, err
-		}
-		directory, err := os.MkdirTemp("", "gpsdr-dsd-fme-*")
-		if err != nil {
-			return nil, err
-		}
-		defer os.RemoveAll(directory)
-		path := filepath.Join(directory, "discriminator.wav")
-		if err := WriteMonoWAV(path, resamplePCM(audio, audioRate, 48_000), 48_000); err != nil {
-			return nil, err
-		}
-		command := exec.CommandContext(ctx, executable, "-i", path, "-N")
-		output, err := command.CombinedOutput()
-		return parseTextDecoderOutput(decoderID, string(output)), decoderCommandError(err, output)
+		result, err := runDSDFME(ctx, requestedDecoder, audio, audioRate)
+		return result.Messages, err
 	case "rtl-433":
 		executable, err := findTool("rtl_433")
 		if err != nil {
@@ -130,6 +123,116 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 	default:
 		return nil, fmt.Errorf("live file bridge is not implemented for %s", decoderID)
 	}
+}
+
+type digitalVoiceDecodeResult struct {
+	Messages   []DecoderMessage
+	Audio      []int16
+	SampleRate int
+}
+
+func runDSDFME(parent context.Context, protocolHint string, audio []int16, audioRate int) (digitalVoiceDecodeResult, error) {
+	executable, err := findTool("dsd-fme")
+	if err != nil {
+		return digitalVoiceDecodeResult{}, err
+	}
+	directory, err := os.MkdirTemp("", "gpsdr-dsd-fme-*")
+	if err != nil {
+		return digitalVoiceDecodeResult{}, err
+	}
+	defer os.RemoveAll(directory)
+	inputPath := filepath.Join(directory, "discriminator.wav")
+	outputPath := filepath.Join(directory, "decoded.wav")
+	if err := WriteMonoWAV(inputPath, resamplePCM(audio, audioRate, 48_000), 48_000); err != nil {
+		return digitalVoiceDecodeResult{}, err
+	}
+	args := []string{dsdModeFlag(protocolHint), "-i", inputPath, "-o", "null", "-w", outputPath, "-V", "3"}
+	command := exec.CommandContext(parent, executable, args...)
+	output, commandErr := command.CombinedOutput()
+	result := digitalVoiceDecodeResult{Messages: parseTextDecoderOutput("dsd-fme", string(output))}
+	if decoded, sampleRate, readErr := readPCM16WAV(outputPath); readErr == nil {
+		result.Audio, result.SampleRate = decoded, sampleRate
+	}
+	return result, decoderCommandError(commandErr, output)
+}
+
+func dsdModeFlag(protocolHint string) string {
+	switch strings.ToLower(strings.TrimSpace(protocolHint)) {
+	case "dmr":
+		return "-fs"
+	case "p25":
+		return "-ft"
+	case "p25 phase 1", "p25p1":
+		return "-f1"
+	case "p25 phase 2", "p25p2":
+		return "-f2"
+	case "d-star", "dstar":
+		return "-fd"
+	case "nxdn48":
+		return "-fi"
+	case "nxdn", "nxdn96":
+		return "-fn"
+	case "ysf":
+		return "-fy"
+	case "m17":
+		return "-fz"
+	default:
+		return "-fa"
+	}
+}
+
+// DSD-FME writes 16-bit PCM WAV output, commonly stereo at 8 kHz for DMR.
+// Mix stereo to mono so decoded voice uses GP-SDR's normal audio controls.
+func readPCM16WAV(path string) ([]int16, int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(data) < 44 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
+		return nil, 0, errors.New("decoder did not produce a valid WAV file")
+	}
+	channels, rate, bits := 0, 0, 0
+	var pcm []byte
+	reader := bytes.NewReader(data[12:])
+	for reader.Len() >= 8 {
+		var header [8]byte
+		if _, err := io.ReadFull(reader, header[:]); err != nil {
+			break
+		}
+		size := int(binary.LittleEndian.Uint32(header[4:]))
+		if size < 0 || size > reader.Len() {
+			break
+		}
+		chunk := make([]byte, size)
+		_, _ = io.ReadFull(reader, chunk)
+		if size%2 == 1 && reader.Len() > 0 {
+			_, _ = reader.ReadByte()
+		}
+		switch string(header[:4]) {
+		case "fmt ":
+			if len(chunk) >= 16 && binary.LittleEndian.Uint16(chunk[0:2]) == 1 {
+				channels = int(binary.LittleEndian.Uint16(chunk[2:4]))
+				rate = int(binary.LittleEndian.Uint32(chunk[4:8]))
+				bits = int(binary.LittleEndian.Uint16(chunk[14:16]))
+			}
+		case "data":
+			pcm = chunk
+		}
+	}
+	if channels < 1 || channels > 2 || rate <= 0 || bits != 16 || len(pcm) < channels*2 {
+		return nil, 0, errors.New("decoder WAV contains no PCM voice")
+	}
+	frames := len(pcm) / (channels * 2)
+	samples := make([]int16, frames)
+	for frame := 0; frame < frames; frame++ {
+		total := 0
+		for channel := 0; channel < channels; channel++ {
+			offset := (frame*channels + channel) * 2
+			total += int(int16(binary.LittleEndian.Uint16(pcm[offset : offset+2])))
+		}
+		samples[frame] = int16(total / channels)
+	}
+	return samples, rate, nil
 }
 
 func findAnyTool(names ...string) (string, error) {
@@ -250,6 +353,10 @@ func resamplePCM(samples []int16, sourceRate, targetRate int) []int16 {
 }
 
 var decoderProtocolPattern = regexp.MustCompile(`(?i)\b(P25|DMR|NXDN|D-?STAR|YSF|POCSAG(?:512|1200|2400)?|FLEX|AFSK1200|MDC1200|DTMF)\b`)
+var decoderSlotPattern = regexp.MustCompile(`(?i)\b(?:slot|timeslot|ts)\s*[:=#-]?\s*([12])\b`)
+var decoderColorCodePattern = regexp.MustCompile(`(?i)\b(?:color\s*code|cc)\s*[:=#-]?\s*(\d{1,2})\b`)
+var decoderTalkgroupPattern = regexp.MustCompile(`(?i)\b(?:tgt|tg|talkgroup)\s*[:=#-]?\s*(\d{1,8})\b`)
+var decoderSourcePattern = regexp.MustCompile(`(?i)\b(?:src|source)\s*[:=#-]?\s*(\d{1,8})\b`)
 
 func parseTextDecoderOutput(decoderID, output string) []DecoderMessage {
 	lines := strings.Split(strings.ReplaceAll(output, "\r", "\n"), "\n")
@@ -263,12 +370,28 @@ func parseTextDecoderOutput(decoderID, output string) []DecoderMessage {
 		if len(line) > 1000 {
 			line = line[:1000]
 		}
-		result = append(result, DecoderMessage{DecoderID: decoderID, Protocol: strings.ToUpper(match), Summary: line,
-			Callsigns: ExtractCallsigns(line), RawText: line, Confidence: .96})
+		message := DecoderMessage{DecoderID: decoderID, Protocol: strings.ToUpper(match), Summary: line,
+			Callsigns: ExtractCallsigns(line), RawText: line, Confidence: .96,
+			TimeSlot: decoderInteger(decoderSlotPattern, line), ColorCode: decoderInteger(decoderColorCodePattern, line),
+			Talkgroup: decoderInteger(decoderTalkgroupPattern, line), SourceID: decoderInteger(decoderSourcePattern, line),
+			Encrypted: strings.Contains(strings.ToLower(line), "encrypted") || strings.Contains(strings.ToLower(line), "privacy")}
+		if strings.EqualFold(message.Protocol, "DSTAR") {
+			message.Protocol = "D-STAR"
+		}
+		result = append(result, message)
 		if len(result) >= 25 {
 			break
 		}
 	}
+	return result
+}
+
+func decoderInteger(pattern *regexp.Regexp, value string) int {
+	match := pattern.FindStringSubmatch(value)
+	if len(match) != 2 {
+		return 0
+	}
+	result, _ := strconv.Atoi(match[1])
 	return result
 }
 

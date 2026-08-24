@@ -19,6 +19,14 @@ type DecoderCandidate struct {
 
 func decoderScanProfiles() []ScanProfile {
 	profiles := []ScanProfile{
+		decoderRangeProfile("decoder-dmr", "DMR Conventional", "DMR Tier I/II channels with two-slot voice and metadata decoding", "DMR", "dmr",
+			decoderRange("VHF DMR 136–155", 136e6, 155e6, 12_500, "dmr", "dmr"),
+			decoderRange("VHF DMR 155–174", 155e6, 174e6, 12_500, "dmr", "dmr"),
+			decoderRange("UHF DMR 400–420", 400e6, 420e6, 12_500, "dmr", "dmr"),
+			decoderRange("UHF DMR 420–440", 420e6, 440e6, 12_500, "dmr", "dmr"),
+			decoderRange("UHF DMR 440–460", 440e6, 460e6, 12_500, "dmr", "dmr"),
+			decoderRange("UHF DMR 460–480", 460e6, 480e6, 12_500, "dmr", "dmr"),
+			decoderRange("900 MHz DMR 935–941", 935e6, 941e6, 12_500, "dmr", "dmr")),
 		decoderRangeProfile("decoder-dsd-fme", "Digital Voice Discovery", "Conventional digital voice candidates for DSD-FME", "DSD-FME", "dsd-fme",
 			decoderRange("VHF digital voice 136–155", 136e6, 155e6, 12_500, "nfm", "dsd-fme"),
 			decoderRange("VHF digital voice 155–174", 155e6, 174e6, 12_500, "nfm", "dsd-fme"),
@@ -70,14 +78,21 @@ func decoderChannel(name string, mhz, bandwidth float64, mode, decoder string) C
 
 func decoderRange(name string, startHz, endHz, stepHz float64, mode, decoder string) ScanRange {
 	return ScanRange{ID: NewID(), Name: name, StartHz: startHz, EndHz: endHz, StepHz: stepHz,
-		DwellMilliseconds: 300, PreferredMode: mode, Decoder: ptr(decoder), Enabled: true}
+		DwellMilliseconds: decoderDwellMilliseconds(decoder), PreferredMode: mode, Decoder: ptr(decoder), Enabled: true}
+}
+
+func decoderDwellMilliseconds(decoder string) int {
+	if canonicalDecoderID(decoder) == "dsd-fme" {
+		return 2500
+	}
+	return 300
 }
 
 func decoderCandidate(frequencyHz float64, explicitDecoder string) (DecoderCandidate, bool) {
-	explicitDecoder = canonicalDecoderID(explicitDecoder)
+	requestedDecoder := strings.ToLower(strings.TrimSpace(explicitDecoder))
 	MHz := frequencyHz / 1e6
-	if explicitDecoder != "" {
-		return candidateForDecoder(explicitDecoder, MHz, true), true
+	if requestedDecoder != "" {
+		return candidateForDecoder(requestedDecoder, MHz, true), true
 	}
 	switch {
 	case nearMHz(MHz, 1090, 1):
@@ -95,8 +110,12 @@ func decoderCandidate(frequencyHz float64, explicitDecoder string) (DecoderCandi
 }
 
 func candidateForDecoder(decoder string, MHz float64, exact bool) DecoderCandidate {
+	requested := strings.ToLower(strings.TrimSpace(decoder))
 	switch canonicalDecoderID(decoder) {
 	case "dsd-fme":
+		if protocol := digitalVoiceProtocol(requested); protocol != "" && protocol != "Digital voice" {
+			return DecoderCandidate{DecoderID: requested, Protocol: protocol + " candidate", Label: protocol + " activity", Mode: "DIGITAL", Reason: "RF activity assigned to the " + protocol + " decoder", Exact: exact}
+		}
 		return DecoderCandidate{DecoderID: "dsd-fme", Protocol: "Digital voice candidate", Label: "Digital voice activity", Mode: "DIGITAL", Reason: "RF activity in a configured DSD-FME scan target", Exact: exact}
 	case "rtl-433":
 		return DecoderCandidate{DecoderID: "rtl-433", Protocol: "ISM sensor candidate", Label: "ISM sensor activity", Mode: "DIGITAL", Reason: "RF activity near a common rtl_433 center frequency", Exact: exact}
@@ -129,6 +148,76 @@ func canonicalDecoderID(value string) string {
 		return "dsd-fme"
 	}
 	return value
+}
+
+func digitalVoiceProtocol(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "dmr":
+		return "DMR"
+	case "p25", "p25 phase 1", "p25 phase 2":
+		return "P25"
+	case "nxdn", "nxdn48", "nxdn96":
+		return "NXDN"
+	case "d-star", "dstar":
+		return "D-STAR"
+	case "ysf":
+		return "YSF"
+	case "m17":
+		return "M17"
+	case "digital", "dsd-fme", "auto-digital":
+		return "Digital voice"
+	}
+	return ""
+}
+
+func decoderForMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "p25" || mode == "p25 phase 1" || mode == "p25 phase 2" {
+		return "dsd-fme"
+	}
+	if digitalVoiceProtocol(mode) != "" {
+		return mode
+	}
+	switch mode {
+	case "adsb", "ads-b", "mode-s", "mode s":
+		return "dump1090"
+	case "rtl-433", "sensors":
+		return "rtl-433"
+	case "pocsag", "flex", "signaling":
+		return "multimon-ng"
+	case "acars":
+		return "acarsdec"
+	case "ais":
+		return "ais"
+	}
+	return ""
+}
+
+func demodulationModeForDecoder(mode, decoder string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if canonicalDecoderID(decoder) == "dsd-fme" || digitalVoiceProtocol(mode) != "" {
+		return "nfm"
+	}
+	if mode == "acars" {
+		return "am"
+	}
+	if mode == "auto" || mode == "" || mode == "am" || mode == "nfm" || mode == "wfm" || mode == "fm" {
+		return mode
+	}
+	return "nfm"
+}
+
+func decoderBandwidthHz(decoder string, fallback float64) float64 {
+	switch canonicalDecoderID(decoder) {
+	case "dump1090":
+		return 2_000_000
+	case "rtl-433":
+		return math.Max(fallback, 250_000)
+	case "ais", "acarsdec":
+		return math.Max(fallback, 25_000)
+	default:
+		return math.Max(fallback, 12_500)
+	}
 }
 
 func nearMHz(value, target, tolerance float64) bool { return math.Abs(value-target) <= tolerance }

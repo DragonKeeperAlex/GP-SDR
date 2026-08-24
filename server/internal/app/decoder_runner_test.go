@@ -16,6 +16,37 @@ func TestParseTextDecoderOutputRequiresARealProtocolLine(t *testing.T) {
 	}
 }
 
+func TestParseDMRMetadata(t *testing.T) {
+	messages := parseTextDecoderOutput("dsd-fme", "2026-08-24 DMR Voice Slot 2 CC: 7 TGT: 1949001 SRC: 50\n")
+	if len(messages) != 1 {
+		t.Fatalf("expected one DMR message, got %#v", messages)
+	}
+	message := messages[0]
+	if message.Protocol != "DMR" || message.TimeSlot != 2 || message.ColorCode != 7 || message.Talkgroup != 1949001 || message.SourceID != 50 {
+		t.Fatalf("unexpected DMR metadata: %#v", message)
+	}
+}
+
+func TestDSDModeFlags(t *testing.T) {
+	for mode, expected := range map[string]string{"dmr": "-fs", "p25": "-ft", "p25 phase 1": "-f1", "nxdn48": "-fi", "nxdn": "-fn", "d-star": "-fd", "ysf": "-fy", "m17": "-fz", "digital": "-fa"} {
+		if actual := dsdModeFlag(mode); actual != expected {
+			t.Fatalf("%s: expected %s, got %s", mode, expected, actual)
+		}
+	}
+}
+
+func TestReadPCM16WAV(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "voice.wav")
+	original := []int16{100, -200, 300, -400}
+	if err := WriteMonoWAV(path, original, 8_000); err != nil {
+		t.Fatal(err)
+	}
+	decoded, rate, err := readPCM16WAV(path)
+	if err != nil || rate != 8_000 || len(decoded) != len(original) {
+		t.Fatalf("unexpected WAV result: rate=%d samples=%d err=%v", rate, len(decoded), err)
+	}
+}
+
 func TestInstalledOptionalDecoderBridgesSmoke(t *testing.T) {
 	if os.Getenv("GPSDR_DECODER_SMOKE") != "1" {
 		t.Skip("set GPSDR_DECODER_SMOKE=1 to exercise installed external decoders")
@@ -26,7 +57,7 @@ func TestInstalledOptionalDecoderBridgesSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	audio := make([]int16, 24_000)
-	for _, decoderID := range []string{"rtl-433", "dump1090", "acarsdec", "ais"} {
+	for _, decoderID := range []string{"dmr", "rtl-433", "dump1090", "multimon-ng", "acarsdec", "ais"} {
 		_, err := runCandidateDecoder(context.Background(), decoderID, audio, 48_000, iqPath, 1090e6,
 			CaptureSpec{CenterFrequencyHz: 1090125000, SampleRateHz: 1_000_000})
 		if err != nil && (strings.Contains(strings.ToLower(err.Error()), "not installed") || strings.Contains(strings.ToLower(err.Error()), "not implemented")) {

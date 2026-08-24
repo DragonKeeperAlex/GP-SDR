@@ -33,6 +33,7 @@ encryption and marks or excludes encrypted calls.
 | [HackRF host software](https://github.com/greatscottgadgets/hackrf) | Analog IQ discovery and capture through `hackrf_info` and `hackrf_transfer` | GPL-2.0 | No |
 | [rtl-sdr](https://github.com/osmocom/rtl-sdr) | Analog IQ discovery and capture through `rtl_test`, `rtl_eeprom`, and `rtl_sdr` | GPL-2.0 | No |
 | [RadioReference](https://www.radioreference.com/) | Authorized subscriber location/range searches and selected imports | RadioReference account, subscription, API-key, and service terms | No code or database content |
+| [DSD-FME](https://github.com/lwvmobile/dsd-fme) by lwvmobile and contributors | Conventional DMR/P25/NXDN/D-STAR/YSF/M17 frame metadata and unencrypted voice through a separate executable | GPL-3.0 | Installed by the macOS decoder-suite action; not copied into the repository |
 
 Optional independent decoders detected by GP-SDR include DSD-FME, rtl_433,
 dump1090, multimon-ng, acarsdec, and AIS-catcher. Each remains under its

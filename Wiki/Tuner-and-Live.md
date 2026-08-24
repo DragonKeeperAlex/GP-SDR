@@ -74,3 +74,15 @@ The top bar controls whole-app mute and volume. Live and decoder mixers add
 per-channel or per-talkgroup mute, solo, volume, pan, and priority ducking.
 If spectrum activity is present but audio is silent, check master mute, the
 selected row, solo state, squelch, mode, output device, and P25 JMBE status.
+
+## Digital modes
+
+The **Mode / decoder** control on Tuner and **Mode** on Live include DMR,
+conventional P25, NXDN, D-STAR, YSF, M17, POCSAG/FLEX, and ACARS. Digital voice
+uses a 12.5 kHz channel by default. GP-SDR sends discriminator audio to the
+installed decoder and returns decoded unencrypted speech through the app audio
+controls. A valid decoder frame, rather than RF energy alone, is required before
+Activity identifies a protocol.
+
+P25 trunk following remains in the dedicated P25/SDRTrunk workspace. The Tuner
+P25 choice is for conventional single-frequency experiments.

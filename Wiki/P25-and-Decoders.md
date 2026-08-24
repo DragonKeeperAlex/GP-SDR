@@ -66,6 +66,15 @@ Decoders pages show whether each executable is bundled, installed, optional, or
 missing, with Install/How-to actions where available. A frequency matching a
 known decoder target is only a candidate until valid output is received.
 
+### DMR
+
+Choose **DMR** in Tuner for one known channel, or open **Decoders → DSD-FME →
+New configuration** to create a reusable channel bank or scan range. Profiles
+allow the mode and decoder to be selected for each channel and range. When
+DSD-FME reports them, GP-SDR records the time slot, color code, talkgroup,
+source radio ID, and encrypted state. Both DMR time slots are enabled. Encrypted
+calls remain identified but are not decrypted.
+
 ## Transcription
 
 Optional whisper.cpp transcription runs locally. Install the executable and

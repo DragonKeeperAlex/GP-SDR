@@ -5,6 +5,14 @@ Each physical receiver may own one independent job, so two SDRs can scan
 different ranges, split a large survey, or run Discovery and Identify at the
 same time.
 
+All three workflow buttons—**Map**, **Discovery**, and **Identify**—remain
+visible in Beginner and Advanced modes. **Decoder** defaults to automatic:
+frequency-specific tools are used where applicable and digital-looking captures
+are offered to DSD-FME. A job can instead force DMR, another DSD-FME protocol,
+rtl_433, dump1090, multimon-ng, acarsdec, or AIS-catcher. For DMR, use about
+2.5 seconds or more per channel when practical so a burst has enough audio to
+produce a valid frame.
+
 ## Map
 
 Map is the beginner/default workflow. It repeats a start/end range until

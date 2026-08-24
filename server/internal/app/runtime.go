@@ -411,8 +411,18 @@ func (r *Runtime) Tune(request TunerRequest) error {
 	if request.Mode == "fm" {
 		request.Mode = "wfm"
 	}
-	if request.Mode != "auto" && request.Mode != "am" && request.Mode != "nfm" && request.Mode != "wfm" {
-		return errors.New("Tuner mode must be Auto, AM, NFM, or WFM.")
+	validModes := map[string]bool{"auto": true, "am": true, "nfm": true, "wfm": true, "digital": true, "p25": true,
+		"dmr": true, "nxdn": true, "nxdn48": true, "nxdn96": true, "d-star": true, "ysf": true, "m17": true,
+		"ads-b": true, "rtl-433": true, "pocsag": true, "acars": true, "ais": true}
+	if !validModes[request.Mode] {
+		return errors.New("Choose a supported analog or decoder mode.")
+	}
+	request.Decoder = strings.ToLower(strings.TrimSpace(request.Decoder))
+	if request.Decoder == "" {
+		request.Decoder = decoderForMode(request.Mode)
+	}
+	if request.Decoder != "" && !r.decoderReady(request.Decoder) {
+		return fmt.Errorf("%s decoder is not ready; open Decoders or Hardware to install it", strings.ToUpper(request.Mode))
 	}
 	if !isFinitePositive(request.FrequencyHz) {
 		return errors.New("Enter a valid positive tuner frequency.")
@@ -480,7 +490,7 @@ func (r *Runtime) Tune(request TunerRequest) error {
 	}
 	profile := ScanProfile{SchemaVersion: 1, ID: "quick-tune", Name: "Quick Tune", Summary: "Direct receiver tuning",
 		Channels: []ChannelDefinition{{ID: "quick-tune-channel", Name: "Tuned audio", FrequencyHz: request.FrequencyHz,
-			BandwidthHz: request.BandwidthHz, Mode: request.Mode, Enabled: true, Priority: 10}},
+			BandwidthHz: request.BandwidthHz, Mode: request.Mode, Decoder: optionalString(request.Decoder), Enabled: true, Priority: 10}},
 		Ranges: []ScanRange{}, DeviceAssignments: []DeviceAssignment{assignment}, P25Systems: []P25SystemConfig{},
 		Settings: SurveySettings{NoiseMarginDB: 6}}
 	return r.startProfile(profile, &request)
@@ -755,13 +765,23 @@ func (r *Runtime) trySoftwareTune(request TunerRequest) (bool, error) {
 		r.active.Channels[0].FrequencyHz = request.FrequencyHz
 		r.active.Channels[0].BandwidthHz = request.BandwidthHz
 		r.active.Channels[0].Mode = request.Mode
+		r.active.Channels[0].Decoder = optionalString(request.Decoder)
 	}
 	if len(r.mixer) > 0 {
 		r.mixer[0].Channel.FrequencyHz = request.FrequencyHz
 		r.mixer[0].Channel.BandwidthHz = request.BandwidthHz
 		r.mixer[0].Channel.Mode = request.Mode
+		r.mixer[0].Channel.Decoder = optionalString(request.Decoder)
 	}
 	return true, nil
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func sameTunerHardware(active, next TunerRequest) bool {

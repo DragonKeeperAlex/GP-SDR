@@ -88,6 +88,8 @@
           <div class="panel-head"><div><h2>Receiver controls</h2><span id="audio-state">Ready</span></div><div class="signal-state"><i id="live-signal-light"></i><span id="live-signal-text">No signal</span></div><button id="audio-monitor" title="Enable or resume receiver audio">Audio</button><button id="live-apply-radio" class="primary" title="Controls apply automatically; click to retry now">Applied</button></div>
           <div class="receiver-control-grid">
             <label>Receiver<select id="live-radio-device" title="Receiver to control"></select></label>
+			<label>Mode<select id="live-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></select></label>
+			<label>Bandwidth · kHz<input id="live-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Channel bandwidth; digital voice normally uses 12.5 kHz"></label>
             <label>LNA · dB<select id="live-lna" title="HackRF RF LNA gain"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
             <label>VGA · dB<input id="live-vga" type="number" min="0" max="62" step="2" value="20" title="HackRF baseband VGA gain"></label>
             <label>PPM<input id="live-ppm" type="number" min="-200" max="200" value="0" title="Frequency correction"></label>
@@ -144,7 +146,7 @@
               <label>Recent frequencies<select id="tuner-history" title="Return to a recently tuned frequency"><option value="">No recent frequencies</option></select></label>
               <label class="check-line"><input id="tuner-lock-center" type="checkbox"> Lock center · software VFO</label>
               <div class="form-grid two">
-                <label>Mode<select id="tuner-mode" title="Automatic uses local IQ analysis to choose AM, NFM, or WFM"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+				<label>Mode / decoder<select id="tuner-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><optgroup label="Digital voice"><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></optgroup><optgroup label="Data and signaling"><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></optgroup></select></label>
                 <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Audio channel bandwidth"></label>
               </div>
               <div class="form-grid two">
@@ -230,8 +232,8 @@
               <legend>Workflow</legend>
               <div role="radiogroup" aria-label="Mapper workflow">
                 <label title="Sweep, classify, decode, and transcribe in one repeating operation"><input type="radio" name="mapper-workflow" value="adaptive" checked><span>Map</span></label>
-                <label class="advanced-only" title="Sweep a range and collect activity without the deeper analysis stages"><input type="radio" name="mapper-workflow" value="discovery"><span>Discovery</span></label>
-                <label class="advanced-only" title="Revisit frequencies already found by Mapper"><input type="radio" name="mapper-workflow" value="decipher"><span>Identify</span></label>
+				<label title="Sweep a range and collect activity without the deeper analysis stages"><input type="radio" name="mapper-workflow" value="discovery"><span>Discovery</span></label>
+				<label title="Revisit frequencies already found by Mapper"><input type="radio" name="mapper-workflow" value="decipher"><span>Identify</span></label>
               </div>
             </fieldset>
             <label><span id="mapper-start-caption">Start · MHz</span><input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
@@ -254,7 +256,8 @@
             <label class="mapper-identify-control hidden">Last active<select id="mapper-identify-age"><option value="0">Any time</option><option value="1">Past hour</option><option value="6">Past 6 hours</option><option value="24">Past day</option><option value="168" selected>Past week</option><option value="720">Past 30 days</option></select></label>
             <label class="mapper-identify-control hidden">Maximum channels<select id="mapper-identify-limit"><option value="0">All matching</option><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="250">250</option></select></label>
             <label class="mapper-identify-control hidden">Channel order<select id="mapper-identify-order"><option value="hits" selected>Most hits first</option><option value="recent">Most recent first</option><option value="occupancy">Highest success rate</option><option value="oldest">Least recently heard</option><option value="frequency">Frequency</option></select></label>
-            <label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option></select></label>
+			<label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></select></label>
+			<label>Decoder<select id="mapper-decoder" title="Auto routes digital-looking captures to installed decoders; choose one to force that decoder for every hit"><option value="auto">Auto · all available</option><option value="dmr">DMR · DSD-FME</option><option value="dsd-fme">Digital voice · DSD-FME</option><option value="nxdn">NXDN · DSD-FME</option><option value="d-star">D-STAR · DSD-FME</option><option value="ysf">YSF · DSD-FME</option><option value="m17">M17 · DSD-FME</option><option value="rtl-433">rtl_433 sensors</option><option value="dump1090">ADS-B / Mode S</option><option value="multimon-ng">POCSAG / FLEX</option><option value="acarsdec">ACARS</option><option value="ais">AIS</option></select></label>
             <label id="mapper-transcribe-wrap" class="check-line hidden"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
             <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
             <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>

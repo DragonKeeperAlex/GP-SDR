@@ -28,8 +28,8 @@ browser and is designed for phones and tablets.
   systems, and frequencies; configurable recording/IQ retention
 - Independent Mapper jobs per receiver: the default Map workflow combines
   discovery, local classification, available decoders, and transcription in a
-  repeating range pass; Advanced mode retains separate Discovery and Identify
-  workflows. Each job has live frequency/progress/ETA, 0.1-second-to-7-day
+	  repeating range pass; Map, Discovery, and Identify remain directly available
+	  in both interface modes. Each job has live frequency/progress/ETA, 0.1-second-to-7-day
   per-channel observation, and
   receiver/job provenance in the combined result table and CSV export. Nearby
   targets share one IQ capture with a configurable 1–32 software-VFO limit
@@ -45,6 +45,12 @@ browser and is designed for phones and tablets.
 - Mapper channelizes wide captures before archiving IQ, waits for local
   classification, decoding, and enabled transcription, then retains useful
   evidence or places rejected IQ in a short-lived recoverable quarantine
+- DMR and conventional digital voice can be selected directly in Tuner, Live,
+  custom channel/range profiles, decoder workspaces, and Mapper. DSD-FME output
+  is normalized into protocol, slot, color code, talkgroup, source, encryption,
+  and decoded-audio events when those fields are present
+- Every Mapper job can use automatic decoder routing or force DSD-FME/DMR,
+  rtl_433, dump1090, multimon-ng, acarsdec, or AIS-catcher for its targets
 - Parallel receiver and antenna characterization across full nominal, antenna,
   or custom ranges with live frequency, ETA, response/noise plots, overload
   detection, saved-calibration/manual-gain modes, recommendations, and CSV export
@@ -280,7 +286,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.2.0.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.2.2.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

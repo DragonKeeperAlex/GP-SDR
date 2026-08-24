@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.2.1"
+var Version = "1.2.2"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -315,6 +315,7 @@ type TunerRequest struct {
 	DeviceID         string  `json:"deviceID"`
 	FrequencyHz      float64 `json:"frequencyHz"`
 	Mode             string  `json:"mode"`
+	Decoder          string  `json:"decoder,omitempty"`
 	BandwidthHz      float64 `json:"bandwidthHz"`
 	SampleRateHz     int     `json:"sampleRateHz"`
 	GainDB           float64 `json:"gainDB"`
