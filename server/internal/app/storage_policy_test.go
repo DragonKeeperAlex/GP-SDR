@@ -57,3 +57,30 @@ func TestStoragePolicyRoundTripAndValidation(t *testing.T) {
 		t.Fatal("negative retention should be rejected")
 	}
 }
+
+func TestRejectedIQExpiresBeforeRetainedEvidence(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.Local)
+	for _, relative := range []string{"IQ/Quarantine/2026-08-22/rejected.cu8", "IQ/Retained/2026-08-22/useful.cu8", "IQ/Pending/2026-08-23/analyzing.cu8"} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("evidence"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		modified := now.Add(-25 * time.Hour)
+		if err := os.Chtimes(path, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := enforceQuarantinePolicy(root, StoragePolicy{AutoRemoveQuarantine: true, QuarantineRetentionHours: 24}, now)
+	if result.FilesRemoved != 1 {
+		t.Fatalf("expected one rejected IQ file removed, got %+v", result)
+	}
+	for _, relative := range []string{"IQ/Retained/2026-08-22/useful.cu8", "IQ/Pending/2026-08-23/analyzing.cu8"} {
+		if _, err := os.Stat(filepath.Join(root, relative)); err != nil {
+			t.Fatalf("protected IQ evidence was removed: %s", relative)
+		}
+	}
+}

@@ -32,6 +32,7 @@ type mapperRunContext struct {
 	SessionID      uint64
 	Config         MapperConfig
 	Identification mapperIdentification
+	Tuning         *mapperAdaptiveTuning
 }
 
 func surveyTargets(profile ScanProfile) []surveyTarget {
@@ -485,7 +486,8 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 		return
 	}
 	sessionID := r.mapper.BeginJobSession(job.ID, len(targets), len(batches))
-	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: 6, RecordAudio: config.Mode == "decipher", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
+	tuning := newMapperAdaptiveTuning(device, config)
+	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: config.NoiseMarginDB, RecordAudio: config.Mode == "decipher" || config.Mode == "adaptive", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
 	for {
 		targetIndex := 0
 		for batchIndex, batch := range batches {
@@ -500,6 +502,13 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 				listenFor = time.Duration(config.DecipherListenSeconds) * time.Second
 				for index := range batch.Targets {
 					batch.Targets[index].Dwell = minDuration(listenFor, 15*time.Second)
+				}
+			} else if config.Mode == "adaptive" {
+				listenFor = time.Duration(config.DwellMilliseconds) * time.Millisecond
+				for index := range batch.Targets {
+					// Long observation windows are processed in bounded pieces so a
+					// one-week channel watch never allocates a week of IQ in memory.
+					batch.Targets[index].Dwell = minDuration(listenFor, 5*time.Second)
 				}
 			}
 			frequencies := make([]float64, 0, len(batch.Targets))
@@ -535,7 +544,7 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 							r.mapper.SetIdentificationEvidence(target.FrequencyHz, identity.Source, identity.Confidence, identity.Verified, identity.Reason, identity.DistanceMiles)
 						}
 					}
-				} else if !r.processSurveyBatch(handle.stop, profile, device, batch, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config}) {
+				} else if !r.processSurveyBatch(handle.stop, profile, device, batch, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config, Tuning: tuning}) {
 					r.finishMapperJob(job.ID, handle, sessionID, nil)
 					return
 				}
@@ -583,6 +592,9 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 		r.setRuntimeError("Mapper channels do not fit inside the selected receiver bandwidth")
 		return true
 	}
+	if mapperRun != nil && mapperRun.Tuning != nil {
+		spec = mapperRun.Tuning.apply(spec)
+	}
 	duration := time.Duration(0)
 	for _, target := range batch.Targets {
 		if target.Dwell > duration {
@@ -601,6 +613,10 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 		return true
 	}
 	format = DetectSampleFormat(data, format)
+	if mapperRun != nil && mapperRun.Tuning != nil && r.mapper != nil {
+		status := mapperRun.Tuning.observe(data, format)
+		r.mapper.UpdateJobTuning(mapperRun.JobID, mapperRun.SessionID, status)
+	}
 	// DC removal is the safe scan default, even before a receiver-specific
 	// calibration has been saved. It suppresses the HackRF/RTL center spur.
 	removeDC, iqGain, iqPhase, iqSwap := true, 1.0, 0.0, false
@@ -643,7 +659,12 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		return true
 	}
 	margin := profile.Settings.NoiseMarginDB
-	if margin < 6 {
+	if mapperRun != nil {
+		margin = mapperDetectionMargin(mapperRun.Config, level, analysis)
+		if mapperRun.Tuning != nil && r.mapper != nil {
+			r.mapper.UpdateJobTuning(mapperRun.JobID, mapperRun.SessionID, mapperRun.Tuning.setNoiseMargin(margin))
+		}
+	} else if margin < 6 {
 		margin = 6
 	}
 	snr := level.SignalDB - level.NoiseDB
@@ -739,26 +760,75 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		}
 	}
 	unknownProtocol := protocol == nil || strings.Contains(strings.ToLower(stringValue(protocol)), "candidate") || analysis.Modulation == "UNKNOWN"
+	evidenceSpec := spec
 	if profile.Settings.RecordIQForUnknown && unknownProtocol && len(data) > 0 {
 		maximumBytes := spec.SampleRateHz * 2 * 2 // at most two seconds of interleaved 8-bit IQ
 		if maximumBytes > len(data) {
 			maximumBytes = len(data)
 		}
-		if path, writeErr := writeIQEvidence(r.dataDirectory, target.FrequencyHz, spec, format, data[:maximumBytes]); writeErr == nil {
+		originalRate, originalBytes := spec.SampleRateHz, maximumBytes
+		compacted, compactedSpec, compactedFormat := compactIQEvidence(data[:maximumBytes], format, spec, target.FrequencyHz, target.BandwidthHz)
+		evidenceSpec = compactedSpec
+		if path, writeErr := writeIQEvidence(r.dataDirectory, target.FrequencyHz, compactedSpec, compactedFormat, compacted); writeErr == nil {
 			event.IQPath = &path
+			_ = setIQCaptureOrigin(path, originalRate, originalBytes)
 		}
 	}
 	if err := r.Events.Append(event); err != nil {
 		r.setRuntimeError(err.Error())
 		return true
 	}
-	if hasCandidate && r.decoderReady(candidate.DecoderID) {
+	if mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {
+		go r.deepAnalyzeMapperEvent(stop, event, candidate, hasCandidate && r.decoderReady(candidate.DecoderID), result.Audio, result.AudioRateHz, evidenceSpec, profile.Settings.TranscribeVoice)
+	} else if hasCandidate && r.decoderReady(candidate.DecoderID) {
 		go r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, spec)
 	}
-	if profile.Settings.TranscribeVoice && event.AudioPath != nil {
+	if !(mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil) && profile.Settings.TranscribeVoice && event.AudioPath != nil {
 		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
 	}
 	return true
+}
+
+func (r *Runtime) deepAnalyzeMapperEvent(stop <-chan struct{}, event TransmissionEvent, candidate DecoderCandidate, decode bool, audio []int16, audioRate int, spec CaptureSpec, transcribe bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	if decode {
+		messages, _ := runCandidateDecoder(ctx, candidate.DecoderID, audio, audioRate, stringValue(event.IQPath), event.FrequencyHz, spec)
+		if len(messages) > 0 {
+			_ = r.Events.UpdateDecoderMessages(event.ID, messages)
+			if r.mapper != nil {
+				r.mapper.SetDecodedMessages(event.FrequencyHz, candidate.DecoderID, messages)
+			}
+		}
+	}
+	if transcribe && event.AudioPath != nil && ctx.Err() == nil {
+		if transcript, err := r.transcriber.Transcribe(ctx, *event.AudioPath); err == nil && strings.TrimSpace(transcript) != "" {
+			_ = r.Events.UpdateTranscript(event.ID, transcript)
+			if r.mapper != nil {
+				r.mapper.SetTranscript(event.FrequencyHz, transcript)
+			}
+		}
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	updated, ok := r.Events.Get(event.ID)
+	if !ok || updated.IQPath == nil {
+		return
+	}
+	newPath, _, err := finalizeIQEvidence(*updated.IQPath, updated)
+	if err != nil {
+		r.setRuntimeError("IQ evidence analysis: " + err.Error())
+		return
+	}
+	_ = r.Events.UpdateIQPath(event.ID, newPath)
 }
 
 func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, decoderID string, audio []int16, audioRate int, spec CaptureSpec) {

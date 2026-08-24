@@ -1,9 +1,36 @@
-# Mapper: Discovery and Identify
+# Mapper: Map, Discovery, and Identify
 
 Mapper runs unattended receiver jobs and keeps RF evidence for later review.
 Each physical receiver may own one independent job, so two SDRs can scan
 different ranges, split a large survey, or run Discovery and Identify at the
 same time.
+
+## Map
+
+Map is the beginner/default workflow. It repeats a start/end range until
+stopped and performs discovery, local waveform classification, available
+protocol decoding, and enabled offline transcription during the same job.
+Time per channel is adjustable from 0.1 seconds through 7 days. Longer values
+are processed as bounded captures, so Stop remains responsive and the app never
+allocates a multi-hour IQ buffer.
+
+Receiver gain, sensitivity, and the HackRF RF amplifier default to **Auto**.
+HackRF has no native RF AGC, so GP-SDR adjusts LNA/VGA and the amplifier between
+captures. The amplifier is enabled only after repeated weak captures and is the
+first stage removed when clipping or overload appears. The job card displays
+the actual selected values and most recent decision. Advanced mode exposes
+saved-calibration and manual controls.
+
+## Managed IQ evidence
+
+Mapper no longer archives every narrowband observation at the full wideband
+HackRF rate. It shifts the detected channel to baseband and stores only the rate
+needed for later local analysis and decoders. Evidence stays in **Analyzing**
+until classification, available decoding, and enabled transcription finish.
+Useful evidence moves to **Retained**. Low-value evidence moves to a recoverable
+**Rejected** quarantine, which is removed automatically after 24 hours by
+default. The recovery period is adjustable from one hour to seven days in
+Settings. Pending and retained evidence are not part of that short cleanup.
 
 ## Discovery
 

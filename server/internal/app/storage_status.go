@@ -20,11 +20,15 @@ func (r *Runtime) refreshStorageStatus() {
 	pruning := r.storagePruning
 	r.mu.Unlock()
 	go func() {
-		if policy.AutoCleanup && !pruning && (lastCleanup.CompletedAt.IsZero() || time.Since(lastCleanup.CompletedAt) >= 15*time.Minute) {
+		if (policy.AutoCleanup || policy.AutoRemoveQuarantine) && !pruning && (lastCleanup.CompletedAt.IsZero() || time.Since(lastCleanup.CompletedAt) >= 15*time.Minute) {
 			r.mu.Lock()
 			r.storagePruning = true
 			r.mu.Unlock()
-			lastCleanup = enforceStoragePolicy(directory, policy, time.Now())
+			if policy.AutoCleanup {
+				lastCleanup = enforceStoragePolicy(directory, policy, time.Now())
+			} else {
+				lastCleanup = enforceQuarantinePolicy(directory, policy, time.Now())
+			}
 			r.mu.Lock()
 			r.storageCleanup = lastCleanup
 			r.storagePruning = false
@@ -95,6 +99,9 @@ func calculateStorageStatus(dataDirectory string) StorageStatus {
 	status.JournalBytes = directoryBytes(filepath.Join(dataDirectory, "Data"))
 	status.RecordingBytes = directoryBytes(filepath.Join(dataDirectory, "Recordings"))
 	status.IQBytes = directoryBytes(filepath.Join(dataDirectory, "IQ"))
+	status.IQPendingBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Pending"))
+	status.IQRetainedBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Retained"))
+	status.IQQuarantineBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Quarantine"))
 	status.ProfileBytes = directoryBytes(filepath.Join(dataDirectory, "Profiles"))
 	status.TotalBytes = status.JournalBytes + status.RecordingBytes + status.IQBytes + status.ProfileBytes
 	return status

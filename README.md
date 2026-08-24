@@ -26,9 +26,11 @@ browser and is designed for phones and tablets.
 - Unattended activity logging, signal grouping, recordings, and later review
 - Indexed Timeline search across transcripts, callsigns, protocols, labels,
   systems, and frequencies; configurable recording/IQ retention
-- Independent Mapper jobs per receiver: split ranges across SDRs, run parallel
-  Discovery sweeps, or run Discovery and Identify simultaneously. Each job has
-  live frequency/progress/ETA, 5-second-to-7-day per-channel listening, and
+- Independent Mapper jobs per receiver: the default Map workflow combines
+  discovery, local classification, available decoders, and transcription in a
+  repeating range pass; Advanced mode retains separate Discovery and Identify
+  workflows. Each job has live frequency/progress/ETA, 0.1-second-to-7-day
+  per-channel observation, and
   receiver/job provenance in the combined result table and CSV export. Nearby
   targets share one IQ capture with a configurable 1–32 software-VFO limit
 - Mapper shows the current workflow, receiver, batch, every software VFO being
@@ -36,6 +38,13 @@ browser and is designed for phones and tablets.
   searched across decoded evidence, filtered to repeated activity, and sorted.
   Identify eligibility can require a chosen hit count, 10–100% successful-check
   rate, recent activity, and a bounded/prioritized channel list
+- Automatic Mapper RF tuning uses RTL-SDR tuner AGC where available and a
+  bounded HackRF controller for LNA, VGA, and the roughly 11 dB RF amplifier.
+  Current gain, clipping, threshold, and overload decisions remain visible;
+  manual and saved-calibration controls are available in Advanced mode
+- Mapper channelizes wide captures before archiving IQ, waits for local
+  classification, decoding, and enabled transcription, then retains useful
+  evidence or places rejected IQ in a short-lived recoverable quarantine
 - Parallel receiver and antenna characterization across full nominal, antenna,
   or custom ranges with live frequency, ETA, response/noise plots, overload
   detection, saved-calibration/manual-gain modes, recommendations, and CSV export

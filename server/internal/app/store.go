@@ -470,6 +470,18 @@ func (s *EventStore) UpdateAudioPath(id, path string) error {
 	return ErrNotFound
 }
 
+func (s *EventStore) UpdateIQPath(id, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.events {
+		if s.events[index].ID == id {
+			s.events[index].IQPath = ptr(path)
+			return writeEventFile(s.path, s.events)
+		}
+	}
+	return ErrNotFound
+}
+
 func (s *EventStore) Signals(limit int) []SignalSummary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

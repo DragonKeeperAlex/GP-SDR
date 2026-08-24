@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.2.0"
+var Version = "1.2.1"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -274,15 +274,18 @@ type RuntimeStatus struct {
 }
 
 type StorageStatus struct {
-	JournalBytes   int64                `json:"journalBytes"`
-	RecordingBytes int64                `json:"recordingBytes"`
-	IQBytes        int64                `json:"iqBytes"`
-	ProfileBytes   int64                `json:"profileBytes"`
-	TotalBytes     int64                `json:"totalBytes"`
-	CheckedAt      time.Time            `json:"checkedAt"`
-	Policy         StoragePolicy        `json:"policy"`
-	LastCleanup    StorageCleanupResult `json:"lastCleanup"`
-	CleanupRunning bool                 `json:"cleanupRunning"`
+	JournalBytes      int64                `json:"journalBytes"`
+	RecordingBytes    int64                `json:"recordingBytes"`
+	IQBytes           int64                `json:"iqBytes"`
+	IQPendingBytes    int64                `json:"iqPendingBytes"`
+	IQRetainedBytes   int64                `json:"iqRetainedBytes"`
+	IQQuarantineBytes int64                `json:"iqQuarantineBytes"`
+	ProfileBytes      int64                `json:"profileBytes"`
+	TotalBytes        int64                `json:"totalBytes"`
+	CheckedAt         time.Time            `json:"checkedAt"`
+	Policy            StoragePolicy        `json:"policy"`
+	LastCleanup       StorageCleanupResult `json:"lastCleanup"`
+	CleanupRunning    bool                 `json:"cleanupRunning"`
 }
 
 type HealthNotice struct {

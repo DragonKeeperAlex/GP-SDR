@@ -53,8 +53,17 @@ activity, mute, solo, volume, and log state for every channel.
 Mapper uses the same one-capture/many-software-VFO design. It groups only
 targets that fit within 84% of the selected sample rate, keeps them away from
 the receiver's DC center when possible, and bounds DSP fan-out to the job's
-1–32 channel limit. Discovery defaults to 16 channels and Identify defaults to
-4; neither setting opens another hardware stream.
+1–32 channel limit. Map and Discovery default to 16 channels and Identify
+defaults to 4; neither setting opens another hardware stream. Map owns a
+per-receiver adaptive RF controller. RTL-SDR delegates Auto gain to its tuner;
+HackRF Auto adjusts its discrete LNA/VGA stages and RF amplifier between bounded
+captures using headroom and clipping measurements.
+
+Unknown-signal IQ is channelized and resampled before it enters the evidence
+library. Its sidecar moves through pending-analysis, retained, or quarantined
+states only after local classification, available decoders, and enabled
+transcription complete. Storage caps prune quarantine before retained evidence;
+pending analysis has an additional protection window.
 
 ## Data and trust boundary
 

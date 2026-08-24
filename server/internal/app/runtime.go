@@ -343,6 +343,7 @@ func (r *Runtime) Status() RuntimeStatus {
 		EventCount: r.Events.Count(), WebAddress: r.webAddress, SimulatorEnabled: r.demo, Version: Version,
 		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry,
 		Storage: r.storage, HealthNotices: r.healthNoticesLocked()}
+	status.Storage.Policy = r.storagePolicy
 	for _, d := range r.devices {
 		if d.Connected && d.Kind != "Simulator" {
 			status.ConnectedDeviceCount++

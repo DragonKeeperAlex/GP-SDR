@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,42 @@ func TestWriteIQEvidenceUsesUnsignedExtensionForRTLSDR(t *testing.T) {
 	}
 	if filepath.Ext(path) != ".cu8" {
 		t.Fatalf("unexpected unsigned IQ path: %s", path)
+	}
+}
+
+func TestCompactIQEvidenceReducesWidebandCapture(t *testing.T) {
+	data := make([]byte, 8_000_000*2/10) // 100 ms at 8 MS/s
+	for index := range data {
+		data[index] = byte(index)
+	}
+	spec := CaptureSpec{CenterFrequencyHz: 450_000_000, SampleRateHz: 8_000_000}
+	compacted, resultSpec, format := compactIQEvidence(data, ComplexSigned8, spec, 452_000_000, 12_500)
+	if format != ComplexUnsigned8 || resultSpec.CenterFrequencyHz != 452_000_000 || resultSpec.SampleRateHz != 250_000 {
+		t.Fatalf("unexpected compacted IQ description: format=%s spec=%+v", format, resultSpec)
+	}
+	if len(compacted) >= len(data)/10 {
+		t.Fatalf("expected major evidence reduction, got %d bytes from %d", len(compacted), len(data))
+	}
+}
+
+func TestFinalizeIQEvidenceRetainsUsefulAndQuarantinesJunk(t *testing.T) {
+	root := t.TempDir()
+	usefulPath, err := writeIQEvidence(root, 155_25e4, CaptureSpec{CenterFrequencyHz: 155_25e4, SampleRateHz: 250_000}, ComplexUnsigned8, []byte{1, 2, 3, 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	protocol := "P25"
+	retained, metadata, err := finalizeIQEvidence(usefulPath, TransmissionEvent{ID: "useful", ProtocolName: &protocol})
+	if err != nil || !metadata.Valuable || !strings.Contains(filepath.ToSlash(retained), "/IQ/Retained/") {
+		t.Fatalf("useful evidence was not retained: path=%s metadata=%+v err=%v", retained, metadata, err)
+	}
+	junkPath, err := writeIQEvidence(root, 456e6, CaptureSpec{CenterFrequencyHz: 456e6, SampleRateHz: 250_000}, ComplexUnsigned8, []byte{1, 2, 3, 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quarantined, metadata, err := finalizeIQEvidence(junkPath, TransmissionEvent{ID: "junk", SignalDBFS: -70, NoiseDBFS: -72})
+	if err != nil || metadata.Valuable || !strings.Contains(filepath.ToSlash(quarantined), "/IQ/Quarantine/") {
+		t.Fatalf("junk evidence was not quarantined: path=%s metadata=%+v err=%v", quarantined, metadata, err)
 	}
 }
 

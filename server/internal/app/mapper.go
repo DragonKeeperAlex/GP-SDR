@@ -35,6 +35,13 @@ type MapperConfig struct {
 	DwellMilliseconds        int      `json:"dwellMilliseconds,omitempty"`
 	SampleRateHz             int      `json:"sampleRateHz,omitempty"`
 	ConcurrentChannels       int      `json:"concurrentChannels,omitempty"`
+	GainMode                 string   `json:"gainMode,omitempty"`
+	GainDB                   float64  `json:"gainDB,omitempty"`
+	LNAGainDB                int      `json:"lnaGainDB,omitempty"`
+	VGAGainDB                int      `json:"vgaGainDB,omitempty"`
+	AmpMode                  string   `json:"ampMode,omitempty"`
+	Sensitivity              string   `json:"sensitivity,omitempty"`
+	NoiseMarginDB            float64  `json:"noiseMarginDB,omitempty"`
 	DecipherListenSeconds    int64    `json:"decipherListenSeconds,omitempty"`
 	IdentifyMinimumHits      int      `json:"identifyMinimumHits,omitempty"`
 	IdentifyHitSource        string   `json:"identifyHitSource,omitempty"`
@@ -109,26 +116,42 @@ type MapperStatus struct {
 }
 
 type MapperProgress struct {
-	Running            bool       `json:"running"`
-	Mode               string     `json:"mode,omitempty"`
-	CurrentFrequencyHz float64    `json:"currentFrequencyHz,omitempty"`
-	CurrentFrequencies []float64  `json:"currentFrequenciesHz,omitempty"`
-	CurrentLabel       string     `json:"currentLabel,omitempty"`
-	CurrentIndex       int        `json:"currentIndex"`
-	TotalTargets       int        `json:"totalTargets"`
-	CurrentBatch       int        `json:"currentBatch"`
-	TotalBatches       int        `json:"totalBatches"`
-	MonitoredChannels  int        `json:"monitoredChannels"`
-	ChecksCompleted    int64      `json:"checksCompleted"`
-	PassesCompleted    int        `json:"passesCompleted"`
-	PassStartedAt      *time.Time `json:"passStartedAt,omitempty"`
-	EstimatedPassEndAt *time.Time `json:"estimatedPassEndAt,omitempty"`
-	StartedAt          *time.Time `json:"startedAt,omitempty"`
-	StoppedAt          *time.Time `json:"stoppedAt,omitempty"`
-	TargetStartedAt    *time.Time `json:"targetStartedAt,omitempty"`
-	TargetEndsAt       *time.Time `json:"targetEndsAt,omitempty"`
-	LastCheckAt        *time.Time `json:"lastCheckAt,omitempty"`
-	LastActivityAt     *time.Time `json:"lastActivityAt,omitempty"`
+	Running            bool               `json:"running"`
+	Mode               string             `json:"mode,omitempty"`
+	CurrentFrequencyHz float64            `json:"currentFrequencyHz,omitempty"`
+	CurrentFrequencies []float64          `json:"currentFrequenciesHz,omitempty"`
+	CurrentLabel       string             `json:"currentLabel,omitempty"`
+	CurrentIndex       int                `json:"currentIndex"`
+	TotalTargets       int                `json:"totalTargets"`
+	CurrentBatch       int                `json:"currentBatch"`
+	TotalBatches       int                `json:"totalBatches"`
+	MonitoredChannels  int                `json:"monitoredChannels"`
+	ChecksCompleted    int64              `json:"checksCompleted"`
+	PassesCompleted    int                `json:"passesCompleted"`
+	PassStartedAt      *time.Time         `json:"passStartedAt,omitempty"`
+	EstimatedPassEndAt *time.Time         `json:"estimatedPassEndAt,omitempty"`
+	StartedAt          *time.Time         `json:"startedAt,omitempty"`
+	StoppedAt          *time.Time         `json:"stoppedAt,omitempty"`
+	TargetStartedAt    *time.Time         `json:"targetStartedAt,omitempty"`
+	TargetEndsAt       *time.Time         `json:"targetEndsAt,omitempty"`
+	LastCheckAt        *time.Time         `json:"lastCheckAt,omitempty"`
+	LastActivityAt     *time.Time         `json:"lastActivityAt,omitempty"`
+	Tuning             MapperTuningStatus `json:"tuning"`
+}
+
+// MapperTuningStatus exposes the settings that Auto actually selected. This
+// keeps "Auto" truthful and lets an operator reproduce a useful combination.
+type MapperTuningStatus struct {
+	Mode           string  `json:"mode,omitempty"`
+	GainDB         float64 `json:"gainDB,omitempty"`
+	LNAGainDB      int     `json:"lnaGainDB,omitempty"`
+	VGAGainDB      int     `json:"vgaGainDB,omitempty"`
+	AmpEnabled     bool    `json:"ampEnabled"`
+	NoiseMarginDB  float64 `json:"noiseMarginDB,omitempty"`
+	RMSDBFS        float64 `json:"rmsDBFS,omitempty"`
+	PeakDBFS       float64 `json:"peakDBFS,omitempty"`
+	ClippedPercent float64 `json:"clippedPercent,omitempty"`
+	Decision       string  `json:"decision,omitempty"`
 }
 
 type MapperExportResult struct {
@@ -275,8 +298,8 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if config.Mode == "" {
 		config.Mode = "discovery"
 	}
-	if config.Mode != "discovery" && config.Mode != "decipher" {
-		return config, errors.New("Mapper workflow must be Discovery or Identify")
+	if config.Mode != "adaptive" && config.Mode != "discovery" && config.Mode != "decipher" {
+		return config, errors.New("Mapper workflow must be Map, Discovery, or Identify")
 	}
 	config.PreferredMode = strings.ToLower(strings.TrimSpace(config.PreferredMode))
 	if config.PreferredMode == "" {
@@ -288,15 +311,15 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if strings.TrimSpace(config.DeviceID) == "" {
 		return config, errors.New("choose a receiver for this Mapper job")
 	}
-	if config.Mode == "discovery" {
+	if config.Mode != "decipher" {
 		if !isFinitePositive(config.StartHz) || !isFinitePositive(config.EndHz) || config.EndHz < config.StartHz {
 			return config, errors.New("enter a valid discovery frequency range")
 		}
 		if config.StepHz <= 0 {
 			return config, errors.New("discovery step must be greater than zero")
 		}
-		if config.DwellMilliseconds < 200 || config.DwellMilliseconds > 60_000 {
-			return config, errors.New("discovery dwell must be between 0.2 and 60 seconds")
+		if config.DwellMilliseconds < 100 || int64(config.DwellMilliseconds) > 7*24*60*60*1000 {
+			return config, errors.New("Mapper dwell must be between 0.1 seconds and 7 days")
 		}
 	}
 	if config.DecipherListenSeconds == 0 {
@@ -343,6 +366,42 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 32 {
 		return config, errors.New("simultaneous Mapper channels must be between 1 and 32")
 	}
+	config.GainMode = strings.ToLower(strings.TrimSpace(config.GainMode))
+	if config.GainMode == "" {
+		config.GainMode = "auto"
+	}
+	if config.GainMode != "auto" && config.GainMode != "saved" && config.GainMode != "manual" {
+		return config, errors.New("receiver tuning must be Auto, saved calibration, or manual")
+	}
+	if config.GainDB < 0 || config.GainDB > 62 {
+		return config, errors.New("receiver gain must be between 0 and 62 dB")
+	}
+	if config.LNAGainDB < 0 || config.LNAGainDB > 40 || config.LNAGainDB%8 != 0 {
+		return config, errors.New("HackRF LNA gain must be 0 to 40 dB in 8 dB steps")
+	}
+	if config.VGAGainDB < 0 || config.VGAGainDB > 62 || config.VGAGainDB%2 != 0 {
+		return config, errors.New("HackRF VGA gain must be 0 to 62 dB in 2 dB steps")
+	}
+	config.AmpMode = strings.ToLower(strings.TrimSpace(config.AmpMode))
+	if config.AmpMode == "" {
+		config.AmpMode = "auto"
+	}
+	if config.AmpMode != "auto" && config.AmpMode != "off" && config.AmpMode != "on" {
+		return config, errors.New("HackRF RF amplifier must be Auto, off, or on")
+	}
+	config.Sensitivity = strings.ToLower(strings.TrimSpace(config.Sensitivity))
+	if config.Sensitivity == "" {
+		config.Sensitivity = "auto"
+	}
+	if config.Sensitivity != "auto" && config.Sensitivity != "weak" && config.Sensitivity != "balanced" && config.Sensitivity != "conservative" && config.Sensitivity != "manual" {
+		return config, errors.New("Mapper sensitivity must be Auto, weak, balanced, conservative, or manual")
+	}
+	if config.NoiseMarginDB == 0 {
+		config.NoiseMarginDB = 6
+	}
+	if config.NoiseMarginDB < 3 || config.NoiseMarginDB > 30 {
+		return config, errors.New("Mapper signal margin must be between 3 and 30 dB")
+	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {
 			return config, errors.New("add a valid latitude and longitude or turn location tagging off")
@@ -352,6 +411,16 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 		}
 	}
 	return config, nil
+}
+
+func (m *MapperManager) UpdateJobTuning(id string, sessionID uint64, status MapperTuningStatus) {
+	m.mu.Lock()
+	if m.jobSessions[id] == sessionID {
+		job := m.jobs[id]
+		job.Progress.Tuning = status
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
 }
 
 func defaultMapperConcurrentChannels(mode string) int {
@@ -376,6 +445,8 @@ func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
 	if job.Name == "" {
 		if config.Mode == "decipher" {
 			job.Name = "Identify · found frequencies"
+		} else if config.Mode == "adaptive" {
+			job.Name = "Map · " + fmt.Sprintf("%.3f–%.3f MHz", config.StartHz/1e6, config.EndHz/1e6)
 		} else {
 			job.Name = "Discovery · " + fmt.Sprintf("%.3f–%.3f MHz", config.StartHz/1e6, config.EndHz/1e6)
 		}
@@ -611,8 +682,8 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	if config.Mode == "" {
 		config.Mode = "discovery"
 	}
-	if config.Mode != "discovery" && config.Mode != "decipher" {
-		return MapperStatus{}, errors.New("Mapper mode must be Discovery or Identify")
+	if config.Mode != "adaptive" && config.Mode != "discovery" && config.Mode != "decipher" {
+		return MapperStatus{}, errors.New("Mapper mode must be Map, Discovery, or Identify")
 	}
 	if config.DecipherListenSeconds == 0 {
 		config.DecipherListenSeconds = 60

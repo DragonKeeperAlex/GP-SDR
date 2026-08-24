@@ -56,12 +56,17 @@ limit. **Clean now** applies the saved policy immediately after confirmation.
 Files modified during the last ten minutes are protected so an active capture
 is not removed. Cleanup stays inside GP-SDR's Recordings and IQ directories;
 profiles, Mapper history, calibration, local channel databases, and range sync
-data are never targets. Automatic cleanup is off until explicitly enabled.
+data are never targets. General automatic cleanup is off until explicitly
+enabled. Mapper's rejected-IQ cleanup is separate: after local analysis
+finishes, low-value IQ remains recoverable for 24 hours by default and is then
+removed. The Data and Managed IQ cards show analyzing, retained, and rejected
+usage separately; the recovery period can be set from one hour through seven
+days.
 
-Raw IQ is high-rate noise-like data and often compresses poorly while consuming
-extra CPU. Bounded retention is therefore the predictable default for an
-unattended receiver. Keep only evidence you expect to review, or move selected
-captures to archival storage before running cleanup.
+Raw IQ is high-rate noise-like data and often compresses poorly. Mapper instead
+channelizes each detected signal out of the wider receiver capture before
+archiving it, then keeps only evidence that survives local analysis. Bounded
+retention remains the predictable default for unattended reception.
 
 ## Integration status
 
