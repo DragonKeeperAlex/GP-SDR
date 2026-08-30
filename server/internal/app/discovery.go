@@ -103,25 +103,50 @@ func discoverHackRF() []SDRDevice {
 		return []SDRDevice{{ID: "hackrf-driver", Name: "HackRF", Kind: "HackRF", Driver: "libhackrf", Available: false, SampleRateLimit: &limit, Note: ptr("Install HackRF host tools to enable this driver.")}}
 	}
 	output, _ := runTool(tool, nil, 4*time.Second)
-	serials := valuesAfter("Serial number:", output)
-	if len(serials) == 0 {
-		serials = valuesAfter("Serial No:", output)
-	}
-	if len(serials) == 0 {
+	probes := parseHackRFInfoOutput(output)
+	if len(probes) == 0 {
 		return []SDRDevice{{ID: "hackrf-driver", Name: "HackRF", Kind: "HackRF", Driver: tool, Available: true, Connected: false, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH), Note: ptr("Driver ready; no HackRF is currently detected.")}}
 	}
-	items := make([]SDRDevice, 0, len(serials))
-	for index, serial := range serials {
-		serial = validHackRFSerial(serial)
+	items := make([]SDRDevice, 0, len(probes))
+	for index, probe := range probes {
+		serial := probe.Serial
 		s := serial
 		id := fmt.Sprintf("hackrf-%d", index)
 		var serialPointer *string
 		if serial != "" {
 			id, serialPointer = "hackrf-"+serial, &s
 		}
-		items = append(items, SDRDevice{ID: id, Name: "HackRF One", Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)})
+		device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: !probe.SelfTestFailed, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
+		if probe.SelfTestFailed {
+			device.Note = ptr("HackRF self-test failed; receiver disabled until the hardware is repaired or replaced.")
+		}
+		items = append(items, device)
 	}
 	return items
+}
+
+type hackRFProbe struct {
+	Serial         string
+	SelfTestFailed bool
+}
+
+// parseHackRFInfoOutput keeps the self-test result attached to the device that
+// produced it. hackrf_info prints one "Found HackRF" block per radio; parsing
+// the entire output as a flat list loses that association when two radios are
+// attached. Invalid/placeholder serials are retained as index-based entries so
+// the hardware page still reports every detected USB device.
+func parseHackRFInfoOutput(output string) []hackRFProbe {
+	blocks := strings.Split(output, "Found HackRF")
+	probes := make([]hackRFProbe, 0, len(blocks)-1)
+	for _, block := range blocks[1:] {
+		serial := validHackRFSerial(firstValue("Serial number:", block))
+		if serial == "" {
+			serial = validHackRFSerial(firstValue("Serial No:", block))
+		}
+		failed := regexp.MustCompile(`(?im)^\s*Self-test\s+FAIL\s*:`).MatchString(block)
+		probes = append(probes, hackRFProbe{Serial: serial, SelfTestFailed: failed})
+	}
+	return probes
 }
 
 func discoverRTLSDR() []SDRDevice {

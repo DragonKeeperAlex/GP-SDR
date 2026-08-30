@@ -1,7 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
-  rangeSync: null, localDatabase: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, remoteReceivers: [],
+  rangeSync: null, localDatabase: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, remoteReceivers: [], transmitStatus: null,
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live',
   p25Order: localStorage.getItem('gpsdr-p25-order') || 'recent',
   mixerOrder: localStorage.getItem('gpsdr-mixer-order') || 'active'
@@ -135,6 +135,7 @@ function setView(view) {
   const copy = {
     live: ['Live', 'Receiver and channel mixer'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
+    transmit: ['Transmit', 'Guarded HackRF audio playback'],
     activity: ['Activity', 'Signals and transmission history'],
     mapper: ['Mapper', 'Wide-range activity survey'],
     profiles: ['Profiles', 'Scan ranges and channel sets'],
@@ -151,12 +152,12 @@ function setView(view) {
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations, characterization, mapper, mapperProgress, remoteReceivers] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations, characterization, mapper, mapperProgress, remoteReceivers, transmitStatus] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/calibrations'), api('/api/calibrations/characterization'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/remote-receivers')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/calibrations'), api('/api/calibrations/characterization'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/remote-receivers'), api('/api/transmit/status')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations: calibrations || [], characterization, mapper, mapperProgress, remoteReceivers: remoteReceivers || [] });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, calibrations: calibrations || [], characterization, mapper, mapperProgress, remoteReceivers: remoteReceivers || [], transmitStatus });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -176,7 +177,20 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderTuner(); renderDecoders(); renderMapper(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderTuner(); renderTransmit(); renderDecoders(); renderMapper(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
+}
+
+function renderTransmit(){
+  const select=$('#transmit-device'); if(!select)return;
+  const radios=state.devices.filter(d=>d.kind==='HackRF'&&d.connected&&d.available),previous=select.value;
+  select.innerHTML=radios.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(receiverLabel(d,radios))}</option>`).join('')||'<option value="">No available HackRF</option>';
+  if(radios.some(d=>d.id===previous))select.value=previous;
+  const status=state.transmitStatus||{}; const badge=$('#transmit-state'),detail=$('#transmit-detail');
+  badge.textContent=status.state==='running'?'Transmitting':status.state==='complete'?'Complete':status.state==='error'?'Error':'Receive-only';
+  badge.className=`chip ${status.state==='running'?'warning':status.state==='complete'?'ready':status.state==='error'?'warning':''}`;
+  detail.textContent=status.note||'Choose a PCM WAV file. Dry run is selected by default.';
+  $('#transmit-stop').disabled=status.state!=='running';
+  $('#transmit-armed').disabled=$('#transmit-dry-run').checked;
 }
 
 function renderMissingComponents() {
@@ -1174,6 +1188,22 @@ $('#tuner-form').addEventListener('submit', async event => {
 	try { void startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(request)});delete $('#tuner-frequency').dataset.pending;rememberTunerFrequency(request);toast(request.lockCenter&&state.status?.activeProfileID==='quick-tune'?'Software VFO moved':'Tuner started'); await refreshAll(); }
   catch(error) { stopLiveAudio(); toast(error.message,true); }
 });
+$('#transmit-dry-run').addEventListener('change', renderTransmit);
+$('#transmit-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const file=$('#transmit-audio').files[0];
+  if(!file){toast('Choose a PCM WAV file first',true);return;}
+  try{
+    const form=new FormData(); form.append('audio',file,file.name);
+    const headers={}; if(serverToken)headers['X-GP-SDR-Token']=serverToken;
+    const upload=await fetch('/api/transmit/upload',{method:'POST',headers,body:form});
+    if(!upload.ok)throw new Error((await upload.json()).message||'Audio upload failed');
+    const stored=await upload.json();
+    state.transmitStatus=await api('/api/transmit',{method:'POST',body:JSON.stringify({deviceID:$('#transmit-device').value,frequencyHz:Number($('#transmit-frequency').value)*1e6,mode:$('#transmit-mode').value,audioPath:stored.audioPath,durationSeconds:Number($('#transmit-duration').value),txGainDB:Number($('#transmit-gain').value),armed:$('#transmit-armed').checked,dryRun:$('#transmit-dry-run').checked})});
+    renderTransmit(); toast(state.transmitStatus.note||'Transmit job started'); setTimeout(refreshAll,500);
+  }catch(error){toast(error.message,true);}
+});
+$('#transmit-stop').addEventListener('click',async()=>{try{state.transmitStatus=await api('/api/transmit/stop',{method:'POST',body:'{}'});renderTransmit();toast('Transmit stopped');}catch(error){toast(error.message,true);}});
 $('#live-apply-radio').addEventListener('click', async () => {
 	[['live-radio-device','tuner-device'],['live-mode','tuner-mode'],['live-bandwidth','tuner-bandwidth'],['live-lna','tuner-lna'],['live-vga','tuner-vga'],['live-ppm','tuner-ppm'],['live-iq-gain','tuner-iq-gain'],['live-iq-phase','tuner-iq-phase'],['live-squelch','tuner-squelch']].forEach(([from,to])=>$('#'+to).value=$('#'+from).value);
   [['live-amp','tuner-amp'],['live-bias','tuner-bias'],['live-dc','tuner-dc'],['live-iq-swap','tuner-iq-swap'],['live-agc','tuner-agc'],['live-monitor-open','tuner-monitor-open'],['live-use-calibration','tuner-use-calibration']].forEach(([from,to])=>$('#'+to).checked=$('#'+from).checked);

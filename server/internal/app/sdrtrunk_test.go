@@ -268,6 +268,23 @@ func TestPreferredSDRTrunkHackRFNameUsesHardwareSerial(t *testing.T) {
 	}
 }
 
+func TestPreferredSDRTrunkHackRFUsesConfiguredUSBID(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{"tunerConfigurations":[{"type":"hackRFTunerConfiguration","uniqueID":"HackRF USB Bus:2 Port:1.1"},{"type":"hackRFTunerConfiguration","uniqueID":"HackRF USB Bus:2 Port:1.2"}]}`
+	if err := os.WriteFile(filepath.Join(directory, "tuner_configuration.json"), []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serial := "000000000000000024b862dc3140c5cb"
+	name := preferredSDRTrunkTuner([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Serial: &serial}}}, root)
+	if name != "" {
+		t.Fatalf("multiple configured HackRFs must not receive an invented preference, got %q", name)
+	}
+}
+
 func TestPreferredSDRTrunkRTLTunerUsesConfiguredUniqueID(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
@@ -281,6 +298,16 @@ func TestPreferredSDRTrunkRTLTunerUsesConfiguredUniqueID(t *testing.T) {
 	name := preferredSDRTrunkTuner(rtlSDRP25Assignment(), root)
 	if name != "RTL-2832 USB Bus:2 Port:1" {
 		t.Fatalf("unexpected RTL-SDR preferred name %q", name)
+	}
+}
+
+func TestP25AssignmentsSkipUnavailableSelfTestFailure(t *testing.T) {
+	badID, goodID := "hackrf-bad", "hackrf-good"
+	plan := []ReceiverPlanItem{{DeviceID: &badID, Role: "control"}, {DeviceID: &goodID, Role: "voice"}}
+	devices := []SDRDevice{{ID: badID, Kind: "HackRF", Connected: true, Available: false}, {ID: goodID, Kind: "HackRF", Connected: true, Available: true}}
+	assigned := p25DeviceAssignments(plan, devices)
+	if len(assigned) != 1 || assigned[0].Device.ID != goodID {
+		t.Fatalf("unavailable HackRF was assigned to P25: %#v", assigned)
 	}
 }
 

@@ -51,6 +51,7 @@ type Runtime struct {
 	storagePolicy     StoragePolicy
 	storageCleanup    StorageCleanupResult
 	storagePruning    bool
+	transmit          *transmitState
 }
 
 type mapperJobRuntime struct {
@@ -80,6 +81,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory)}
+	runtimeState.transmit = newTransmitState()
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()
@@ -602,7 +604,7 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 				continue
 			}
 			for index := range r.devices {
-				if r.devices[index].ID == *item.DeviceID && r.devices[index].Connected && !seenDevices[r.devices[index].ID] {
+				if r.devices[index].ID == *item.DeviceID && r.devices[index].Connected && r.devices[index].Available && !seenDevices[r.devices[index].ID] {
 					liveDevices = append(liveDevices, r.devices[index])
 					seenDevices[r.devices[index].ID] = true
 					break
@@ -762,6 +764,9 @@ func hasReceiverRole(profile ScanProfile, role string) bool {
 	return false
 }
 func (r *Runtime) Stop() {
+	if r.transmit != nil {
+		r.StopTransmit()
+	}
 	r.mu.Lock()
 	if r.stop != nil {
 		close(r.stop)
@@ -873,7 +878,7 @@ func (r *Runtime) TranscriptionStatus() TranscriptionStatus {
 func (r *Runtime) buildPlan(profile ScanProfile) []ReceiverPlanItem {
 	connected := make([]SDRDevice, 0)
 	for _, d := range r.devices {
-		if d.Connected {
+		if d.Connected && d.Available {
 			connected = append(connected, d)
 		}
 	}

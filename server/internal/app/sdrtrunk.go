@@ -434,7 +434,7 @@ func xmlValue(value string) string {
 func p25DeviceAssignments(plan []ReceiverPlanItem, devices []SDRDevice) []p25AssignedDevice {
 	connected := make(map[string]SDRDevice)
 	for _, device := range devices {
-		if device.Connected {
+		if device.Connected && device.Available {
 			connected[device.ID] = device
 		}
 	}
@@ -451,7 +451,7 @@ func p25DeviceAssignments(plan []ReceiverPlanItem, devices []SDRDevice) []p25Ass
 	}
 	if len(result) == 0 {
 		for _, device := range devices {
-			if device.Connected {
+			if device.Connected && device.Available {
 				result = append(result, p25AssignedDevice{Device: device, Role: "control"})
 				break
 			}
@@ -474,7 +474,50 @@ func preferredSDRTrunkTuner(devices []p25AssignedDevice, applicationRoot string)
 	if len(serial) == 32 {
 		serial = serial[0:8] + "-" + serial[8:16] + "-" + serial[16:24] + "-" + serial[24:32]
 	}
+	// SDRTrunk identifies USB HackRFs by its persisted bus/port uniqueID, not
+	// by the 32-character hardware serial returned by hackrf_info. Prefer an
+	// exact configured ID when one is available. With several configured
+	// HackRFs, returning an invented serial ID makes SDRTrunk silently bind the
+	// wrong tuner, so leave the preference empty and let its tuner manager use
+	// the matching configured devices.
+	configured := configuredHackRFTunerIDs(applicationRoot)
+	for _, id := range configured {
+		if strings.Contains(strings.ToUpper(strings.ReplaceAll(id, "-", "")), serial) {
+			return id
+		}
+	}
+	if len(configured) == 1 {
+		return configured[0]
+	}
+	if len(configured) > 1 {
+		return ""
+	}
+	// Preserve the serial form as a fallback for fresh SDRTrunk profiles that
+	// have not yet persisted a USB tuner configuration.
 	return "HackRF ONE " + serial
+}
+
+func configuredHackRFTunerIDs(applicationRoot string) []string {
+	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var root struct {
+		Tuners []map[string]any `json:"tunerConfigurations"`
+	}
+	if json.Unmarshal(data, &root) != nil {
+		return nil
+	}
+	ids := make([]string, 0)
+	for _, tuner := range root.Tuners {
+		typeName, _ := tuner["type"].(string)
+		id, _ := tuner["uniqueID"].(string)
+		if strings.Contains(strings.ToLower(typeName), "hackrf") && strings.TrimSpace(id) != "" {
+			ids = append(ids, strings.TrimSpace(id))
+		}
+	}
+	return ids
 }
 
 func preferredRTLSDRTuner(applicationRoot string) string {

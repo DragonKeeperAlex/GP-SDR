@@ -41,3 +41,25 @@ func TestValidHackRFSerialRejectsTransientProbeGarbage(t *testing.T) {
 		t.Fatalf("rejected valid serial %q", got)
 	}
 }
+
+func TestParseHackRFInfoOutputKeepsSelfTestPerDevice(t *testing.T) {
+	output := `hackrf_info version: 2026.01.3
+Found HackRF
+Index: 0
+Serial number: 000000000000000024b862dc3140c5cb
+Board ID Number: 4 (HackRF One)
+Found HackRF
+Index: 1
+Serial number: 0000000000000000922c63dc217ea447
+Board ID Number: 4 (HackRF One)
+Self-test FAIL:
+Mixer: RFFC5072, ID: 4544, Rev: 2, Locks: 111 (PASS)
+`
+	probes := parseHackRFInfoOutput(output)
+	if len(probes) != 2 {
+		t.Fatalf("expected two HackRF probes, got %#v", probes)
+	}
+	if probes[0].Serial == probes[1].Serial || probes[0].SelfTestFailed || !probes[1].SelfTestFailed {
+		t.Fatalf("self-test result was not kept with the correct radio: %#v", probes)
+	}
+}

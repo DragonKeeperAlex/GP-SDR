@@ -4,6 +4,7 @@
 - [Getting Started](Getting-Started)
 - [Hardware and Drivers](Hardware-and-Drivers)
 - [Tuner and Live](Tuner-and-Live)
+- [Transmit (HackRF)](Transmit)
 - [Profiles and Mixer](Profiles-and-Mixer)
 - [Mapper](Mapper-Discovery-and-Identify)
 - [P25 and Decoders](P25-and-Decoders)

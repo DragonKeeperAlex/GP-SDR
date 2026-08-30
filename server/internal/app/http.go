@@ -440,6 +440,55 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, item, err, 200)
 	case r.Method == "GET" && path == "/api/receiver-plan":
 		writeJSON(w, 200, s.runtime.Plan())
+	case r.Method == "GET" && path == "/api/transmit/status":
+		writeJSON(w, 200, s.runtime.TransmitStatus())
+	case r.Method == "POST" && path == "/api/transmit/upload":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Transmit audio can only be uploaded from the GP-SDR computer.")
+			return
+		}
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeError(w, 400, "Choose a WAV file to upload.")
+			return
+		}
+		file, header, err := r.FormFile("audio")
+		if err != nil {
+			writeError(w, 400, "Choose a WAV file to upload.")
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, 50<<20+1))
+		if err != nil {
+			writeError(w, 400, "Unable to read the audio file.")
+			return
+		}
+		if len(data) > 50<<20 {
+			writeError(w, 400, "Audio files are limited to 50 MB.")
+			return
+		}
+		stored, err := s.runtime.SaveTransmitAudio(header.Filename, data)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"audioPath": stored})
+	case r.Method == "POST" && path == "/api/transmit":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "RF transmit can only be started from the GP-SDR computer.")
+			return
+		}
+		var request TransmitRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		status, err := s.runtime.Transmit(request)
+		writeResult(w, status, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/transmit/stop":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "RF transmit can only be stopped from the GP-SDR computer.")
+			return
+		}
+		writeJSON(w, 200, s.runtime.StopTransmit())
 	default:
 		writeError(w, 404, "Not found.")
 	}

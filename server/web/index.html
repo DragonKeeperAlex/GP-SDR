@@ -24,6 +24,9 @@
         <button class="nav-item" data-view="tuner" title="Tune one frequency and inspect its live spectrum">
           <span class="nav-icon">⌖</span><span>Tuner</span>
         </button>
+        <button class="nav-item" data-view="transmit" title="Prepare a guarded HackRF audio transmission">
+          <span class="nav-icon">TX</span><span>Transmit</span>
+        </button>
         <button class="nav-item" data-view="activity" title="Recorded activity and discovered signals">
           <span class="nav-icon">≋</span><span>Activity</span>
         </button>
@@ -180,6 +183,25 @@
             </article>
           </div>
         </div>
+      </section>
+
+      <section id="view-transmit" class="view">
+        <article class="panel transmit-panel">
+          <div class="panel-head"><div><h2>Transmit</h2><span>Guarded HackRF audio playback</span></div><span id="transmit-state" class="chip">Receive-only</span></div>
+          <div class="warning-banner"><strong>Use a dummy load first.</strong> RF output is local-only, limited to 60 seconds, and disabled until you explicitly arm it. Follow your local licensing and interference rules.</div>
+          <form id="transmit-form" class="transmit-form">
+            <label>HackRF<select id="transmit-device" required></select></label>
+            <label>Frequency · MHz<input id="transmit-frequency" type="number" min="1" max="6000" step="0.000001" value="100.100000" required></label>
+            <label>Mode<select id="transmit-mode"><option value="nfm">NFM · 2.5 kHz deviation</option><option value="am">AM</option><option value="wfm">WFM · 75 kHz deviation</option></select></label>
+            <label>Duration · seconds<input id="transmit-duration" type="number" min="0.1" max="60" step="0.1" value="5"></label>
+            <label>TX gain · dB<input id="transmit-gain" type="number" min="0" max="47" step="1" value="0"></label>
+            <label>Audio WAV<input id="transmit-audio" type="file" accept="audio/wav,.wav" required></label>
+            <label class="check-line"><input id="transmit-dry-run" type="checkbox" checked> Dry run (generate IQ, no RF)</label>
+            <label class="check-line"><input id="transmit-armed" type="checkbox"> I am using a dummy load and understand this transmits RF</label>
+            <div class="transmit-actions"><button class="primary" type="submit">Prepare / transmit</button><button id="transmit-stop" type="button">Stop</button></div>
+          </form>
+          <p id="transmit-detail" class="transmit-detail">Choose a PCM WAV file. Dry run is selected by default.</p>
+        </article>
       </section>
 
       <section id="view-activity" class="view">

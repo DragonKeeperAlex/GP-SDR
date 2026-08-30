@@ -20,9 +20,9 @@ VPN for access from elsewhere.
 Choose the package matching the host:
 
 ```bash
-sudo apt install ./gp-sdr_1.3.2_amd64.deb
+sudo apt install ./gp-sdr_1.3.3_amd64.deb
 # 64-bit ARM host:
-sudo apt install ./gp-sdr_1.3.2_arm64.deb
+sudo apt install ./gp-sdr_1.3.3_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 

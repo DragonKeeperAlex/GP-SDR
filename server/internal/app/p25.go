@@ -136,7 +136,7 @@ func enabledP25Systems(profile ScanProfile) []P25SystemConfig {
 func assignedDevices(plan []ReceiverPlanItem, devices []SDRDevice) []SDRDevice {
 	byID := make(map[string]SDRDevice)
 	for _, device := range devices {
-		if device.Connected {
+		if device.Connected && device.Available {
 			byID[device.ID] = device
 		}
 	}
