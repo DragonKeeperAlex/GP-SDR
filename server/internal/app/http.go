@@ -289,6 +289,13 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := s.runtime.StartMapperJob(body.ID)
 		writeResult(w, result, err, 200)
+	case r.Method == "POST" && path == "/api/mapper/jobs/start-all":
+		var job MapperJob
+		if !decodeBody(w, r, &job) {
+			return
+		}
+		result, err := s.runtime.StartMapperJobsAll(job)
+		writeResult(w, result, err, 200)
 	case r.Method == "POST" && path == "/api/mapper/jobs/stop":
 		var body struct {
 			ID string `json:"id"`

@@ -180,6 +180,68 @@ func (r *Runtime) StartMapperJob(id string) (MapperStatus, error) {
 	return r.mapper.Status(), nil
 }
 
+// StartMapperJobsAll creates one independent Mapper job for each receiver that
+// is connected and available at start time.  Each job retains its own gain,
+// sample-rate, and software-VFO state, while the combined results view merges
+// their observations.  Receivers already occupied by Live, Tuner, or another
+// Mapper job are skipped and reported rather than interrupting existing work.
+func (r *Runtime) StartMapperJobsAll(template MapperJob) (MapperStatus, error) {
+	if r.characterization != nil && r.characterization.Status().Running {
+		return r.mapper.Status(), errors.New("this receiver is being characterized; stop the calibration lab first")
+	}
+	r.mu.RLock()
+	devices := make([]SDRDevice, 0, len(r.devices))
+	for _, device := range r.devices {
+		if device.Connected && device.Available {
+			devices = append(devices, device)
+		}
+	}
+	r.mu.RUnlock()
+	if len(devices) == 0 {
+		return r.mapper.Status(), errors.New("no connected receivers are available")
+	}
+	started := 0
+	var lastErr error
+	for _, device := range devices {
+		config := template.Config
+		config.UseAllReceivers = false
+		config.DeviceID = device.ID
+		job := MapperJob{Name: strings.TrimSpace(template.Name), Config: config}
+		saved, err := r.SaveMapperJob(job)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if strings.TrimSpace(saved.Name) == "" {
+			saved.Name = "Mapper"
+		}
+		// Distinguish fan-out jobs in the job list while keeping user labels
+		// readable and stable across runs.
+		saved.Name = fmt.Sprintf("%s · %s", saved.Name, device.Name)
+		if updated, saveErr := r.SaveMapperJob(saved); saveErr == nil {
+			saved = updated
+		} else {
+			lastErr = saveErr
+			continue
+		}
+		if _, err := r.StartMapperJob(saved.ID); err != nil {
+			lastErr = err
+			continue
+		}
+		started++
+	}
+	if started == 0 {
+		if lastErr != nil {
+			return r.mapper.Status(), lastErr
+		}
+		return r.mapper.Status(), errors.New("no connected receiver could be assigned")
+	}
+	if lastErr != nil {
+		return r.mapper.Status(), fmt.Errorf("started on %d receivers; %v", started, lastErr)
+	}
+	return r.mapper.Status(), nil
+}
+
 func (r *Runtime) StopMapperJob(id string) MapperStatus {
 	r.mu.Lock()
 	if running, ok := r.mapperJobs[id]; ok {

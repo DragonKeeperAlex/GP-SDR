@@ -91,6 +91,23 @@ func TestMapperRunsIndependentConcurrentReceiverJobs(t *testing.T) {
 	}
 }
 
+func TestMapperFanoutUsesEveryConnectedReceiver(t *testing.T) {
+	runtimeState := mapperTestRuntime(t)
+	status, err := runtimeState.StartMapperJobsAll(MapperJob{Name: "Fanout", Config: MapperConfig{
+		Mode: "discovery", DeviceID: "simulator-0", UseAllReceivers: true,
+		StartHz: 150e6, EndHz: 150.1e6, StepHz: 100_000, DwellMilliseconds: 200,
+	}})
+	if err != nil {
+		t.Fatalf("fanout start failed: %v", err)
+	}
+	if len(status.Jobs) != 2 {
+		t.Fatalf("expected one Mapper job per connected receiver, got %d", len(status.Jobs))
+	}
+	for _, job := range status.Jobs {
+		waitForMapperJob(t, runtimeState, job.ID, func(item MapperJob) bool { return item.Progress.ChecksCompleted > 0 })
+	}
+}
+
 func TestMapperRejectsTwoJobsOnSameReceiver(t *testing.T) {
 	runtimeState := mapperTestRuntime(t)
 	jobA := saveMapperTestJob(t, runtimeState, "First", "simulator-0", "discovery", 150e6, 150.1e6)

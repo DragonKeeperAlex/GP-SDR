@@ -20,16 +20,19 @@ import (
 )
 
 type MapperConfig struct {
-	WebhookURL               string   `json:"webhookURL"`
-	SheetURL                 string   `json:"sheetURL,omitempty"`
-	Contributor              string   `json:"contributor,omitempty"`
-	Secret                   string   `json:"secret,omitempty"`
-	AutoUpload               bool     `json:"autoUpload"`
-	UploadVerifiedOnly       bool     `json:"uploadVerifiedOnly"`
-	Mode                     string   `json:"mode,omitempty"`
-	PreferredMode            string   `json:"preferredMode,omitempty"`
-	PreferredDecoder         string   `json:"preferredDecoder,omitempty"`
-	DeviceID                 string   `json:"deviceID,omitempty"`
+	WebhookURL         string `json:"webhookURL"`
+	SheetURL           string `json:"sheetURL,omitempty"`
+	Contributor        string `json:"contributor,omitempty"`
+	Secret             string `json:"secret,omitempty"`
+	AutoUpload         bool   `json:"autoUpload"`
+	UploadVerifiedOnly bool   `json:"uploadVerifiedOnly"`
+	Mode               string `json:"mode,omitempty"`
+	PreferredMode      string `json:"preferredMode,omitempty"`
+	PreferredDecoder   string `json:"preferredDecoder,omitempty"`
+	DeviceID           string `json:"deviceID,omitempty"`
+	// UseAllReceivers fans one Mapper template out to every currently connected
+	// receiver when it is started from the Mapper page.
+	UseAllReceivers          bool     `json:"useAllReceivers,omitempty"`
 	StartHz                  float64  `json:"startHz,omitempty"`
 	EndHz                    float64  `json:"endHz,omitempty"`
 	StepHz                   float64  `json:"stepHz,omitempty"`
