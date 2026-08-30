@@ -6,7 +6,7 @@ mixing, and later review. The native macOS app contains the complete interface
 and local receiver service. The same interface can also run headlessly in a web
 browser and is designed for phones and tablets.
 
-> GP-SDR 1.3.1 is a public release. On-air performance still
+> GP-SDR 1.3.2 is a public release. On-air performance still
 > depends on the receiver, antenna, local signals, USB link, and gain settings.
 
 ## What is included
