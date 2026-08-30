@@ -86,7 +86,15 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 		defer cleanup()
 		command := exec.CommandContext(ctx, executable, "--ifile", prepared, "--iformat", "UC8", "--raw", "--no-fix")
 		output, err := command.CombinedOutput()
-		return parseDump1090Output(output), decoderCommandError(err, output)
+		messages := parseDump1090Output(output)
+		// dump1090-fa returns status 1 after a finite --ifile reaches EOF, even
+		// when it started normally and simply saw no aircraft frames. Treat that
+		// bounded, no-frame condition as a valid empty observation; real startup
+		// and input errors still propagate below.
+		if err != nil && len(messages) == 0 && dump1090ReachedEOF(output) {
+			err = nil
+		}
+		return messages, decoderCommandError(err, output)
 	case "acarsdec":
 		executable, err := findTool("acarsdec")
 		if err != nil {
@@ -123,6 +131,14 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 	default:
 		return nil, fmt.Errorf("live file bridge is not implemented for %s", decoderID)
 	}
+}
+
+func dump1090ReachedEOF(output []byte) bool {
+	text := strings.ToLower(string(output))
+	return strings.Contains(text, "waiting for receive thread termination") &&
+		!strings.Contains(text, "failed to open") &&
+		!strings.Contains(text, "cannot open") &&
+		!strings.Contains(text, "error:")
 }
 
 type digitalVoiceDecodeResult struct {

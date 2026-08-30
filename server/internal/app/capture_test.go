@@ -59,6 +59,31 @@ func TestHackRFAdvancedControls(t *testing.T) {
 	}
 }
 
+func TestRTLCaptureCommandCanForceConservativeManualGain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper uses a Unix executable shim")
+	}
+	directory := t.TempDir()
+	helper := filepath.Join(directory, "rtl_sdr")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	command, err := BuildCaptureCommand(SDRDevice{Kind: "RTL-SDR", ID: "rtlsdr-0"}, CaptureSpec{
+		CenterFrequencyHz: 101_800_000, SampleRateHz: 2_400_000, GainDB: 1.5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Format != ComplexUnsigned8 {
+		t.Fatalf("wrong format: %s", command.Format)
+	}
+	joined := strings.Join(command.Arguments, " ")
+	if !strings.Contains(joined, "-g 1.5") {
+		t.Fatalf("conservative RTL gain was not forwarded: %s", joined)
+	}
+}
+
 func TestCaptureCommandRejectsUnsupportedDevice(t *testing.T) {
 	_, err := BuildCaptureCommand(SDRDevice{Kind: "Other"}, CaptureSpec{CenterFrequencyHz: 100e6, SampleRateHz: 1e6})
 	if err == nil {

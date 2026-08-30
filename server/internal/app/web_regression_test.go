@@ -125,6 +125,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-results-toggle"`, `id="mapper-results-content"`, `id="mapper-filter-type"`, `id="mapper-filter-state"`, `id="mapper-sort"`, `id="mapper-filter-reset"`,
 		`id="mapper-filter-repeated"`, `value="verified">Successfully identified`, `id="mapper-upload-verified"`, `Identified only`,
 		`id="mapper-identify-min-hits"`, `id="mapper-identify-hit-source"`, `id="mapper-identify-occupancy"`, `100% only`,
+		`class="mapper-tuning-panel"`, `id="mixer-search"`, `id="mixer-sort"`, `Active first`,
 		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
 		if !strings.Contains(index, required) {
@@ -142,7 +143,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	for _, required := range []string{
 		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
 		"decipherListenSeconds", "concurrentChannels", "mapperBatchReadout", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
-		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort", "identifyMinimumHits", "identifyMinimumOccupancy", "mapper-filter-repeated", "mapperFullyIdentified", "uploadVerifiedOnly",
+		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort", "identifyMinimumHits", "identifyMinimumOccupancy", "mapper-filter-repeated", "mapperFullyIdentified", "uploadVerifiedOnly", "visibleRecords=records.slice(0,250)", "mapper-results-more",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)

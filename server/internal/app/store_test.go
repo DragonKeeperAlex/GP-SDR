@@ -36,6 +36,17 @@ func TestProfileValidationRejectsBadRange(t *testing.T) {
 	}
 }
 
+func TestProfileValidationRejectsUnsupportedP25CaptureRate(t *testing.T) {
+	profile := sdrTrunkTestProfile()
+	profile.SchemaVersion = 1
+	profile.Name = "Invalid capture rate"
+	profile.Settings.P25SampleRateHz = 5_500_000
+	err := validateProfile(profile)
+	if err == nil || !strings.Contains(err.Error(), "unsupported P25 capture rate") {
+		t.Fatalf("expected unsupported P25 capture rate error, got %v", err)
+	}
+}
+
 func TestEventAggregation(t *testing.T) {
 	store, err := NewEventStore(t.TempDir())
 	if err != nil {

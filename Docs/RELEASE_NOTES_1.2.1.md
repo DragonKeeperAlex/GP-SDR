@@ -18,7 +18,9 @@ gain control, and a managed IQ evidence lifecycle for unattended surveys.
 
 ## Automatic receiver tuning
 
-- RTL-SDR Auto uses the tuner's driver AGC.
+- RTL-SDR Auto begins at a conservative manual tuner gain and adapts through
+  common gain steps using measured clipping/headroom, avoiding the driver AGC
+  behavior that can saturate strong local FM and paging signals.
 - HackRF Auto now controls LNA and VGA gain between captures and can enable the
   approximately 11 dB RF amplifier after repeated weak-input measurements.
 - Clipping or excess headroom immediately disables the HackRF RF amplifier

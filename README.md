@@ -6,7 +6,7 @@ mixing, and later review. The native macOS app contains the complete interface
 and local receiver service. The same interface can also run headlessly in a web
 browser and is designed for phones and tablets.
 
-> GP-SDR 1.1 is a public release. On-air performance still
+> GP-SDR 1.3 is a public release. On-air performance still
 > depends on the receiver, antenna, local signals, USB link, and gain settings.
 
 ## What is included
@@ -38,8 +38,10 @@ browser and is designed for phones and tablets.
   searched across decoded evidence, filtered to repeated activity, and sorted.
   Identify eligibility can require a chosen hit count, 10–100% successful-check
   rate, recent activity, and a bounded/prioritized channel list
-- Automatic Mapper RF tuning uses RTL-SDR tuner AGC where available and a
-  bounded HackRF controller for LNA, VGA, and the roughly 11 dB RF amplifier.
+- Automatic Mapper RF tuning starts RTL-SDRs at a conservative manual tuner
+  gain and steps through common supported gains from measured headroom; this
+  avoids driver-AGC clipping on strong local signals. HackRF uses a bounded
+  controller for LNA, VGA, and the roughly 11 dB RF amplifier.
   Current gain, clipping, threshold, and overload decisions remain visible;
   manual and saved-calibration controls are available in Advanced mode
 - Mapper channelizes wide captures before archiving IQ, waits for local

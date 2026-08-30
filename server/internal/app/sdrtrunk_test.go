@@ -76,7 +76,15 @@ func TestInspectSDRTrunkControlFrequencyUsesCurrentBandPlan(t *testing.T) {
 	}
 }
 
-func TestOptimizeHackRFP25SampleRateReducesCompactSiteLoad(t *testing.T) {
+func hackRFP25Assignment() []p25AssignedDevice {
+	return []p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF"}}}
+}
+
+func rtlSDRP25Assignment() []p25AssignedDevice {
+	return []p25AssignedDevice{{Device: SDRDevice{Kind: "RTL-SDR"}}}
+}
+
+func TestOptimizeP25SampleRatesConfiguresAssignedHackRFOnly(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -87,7 +95,7 @@ func TestOptimizeHackRFP25SampleRateReducesCompactSiteLoad(t *testing.T) {
 	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := optimizeHackRFP25SampleRate(root, sdrTrunkTestProfile(), false); err != nil {
+	if err := optimizeP25SampleRates(root, sdrTrunkTestProfile(), hackRFP25Assignment(), false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -100,7 +108,7 @@ func TestOptimizeHackRFP25SampleRateReducesCompactSiteLoad(t *testing.T) {
 	}
 }
 
-func TestOptimizeHackRFP25SampleRateDisablesAmplifierAtSafeRate(t *testing.T) {
+func TestOptimizeP25SampleRatesDisablesHackRFAmplifierAtSafeRate(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -111,7 +119,7 @@ func TestOptimizeHackRFP25SampleRateDisablesAmplifierAtSafeRate(t *testing.T) {
 	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := optimizeHackRFP25SampleRate(root, sdrTrunkTestProfile(), false); err != nil {
+	if err := optimizeP25SampleRates(root, sdrTrunkTestProfile(), hackRFP25Assignment(), false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -123,7 +131,7 @@ func TestOptimizeHackRFP25SampleRateDisablesAmplifierAtSafeRate(t *testing.T) {
 	}
 }
 
-func TestOptimizeHackRFP25SampleRateHonorsExplicitWideRateAndFallback(t *testing.T) {
+func TestOptimizeP25SampleRatesHonorsExplicitHackRFWideRateAndFallback(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -135,14 +143,14 @@ func TestOptimizeHackRFP25SampleRateHonorsExplicitWideRateAndFallback(t *testing
 	}
 	profile := sdrTrunkTestProfile()
 	profile.Settings.P25SampleRateHz = 20_000_000
-	if err := optimizeHackRFP25SampleRate(root, profile, false); err != nil {
+	if err := optimizeP25SampleRates(root, profile, hackRFP25Assignment(), false); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), `"RATE_20_0"`) {
 		t.Fatalf("explicit wide rate was not applied: %s", data)
 	}
-	if err := optimizeHackRFP25SampleRate(root, profile, true); err != nil {
+	if err := optimizeP25SampleRates(root, profile, hackRFP25Assignment(), true); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
@@ -151,7 +159,7 @@ func TestOptimizeHackRFP25SampleRateHonorsExplicitWideRateAndFallback(t *testing
 	}
 }
 
-func TestOptimizeHackRFP25SampleRatePreservesWideSystem(t *testing.T) {
+func TestOptimizeP25SampleRatesPreservesWideHackRFSystem(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -164,15 +172,81 @@ func TestOptimizeHackRFP25SampleRatePreservesWideSystem(t *testing.T) {
 	}
 	profile := sdrTrunkTestProfile()
 	profile.P25Systems[0].ControlChannelsHz = []float64{770_000_000, 780_000_000}
-	if err := optimizeHackRFP25SampleRate(root, profile, false); err != nil {
+	if err := optimizeP25SampleRates(root, profile, hackRFP25Assignment(), false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"sampleRate":"RATE_10_0"`) {
+	if !strings.Contains(string(data), `"sampleRate": "RATE_10_0"`) {
 		t.Fatalf("wide system sample rate was unexpectedly changed: %s", data)
+	}
+}
+
+func TestOptimizeP25SampleRatesUsesRTLSDRSafeDefault(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "tuner_configuration.json")
+	input := `{"tunerConfigurations":[{"type":"e4KTunerConfiguration","sampleRate":"RATE_2_048MHZ"},{"type":"hackRFTunerConfiguration","sampleRate":"RATE_10_0","amplifierEnabled":true}]}`
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := optimizeP25SampleRates(root, sdrTrunkTestProfile(), rtlSDRP25Assignment(), false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"sampleRate": "RATE_2_400MHZ"`) {
+		t.Fatalf("RTL-SDR safe default was not applied: %s", text)
+	}
+	if !strings.Contains(text, `"sampleRate": "RATE_10_0"`) || !strings.Contains(text, `"amplifierEnabled": true`) {
+		t.Fatalf("unassigned HackRF settings were unexpectedly changed: %s", text)
+	}
+}
+
+func TestOptimizeP25SampleRatesHonorsExplicitRTLSDRRate(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "tuner_configuration.json")
+	if err := os.WriteFile(path, []byte(`{"tunerConfigurations":[{"type":"r820TTunerConfiguration","sampleRate":"RATE_2_400MHZ"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile := sdrTrunkTestProfile()
+	profile.Settings.P25SampleRateHz = 1_024_000
+	if err := optimizeP25SampleRates(root, profile, rtlSDRP25Assignment(), false); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), `"RATE_1_024MHZ"`) {
+		t.Fatalf("explicit RTL-SDR rate was not applied: %s", data)
+	}
+}
+
+func TestEffectiveP25CaptureRateMatchesAssignedReceiver(t *testing.T) {
+	profile := sdrTrunkTestProfile()
+	if got := effectiveP25CaptureRate(profile, rtlSDRP25Assignment(), false); got != 2_400_000 {
+		t.Fatalf("RTL-SDR auto rate = %d, want 2400000", got)
+	}
+	profile.Settings.P25SampleRateHz = 2_048_000
+	if got := effectiveP25CaptureRate(profile, rtlSDRP25Assignment(), false); got != 2_048_000 {
+		t.Fatalf("RTL-SDR explicit rate = %d, want 2048000", got)
+	}
+	profile.Settings.P25SampleRateHz = 0
+	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), false); got != 10_000_000 {
+		t.Fatalf("HackRF auto rate = %d, want 10000000", got)
+	}
+	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), true); got != 5_000_000 {
+		t.Fatalf("HackRF fallback rate = %d, want 5000000", got)
 	}
 }
 
@@ -188,9 +262,25 @@ func TestBuildSDRTrunkPlaylistMakesEncryptedAndMutedTalkgroupsDoNotMonitor(t *te
 
 func TestPreferredSDRTrunkHackRFNameUsesHardwareSerial(t *testing.T) {
 	serial := "000000000000000024b862dc3140c5cb"
-	name := preferredSDRTrunkTuner([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Serial: &serial}}})
+	name := preferredSDRTrunkTuner([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Serial: &serial}}}, t.TempDir())
 	if name != "HackRF ONE 00000000-00000000-24B862DC-3140C5CB" {
 		t.Fatalf("unexpected preferred name %q", name)
+	}
+}
+
+func TestPreferredSDRTrunkRTLTunerUsesConfiguredUniqueID(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configuration := `{"tunerConfigurations":[{"type":"e4KTunerConfiguration","uniqueID":"RTL-2832 USB Bus:2 Port:1","sampleRate":"RATE_2_400MHZ"}]}`
+	if err := os.WriteFile(filepath.Join(directory, "tuner_configuration.json"), []byte(configuration), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	name := preferredSDRTrunkTuner(rtlSDRP25Assignment(), root)
+	if name != "RTL-2832 USB Bus:2 Port:1" {
+		t.Fatalf("unexpected RTL-SDR preferred name %q", name)
 	}
 }
 

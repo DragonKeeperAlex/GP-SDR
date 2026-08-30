@@ -55,7 +55,9 @@ targets that fit within 84% of the selected sample rate, keeps them away from
 the receiver's DC center when possible, and bounds DSP fan-out to the job's
 1–32 channel limit. Map and Discovery default to 16 channels and Identify
 defaults to 4; neither setting opens another hardware stream. Map owns a
-per-receiver adaptive RF controller. RTL-SDR delegates Auto gain to its tuner;
+per-receiver adaptive RF controller. RTL-SDR Auto starts at a conservative
+manual tuner gain and steps through common supported gains from measured
+headroom; this avoids the driver-auto setting clipping strong local carriers.
 HackRF Auto adjusts its discrete LNA/VGA stages and RF amplifier between bounded
 captures using headroom and clipping measurements.
 

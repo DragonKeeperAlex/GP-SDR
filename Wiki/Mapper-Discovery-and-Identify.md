@@ -29,6 +29,11 @@ first stage removed when clipping or overload appears. The job card displays
 the actual selected values and most recent decision. Advanced mode exposes
 saved-calibration and manual controls.
 
+For native RTL-SDR devices, Auto deliberately starts with a low manual tuner
+gain and steps through common E4000/R820 gain values from capture telemetry.
+The dongle driver's own automatic gain can saturate on nearby FM or paging
+transmitters, so GP-SDR does not use that setting for unattended Mapper jobs.
+
 ## Managed IQ evidence
 
 Mapper no longer archives every narrowband observation at the full wideband

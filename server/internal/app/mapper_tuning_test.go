@@ -34,8 +34,33 @@ func TestMapperManualAndDriverAutoGainModes(t *testing.T) {
 	}
 	rtl := newMapperAdaptiveTuning(SDRDevice{Kind: "RTL-SDR"}, MapperConfig{GainMode: "auto", AmpMode: "auto"})
 	spec = rtl.apply(CaptureSpec{GainDB: 20})
-	if !spec.AutoGain {
-		t.Fatalf("RTL-SDR Auto should defer tuner gain to the receiver driver: %+v", spec)
+	if spec.AutoGain || spec.GainDB != 1.5 {
+		t.Fatalf("RTL-SDR Auto should start at a safe manual tuner gain: %+v", spec)
+	}
+}
+
+func TestMapperRTLAutomaticGainAvoidsClippingAndRaisesWeakInput(t *testing.T) {
+	state := newMapperAdaptiveTuning(SDRDevice{Kind: "RTL-SDR"}, MapperConfig{GainMode: "auto", Sensitivity: "balanced"})
+	clipped := make([]byte, 16_384)
+	for index := range clipped {
+		if index%2 == 0 {
+			clipped[index] = 255
+		} else {
+			clipped[index] = 0
+		}
+	}
+	status := state.observe(clipped, ComplexUnsigned8)
+	if status.GainDB != 1.5 || !strings.Contains(status.Decision, "overload protection") {
+		t.Fatalf("RTL clipping should hold the safe minimum gain: %+v", status)
+	}
+	quiet := make([]byte, 16_384)
+	for index := range quiet {
+		quiet[index] = 127
+	}
+	state.observe(quiet, ComplexUnsigned8)
+	status = state.observe(quiet, ComplexUnsigned8)
+	if status.GainDB <= 1.5 || !strings.Contains(status.Decision, "gain raised") {
+		t.Fatalf("weak RTL input should raise gain after confirmation: %+v", status)
 	}
 }
 

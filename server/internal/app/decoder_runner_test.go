@@ -87,6 +87,16 @@ func TestParseDump1090Frames(t *testing.T) {
 	}
 }
 
+func TestDump1090FiniteNoFrameExitIsNotDecoderFailure(t *testing.T) {
+	output := []byte("dump1090-fa starting up\nWaiting for receive thread termination\nAbnormal exit.\n")
+	if !dump1090ReachedEOF(output) {
+		t.Fatal("expected finite no-frame dump1090 output to be recognized")
+	}
+	if dump1090ReachedEOF([]byte("ERROR: unable to open input\nWaiting for receive thread termination\n")) {
+		t.Fatal("input errors must remain visible")
+	}
+}
+
 func TestParseACARSAndAISOutput(t *testing.T) {
 	acars := parseACARSOutput([]byte("Starting\n#2 (L: -5 E:0) .N842UA UA123 H1 TEST\nexiting\n"))
 	if len(acars) != 1 || acars[0].Protocol != "ACARS" {

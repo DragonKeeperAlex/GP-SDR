@@ -131,7 +131,8 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	m.mu.Lock()
 	muted := cloneMuteMap(m.muted)
 	m.mu.Unlock()
-	preferred := preferredSDRTrunkTuner(assigned)
+	_ = importExistingSDRTrunkTunerConfiguration(applicationRoot)
+	preferred := preferredSDRTrunkTuner(assigned, applicationRoot)
 	playlist, err := BuildSDRTrunkPlaylist(profile, preferred, muted)
 	if err != nil {
 		return err
@@ -140,11 +141,10 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	if err := os.WriteFile(playlistPath, playlist, 0o600); err != nil {
 		return err
 	}
-	_ = importExistingSDRTrunkTunerConfiguration(applicationRoot)
 	m.mu.Lock()
 	conservativeRate := m.rateFallback
 	m.mu.Unlock()
-	_ = optimizeHackRFP25SampleRate(applicationRoot, profile, conservativeRate)
+	_ = optimizeP25SampleRates(applicationRoot, profile, assigned, conservativeRate)
 	jmbePath := findJMBELibrary(dataDirectory, applicationRoot)
 	preferencesRoot := filepath.Join(runtimeDirectory, "java-preferences")
 	if jmbePath != "" {
@@ -305,6 +305,7 @@ func (m *OP25Manager) Status() P25Status {
 	m.mu.Lock()
 	engine, command, done, waitError := m.engine, m.command, m.done, m.waitError
 	profileID, configPath, sessionStart, profile, rateFallback := m.profileID, m.configPath, m.sessionStart, m.profile, m.rateFallback
+	plan, devices := append([]ReceiverPlanItem(nil), m.plan...), append([]SDRDevice(nil), m.devices...)
 	m.mu.Unlock()
 	if engine == "SDRTrunk" && command != nil {
 		select {
@@ -318,13 +319,9 @@ func (m *OP25Manager) Status() P25Status {
 			status := P25Status{State: "running", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath,
 				Reception: "searching", Note: "SDRTrunk is checking the configured P25 control channels."}
 			if profile != nil {
-				status.CaptureRateHz = profile.Settings.P25SampleRateHz
-				if status.CaptureRateHz == 0 {
-					status.CaptureRateHz = 10_000_000
-				}
+				status.CaptureRateHz = effectiveP25CaptureRate(*profile, p25DeviceAssignments(plan, devices), rateFallback)
 			}
-			if rateFallback {
-				status.CaptureRateHz = 5_000_000
+			if rateFallback && p25AssignmentsContainKind(p25DeviceAssignments(plan, devices), "HackRF") {
 				status.Note += " Receiver transport fallback is active."
 			}
 			if configPath != nil {
@@ -463,8 +460,14 @@ func p25DeviceAssignments(plan []ReceiverPlanItem, devices []SDRDevice) []p25Ass
 	return result
 }
 
-func preferredSDRTrunkTuner(devices []p25AssignedDevice) string {
-	if len(devices) != 1 || devices[0].Device.Kind != "HackRF" || devices[0].Device.Serial == nil {
+func preferredSDRTrunkTuner(devices []p25AssignedDevice, applicationRoot string) string {
+	if len(devices) != 1 {
+		return ""
+	}
+	if strings.EqualFold(devices[0].Device.Kind, "RTL-SDR") {
+		return preferredRTLSDRTuner(applicationRoot)
+	}
+	if devices[0].Device.Kind != "HackRF" || devices[0].Device.Serial == nil {
 		return ""
 	}
 	serial := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(*devices[0].Device.Serial), "-", ""))
@@ -472,6 +475,28 @@ func preferredSDRTrunkTuner(devices []p25AssignedDevice) string {
 		serial = serial[0:8] + "-" + serial[8:16] + "-" + serial[16:24] + "-" + serial[24:32]
 	}
 	return "HackRF ONE " + serial
+}
+
+func preferredRTLSDRTuner(applicationRoot string) string {
+	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var root struct {
+		Tuners []map[string]any `json:"tunerConfigurations"`
+	}
+	if json.Unmarshal(data, &root) != nil {
+		return ""
+	}
+	for _, tuner := range root.Tuners {
+		tunerType, _ := tuner["type"].(string)
+		uniqueID, _ := tuner["uniqueID"].(string)
+		if isRTLSDRTunerConfiguration(tunerType) && strings.TrimSpace(uniqueID) != "" {
+			return strings.TrimSpace(uniqueID)
+		}
+	}
+	return ""
 }
 
 func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
@@ -495,19 +520,13 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 	return os.WriteFile(destination, data, 0o600)
 }
 
-// optimizeHackRFP25SampleRate gives compact HackRF P25 sites a 10 MS/s capture,
-// wide enough for simultaneous control and traffic channels while retaining
-// margin below the receiver's maximum transport load. A supervised transport
-// failure switches the current session to 5 MS/s. Wider systems keep the
-// user's existing rate. The isolated GP-SDR runtime
-// also forces the HackRF RF amplifier off: importing a desktop SDRTrunk config
-// with that amplifier enabled can overload a window antenna and produce
-// robotic, intermittently synchronized P25 voice even while control lock holds.
-func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile, conservative bool) error {
+// optimizeP25SampleRates applies a receiver-safe rate to each assigned tuner.
+// RTL-SDR defaults to SDRTrunk's stable 2.4 MS/s rate and accepts only rates
+// supported by its RTL2832 controller. HackRF retains the wider 10 MS/s auto
+// capture and 5 MS/s transport fallback. The isolated runtime also forces the
+// HackRF RF amplifier off to avoid overload-driven robotic voice.
+func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigned []p25AssignedDevice, conservative bool) error {
 	minimum, maximum, found := p25ControlChannelSpan(profile)
-	if !found || (maximum-minimum > 3_500_000 && profile.Settings.P25SampleRateHz == 0 && !conservative) {
-		return nil
-	}
 	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -519,19 +538,33 @@ func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile, co
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil
 	}
-	desiredRate := hackRFSampleRateName(profile.Settings.P25SampleRateHz)
+	hackRFRate := hackRFSampleRateName(profile.Settings.P25SampleRateHz)
 	if conservative {
-		desiredRate = "RATE_5_0"
+		hackRFRate = "RATE_5_0"
 	}
+	rtlRate := "RATE_2_400MHZ"
+	if configured, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
+		rtlRate = configured
+	}
+	useHackRF := p25AssignmentsContainKind(assigned, "HackRF")
+	useRTL := p25AssignmentsContainKind(assigned, "RTL-SDR")
+	applyHackRFRate := found && (maximum-minimum <= 3_500_000 || isHackRFSampleRate(profile.Settings.P25SampleRateHz) || conservative)
 	changed := false
 	for _, tuner := range root.Tuners {
-		if tuner["type"] == "hackRFTunerConfiguration" {
+		tunerType, _ := tuner["type"].(string)
+		if useHackRF && tunerType == "hackRFTunerConfiguration" {
 			if enabled, ok := tuner["amplifierEnabled"].(bool); !ok || enabled {
 				tuner["amplifierEnabled"] = false
 				changed = true
 			}
-			if rate, ok := tuner["sampleRate"].(string); ok && rate != desiredRate {
-				tuner["sampleRate"] = desiredRate
+			if rate, ok := tuner["sampleRate"].(string); applyHackRFRate && (!ok || rate != hackRFRate) {
+				tuner["sampleRate"] = hackRFRate
+				changed = true
+			}
+		}
+		if useRTL && isRTLSDRTunerConfiguration(tunerType) {
+			if rate, ok := tuner["sampleRate"].(string); !ok || rate != rtlRate {
+				tuner["sampleRate"] = rtlRate
 				changed = true
 			}
 		}
@@ -545,6 +578,60 @@ func optimizeHackRFP25SampleRate(applicationRoot string, profile ScanProfile, co
 	}
 	updated = append(updated, '\n')
 	return os.WriteFile(path, updated, 0o600)
+}
+
+func p25AssignmentsContainKind(assigned []p25AssignedDevice, kind string) bool {
+	for _, item := range assigned {
+		if strings.EqualFold(item.Device.Kind, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRTLSDRTunerConfiguration(tunerType string) bool {
+	switch strings.ToLower(strings.TrimSpace(tunerType)) {
+	case "e4ktunerconfiguration", "r820ttunerconfiguration", "r828dtunerconfiguration", "fc0013tunerconfiguration", "rtl2832tunerconfiguration":
+		return true
+	default:
+		return false
+	}
+}
+
+func rtlSDRSampleRateName(rate int) (string, bool) {
+	values := map[int]string{
+		1_024_000: "RATE_1_024MHZ", 1_200_000: "RATE_1_200MHZ", 1_440_000: "RATE_1_440MHZ",
+		1_600_000: "RATE_1_600MHZ", 1_800_000: "RATE_1_800MHZ", 1_920_000: "RATE_1_920MHZ",
+		2_048_000: "RATE_2_048MHZ", 2_304_000: "RATE_2_304MHZ", 2_400_000: "RATE_2_400MHZ",
+		2_560_000: "RATE_2_560MHZ", 2_880_000: "RATE_2_880MHZ",
+	}
+	value, ok := values[rate]
+	return value, ok
+}
+
+func isHackRFSampleRate(rate int) bool {
+	return rate == 5_000_000 || rate == 8_000_000 || rate == 10_000_000 || rate == 20_000_000
+}
+
+func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, conservative bool) int {
+	hasHackRF := p25AssignmentsContainKind(assigned, "HackRF")
+	hasRTL := p25AssignmentsContainKind(assigned, "RTL-SDR")
+	if hasHackRF && !hasRTL {
+		if conservative {
+			return 5_000_000
+		}
+		if isHackRFSampleRate(profile.Settings.P25SampleRateHz) {
+			return profile.Settings.P25SampleRateHz
+		}
+		return 10_000_000
+	}
+	if hasRTL && !hasHackRF {
+		if _, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
+			return profile.Settings.P25SampleRateHz
+		}
+		return 2_400_000
+	}
+	return profile.Settings.P25SampleRateHz
 }
 
 func hackRFSampleRateName(rate int) string {

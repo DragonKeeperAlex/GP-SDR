@@ -185,6 +185,12 @@ func validateProfile(profile ScanProfile) error {
 	if len(profile.Ranges) > 100 || len(profile.Channels) > 5000 || len(profile.P25Systems) > 20 {
 		return errors.New("profile contains too many ranges or channels")
 	}
+	if rate := profile.Settings.P25SampleRateHz; rate != 0 {
+		_, rtlRate := rtlSDRSampleRateName(rate)
+		if !rtlRate && !isHackRFSampleRate(rate) {
+			return fmt.Errorf("unsupported P25 capture rate %d", rate)
+		}
+	}
 	if area := profile.ReferenceArea; area != nil {
 		if !strings.EqualFold(strings.TrimSpace(area.Provider), "RadioReference") || area.Latitude < -90 || area.Latitude > 90 || area.Longitude < -180 || area.Longitude > 180 || area.RadiusMiles < 1 || area.RadiusMiles > 100 {
 			return errors.New("profile reference area is invalid")
