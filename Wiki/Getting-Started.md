@@ -29,9 +29,9 @@ token, private-network firewall access, updates, logs, and backups.
 Install the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.2.2_amd64.deb
+sudo apt install ./gp-sdr_1.3.2_amd64.deb
 # 64-bit ARM:
-sudo apt install ./gp-sdr_1.2.2_arm64.deb
+sudo apt install ./gp-sdr_1.3.2_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 

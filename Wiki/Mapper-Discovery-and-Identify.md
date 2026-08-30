@@ -5,6 +5,11 @@ Each physical receiver may own one independent job, so two SDRs can scan
 different ranges, split a large survey, or run Discovery and Identify at the
 same time.
 
+Enable **Use all connected receivers** to fan one job template out across every
+currently connected and available SDR. Each receiver gets an independent job
+with its own capture settings; a receiver already occupied by another workflow
+is skipped and reported instead of interrupting that workflow.
+
 All three workflow buttons—**Map**, **Discovery**, and **Identify**—remain
 visible in Beginner and Advanced modes. **Decoder** defaults to automatic:
 frequency-specific tools are used where applicable and digital-looking captures

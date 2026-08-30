@@ -73,7 +73,7 @@ but keeps jobs. Cancel intentionally changes nothing.
 ## Current external or engineering limits
 
 - Encrypted P25 is identified and skipped, not decrypted.
-- GP-SDR 1.1.x is receive-only; HackRF transmit controls are intentionally not
+- GP-SDR 1.3.2 is receive-only; HackRF transmit controls are intentionally not
   implemented.
 - RadioReference live API use needs Premium access and an approved application
   key; official local exports work without one.
