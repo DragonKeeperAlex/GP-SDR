@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,5 +89,41 @@ func TestCaptureCommandRejectsUnsupportedDevice(t *testing.T) {
 	_, err := BuildCaptureCommand(SDRDevice{Kind: "Other"}, CaptureSpec{CenterFrequencyHz: 100e6, SampleRateHz: 1e6})
 	if err == nil {
 		t.Fatal("expected unsupported device error")
+	}
+}
+
+func TestPersistentRTLSessionOnConnectedHardware(t *testing.T) {
+	if os.Getenv("GP_SDR_HARDWARE_TEST") != "1" {
+		t.Skip("set GP_SDR_HARDWARE_TEST=1 with one idle RTL-SDR connected")
+	}
+	shutdownLocalRTLSessions()
+	t.Cleanup(shutdownLocalRTLSessions)
+	device := SDRDevice{ID: "rtlsdr-0", Kind: "RTL-SDR"}
+	pids := make([]int, 0, 2)
+	for _, frequency := range []int64{100_100_000, 162_550_000} {
+		stream, err := StartIQStream(device, CaptureSpec{CenterFrequencyHz: frequency, SampleRateHz: 2_400_000, GainDB: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := make([]byte, 64*1024)
+		if _, err := io.ReadFull(stream.Reader, data); err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.Close(); err != nil {
+			t.Fatal(err)
+		}
+		localRTLSessions.Lock()
+		session := localRTLSessions.items[device.ID]
+		localRTLSessions.Unlock()
+		session.stateMu.Lock()
+		if session.cmd == nil || session.cmd.Process == nil {
+			session.stateMu.Unlock()
+			t.Fatal("persistent rtl_tcp helper stopped between captures")
+		}
+		pids = append(pids, session.cmd.Process.Pid)
+		session.stateMu.Unlock()
+	}
+	if pids[0] != pids[1] {
+		t.Fatalf("RTL-SDR was reopened between captures: helper PIDs %v", pids)
 	}
 }

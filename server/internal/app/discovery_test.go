@@ -62,4 +62,8 @@ Mixer: RFFC5072, ID: 4544, Rev: 2, Locks: 111 (PASS)
 	if probes[0].Serial == probes[1].Serial || probes[0].SelfTestFailed || !probes[1].SelfTestFailed {
 		t.Fatalf("self-test result was not kept with the correct radio: %#v", probes)
 	}
+	device := hackRFDevice(probes[1], 1, "hackrf_info", 20e6)
+	if !device.Connected || !device.Available || device.HealthWarning == "" {
+		t.Fatalf("diagnostic warning must remain visible without disabling receive: %+v", device)
+	}
 }

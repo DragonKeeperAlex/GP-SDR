@@ -6,7 +6,7 @@ mixing, and later review. The native macOS app contains the complete interface
 and local receiver service. The same interface can also run headlessly in a web
 browser and is designed for phones and tablets.
 
-> GP-SDR 1.3.3 is a public release. On-air performance still
+> GP-SDR 1.4.0 is a public release. On-air performance still
 > depends on the receiver, antenna, local signals, USB link, and gain settings.
 
 ## What is included
@@ -15,6 +15,8 @@ browser and is designed for phones and tablets.
 - Windows 10/11 package and Debian/Ubuntu packages for amd64 and arm64
 - Bundled SDRTrunk v0.6.1 P25 Phase 1/2 trunk-following stack and JMBE Creator
 - Native HackRF and RTL-SDR discovery and live IQ input
+- Persistent, serialized local RTL-SDR sessions for scanning, Mapper, Tuner,
+  and calibration, avoiding repeated USB teardown between short captures
 - Concurrent receivers with control, voice, survey, tuner, and channel-bank roles
 - Built-in AM, narrow FM, and broadcast FM DSP, squelch, recording, and live audio
 - Real tuner spectrum and scrolling waterfall with peak hold, channel markers,
@@ -130,7 +132,7 @@ drivers must come from their vendor.
 ### Debian or Ubuntu
 
 ```bash
-sudo apt install ./gp-sdr_1.3.3_amd64.deb
+sudo apt install ./gp-sdr_1.4.0_amd64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -264,7 +266,7 @@ Build all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.3.3
+Scripts/build_release.sh 1.4.0
 ```
 
 Outputs are written to `dist/` with `SHA256SUMS.txt`. The script creates macOS
@@ -294,7 +296,7 @@ frequencies, and encrypted-call state with IMBE/AMBE loaded. Live RTL-SDR P25,
 other systems, and other packaged operating systems remain separate hardware
 acceptance checks; a passing build alone is not presented as RF proof.
 
-See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.3.3.md),
+See [Architecture](Docs/ARCHITECTURE.md), [release notes](Docs/RELEASE_NOTES_1.4.0.md),
 and [third-party credits](THIRD_PARTY.md).
 
 ## Responsible use and license

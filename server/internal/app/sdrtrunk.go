@@ -145,6 +145,9 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	conservativeRate := m.rateFallback
 	m.mu.Unlock()
 	_ = optimizeP25SampleRates(applicationRoot, profile, assigned, conservativeRate)
+	if err := restrictP25Tuners(applicationRoot, assigned, devices); err != nil {
+		return fmt.Errorf("configure P25 receiver ownership: %w", err)
+	}
 	jmbePath := findJMBELibrary(dataDirectory, applicationRoot)
 	preferencesRoot := filepath.Join(runtimeDirectory, "java-preferences")
 	if jmbePath != "" {
@@ -340,7 +343,7 @@ func (m *OP25Manager) Status() P25Status {
 				}
 				if locked || calls > 0 {
 					status.Reception = "locked"
-					status.Note = "P25 control channel locked; SDRTrunk is following traffic and decoding available voice."
+					status.Note = "P25 control channel locked. " + status.Note
 					if status.ControlChannelHz == 0 && profile != nil {
 						if systems := enabledP25Systems(*profile); len(systems) > 0 && len(systems[0].ControlChannelsHz) > 0 {
 							status.ControlChannelHz = systems[0].ControlChannelsHz[0]
@@ -403,6 +406,9 @@ func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint
 		fmt.Fprintf(&text, "  <alias name=\"GP-SDR Auto Record\" list=\"%s\" group=\"%s\">\n", xmlValue(listName), xmlValue(system.Name))
 		text.WriteString("    <id type=\"talkgroupRange\" protocol=\"APCO25\" min=\"1\" max=\"65535\"/>\n")
 		text.WriteString("    <id type=\"record\"/>\n")
+		if muted[0] {
+			text.WriteString("    <id type=\"priority\" priority=\"-1\"/>\n")
+		}
 		text.WriteString("  </alias>\n")
 		fmt.Fprintf(&text, "  <channel system=\"%s\" enabled=\"true\" site=\"%s\" order=\"1\" name=\"%s\">\n", xmlValue(system.Name), xmlValue(system.Name), xmlValue(system.Name))
 		text.WriteString("    <aux_decode_configuration/>\n")
@@ -463,6 +469,9 @@ func p25DeviceAssignments(plan []ReceiverPlanItem, devices []SDRDevice) []p25Ass
 func preferredSDRTrunkTuner(devices []p25AssignedDevice, applicationRoot string) string {
 	if len(devices) != 1 {
 		return ""
+	}
+	if devices[0].Device.TunerID != "" {
+		return devices[0].Device.TunerID
 	}
 	if strings.EqualFold(devices[0].Device.Kind, "RTL-SDR") {
 		return preferredRTLSDRTuner(applicationRoot)
@@ -566,8 +575,8 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 // optimizeP25SampleRates applies a receiver-safe rate to each assigned tuner.
 // RTL-SDR defaults to SDRTrunk's stable 2.4 MS/s rate and accepts only rates
 // supported by its RTL2832 controller. HackRF retains the wider 10 MS/s auto
-// capture and 5 MS/s transport fallback. The isolated runtime also forces the
-// HackRF RF amplifier off to avoid overload-driven robotic voice.
+// capture and 5 MS/s transport fallback. Saved HackRF gains are preserved unless
+// explicitly overridden; transport fallback disables the RF amplifier.
 func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigned []p25AssignedDevice, conservative bool) error {
 	minimum, maximum, found := p25ControlChannelSpan(profile)
 	path := filepath.Join(applicationRoot, "configuration", "tuner_configuration.json")
@@ -596,8 +605,16 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 	for _, tuner := range root.Tuners {
 		tunerType, _ := tuner["type"].(string)
 		if useHackRF && tunerType == "hackRFTunerConfiguration" {
-			if enabled, ok := tuner["amplifierEnabled"].(bool); !ok || enabled {
-				tuner["amplifierEnabled"] = false
+			if conservative || profile.Settings.P25AmpMode == "off" || profile.Settings.P25AmpMode == "on" {
+				tuner["amplifierEnabled"] = !conservative && profile.Settings.P25AmpMode == "on"
+				changed = true
+			}
+			if gain := profile.Settings.P25LNAGainDB; gain != nil {
+				tuner["lnagain"] = fmt.Sprintf("GAIN_%d", max(0, min(40, *gain))/8*8)
+				changed = true
+			}
+			if gain := profile.Settings.P25VGAGainDB; gain != nil {
+				tuner["vgagain"] = fmt.Sprintf("GAIN_%d", max(0, min(62, *gain))/2*2)
 				changed = true
 			}
 			if rate, ok := tuner["sampleRate"].(string); applyHackRFRate && (!ok || rate != hackRFRate) {

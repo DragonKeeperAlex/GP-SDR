@@ -9,6 +9,7 @@
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/console.css">
 </head>
 <body>
   <div class="shell">
@@ -229,27 +230,12 @@
       </section>
 
       <section id="view-mapper" class="view">
-        <article class="panel mapper-control-panel">
-          <div class="panel-head"><div><h2>Mapper jobs</h2><span>Run one independent workflow per receiver</span></div><div class="mapper-actions"><span id="mapper-state" class="chip">Idle</span><button id="mapper-new-job" type="button" title="Clear the editor for a new Mapper job">New job</button><button id="mapper-import-jobs" type="button" title="Import one or more shared Mapper job files">Import</button><input id="mapper-job-files" type="file" accept="application/json,.json" multiple hidden><button id="mapper-stop-button" type="button" title="Stop every active Mapper job">Stop all</button></div></div>
-          <div class="mapper-live" aria-live="polite">
-            <div class="mapper-live-frequency"><span>Current frequency</span><strong id="mapper-current-frequency">—</strong><small id="mapper-current-detail">Waiting to start</small></div>
-            <div><span>Active jobs</span><strong id="mapper-pass-progress">0</strong><small id="mapper-pass-count">0 receivers assigned</small></div>
-            <div><span>Total checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 completed passes</small></div>
-            <div><span>Hits</span><strong id="mapper-hits">0</strong><small id="mapper-last-activity">No activity yet</small></div>
-            <div><span>Successfully identified</span><strong id="mapper-identified">0</strong><small id="mapper-identified-detail">Authoritative matches</small></div>
-            <div><span>Elapsed</span><strong id="mapper-elapsed">—</strong><small id="mapper-channel-time">—</small></div>
-            <div><span>Next pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">No active pass</small></div>
-          </div>
-          <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
-          <div class="mapper-now">
-            <div><span>Operation</span><strong id="mapper-operation">Idle</strong><small id="mapper-operation-detail">Create or start a Mapper job</small></div>
-            <div><span>Receiver capture</span><strong id="mapper-capture">—</strong><small id="mapper-capture-detail">No sampled band yet</small></div>
-            <div class="mapper-now-channels"><span>Channels being checked now</span><div id="mapper-channel-list" class="mapper-channel-list"><small>Waiting for a receiver batch</small></div></div>
-          </div>
+        <div class="mapper-workspace"><article class="panel mapper-control-panel">
+          <div class="panel-head"><div><h2>Job setup</h2><span>Independent tasks per receiver</span></div><div class="mapper-actions"><span id="mapper-state" class="chip">Idle</span><button id="mapper-new-job" type="button" title="Clear the editor for a new Mapper job">New job</button><button id="mapper-import-jobs" type="button" title="Import one or more shared Mapper job files">Import</button><input id="mapper-job-files" type="file" accept="application/json,.json" multiple hidden><button id="mapper-stop-button" type="button" title="Stop every active Mapper job">Stop all</button></div></div>
           <form id="mapper-form" class="mapper-controls">
             <input id="mapper-job-id" type="hidden">
             <label>Job name<input id="mapper-job-name" maxlength="60" placeholder="UHF discovery"></label>
-            <label>Receiver<select id="mapper-device"></select></label>
+            <label class="mapper-receiver-field">Receiver<div class="receiver-picker"><select id="mapper-device" aria-label="Mapper receiver"></select><button id="mapper-refresh-receivers" type="button" title="Refresh connected receivers when idle" aria-label="Refresh Mapper receivers">↻</button></div></label><p id="mapper-receiver-note" class="mapper-receiver-note" role="status"></p>
             <label class="check-line mapper-all-receivers" title="Create one independent job on every connected receiver and run them together"><input id="mapper-all-receivers" type="checkbox"> Use all connected receivers</label>
             <fieldset id="mapper-workflow" class="mapper-workflow-toggle">
               <legend>Workflow</legend>
@@ -259,12 +245,14 @@
 				<label title="Revisit frequencies already found by Mapper"><input type="radio" name="mapper-workflow" value="decipher"><span>Identify</span></label>
               </div>
             </fieldset>
+            <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Save + start</button><button id="mapper-save-job" type="button">Save</button></div>
+            <label class="mapper-band-preset">Range preset<select id="mapper-band-preset"><option value="">Custom range</option><option value="full">Full receiver range</option><option value="88,108">FM broadcast · 88–108 MHz</option><option value="118,137">Airband · 118–137 MHz</option><option value="144,148">2 m amateur · 144–148 MHz</option><option value="420,450">70 cm amateur · 420–450 MHz</option><option value="462.55,467.725">GMRS · 462–467 MHz</option><option value="769,775">700 MHz P25 · 769–775 MHz</option><option value="851,869">800 MHz · 851–869 MHz</option></select></label>
             <label><span id="mapper-start-caption">Start · MHz</span><input id="mapper-start" type="number" min="0.001" step="0.001" value="10"></label>
             <label><span id="mapper-end-caption">End · MHz</span><input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
             <label class="mapper-discovery-control">Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
             <label class="mapper-discovery-control">Time per channel<div class="mapper-duration-input"><input id="mapper-dwell-value" type="number" min="0.1" step="0.1" value="0.5"><select id="mapper-dwell-unit"><option value="1000" selected>seconds</option><option value="60000">minutes</option><option value="3600000">hours</option><option value="86400000">days</option></select></div></label>
             <details class="mapper-tuning-panel"><summary>Receiver tuning <small>Auto gain · safe sample rate · simultaneous channels</small></summary><div class="mapper-tuning-grid">
-              <label>Capture width<select id="mapper-rate" title="Receiver sample rate; wider rates show more spectrum but use more USB and CPU"><option value="0">Auto</option><option value="2000000">2 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
+              <label>Capture width<select id="mapper-rate" title="Receiver sample rate; rates beyond the selected receiver limits are disabled"><option value="0">Auto</option><option value="1024000">1.024 MS/s</option><option value="2000000">2 MS/s</option><option value="2400000">2.4 MS/s · RTL recommended</option><option value="3200000">3.2 MS/s · may drop samples</option><option value="5000000">5 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
               <label>Channels at once<select id="mapper-concurrent" title="Software VFOs monitored from one IQ capture. Higher values scan faster but use more CPU."><option value="0" selected>Auto · 16 / 4</option><option value="1">1 · lowest CPU</option><option value="2">2</option><option value="4">4 · balanced</option><option value="8">8</option><option value="16">16 · fast discovery</option><option value="32">32 · highest CPU</option></select></label>
               <label>Receiver gain<select id="mapper-gain-mode" title="Auto continuously adjusts receiver RF gain between bounded captures"><option value="auto" selected>Auto</option><option value="saved">Saved calibration</option><option value="manual">Manual</option></select></label>
               <label>Sensitivity<select id="mapper-sensitivity" title="Controls the automatic gain target and how far a signal must rise above its local noise floor"><option value="auto" selected>Auto</option><option value="weak">Weak signals</option><option value="balanced">Balanced</option><option value="conservative">Strong signals only</option><option value="manual">Manual threshold</option></select></label>
@@ -285,24 +273,40 @@
 			<label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></select></label>
 			<label>Decoder<select id="mapper-decoder" title="Auto routes digital-looking captures to installed decoders; choose one to force that decoder for every hit"><option value="auto">Auto · all available</option><option value="dmr">DMR · DSD-FME</option><option value="dsd-fme">Digital voice · DSD-FME</option><option value="nxdn">NXDN · DSD-FME</option><option value="d-star">D-STAR · DSD-FME</option><option value="ysf">YSF · DSD-FME</option><option value="m17">M17 · DSD-FME</option><option value="rtl-433">rtl_433 sensors</option><option value="dump1090">ADS-B / Mode S</option><option value="multimon-ng">POCSAG / FLEX</option><option value="acarsdec">ACARS</option><option value="ais">AIS</option></select></label>
             <label id="mapper-transcribe-wrap" class="check-line hidden"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
-            <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
+            <details class="mapper-tuning-panel mapper-location-panel"><summary>Location <small>Optional tagging</small></summary><div class="mapper-tuning-grid">            <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
             <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>
             <label>Location name<input id="mapper-location-label" placeholder="Home, field site…"></label>
             <label>Latitude<input id="mapper-latitude" type="number" min="-90" max="90" step="0.000001" placeholder="37.000000"></label>
             <label>Longitude<input id="mapper-longitude" type="number" min="-180" max="180" step="0.000001" placeholder="-122.000000"></label>
             <button id="mapper-current-location" type="button">Use current location</button>
-            <div class="mapper-actions"><button id="mapper-start-button" class="primary" type="submit">Save + start</button><button id="mapper-save-job" type="button">Save</button></div>
+</div></details>
+
           </form>
           <p id="mapper-workflow-detail" class="mapper-workflow-detail"><strong>Map</strong> repeatedly sweeps the range, identifies activity, runs available local decoders and transcription, then retains only useful IQ evidence.</p>
         </article>
-        <div id="mapper-job-grid" class="mapper-job-grid"></div>
-        <article class="panel mapper-rf-panel">
+        <div class="mapper-monitor"><article class="panel mapper-monitor-status"><div class="panel-head"><h2>Receiver monitor</h2><span class="legend">Continuous · loops until stopped</span></div>          <div class="mapper-live" aria-live="polite">
+            <div class="mapper-live-frequency"><span>Current frequency</span><strong id="mapper-current-frequency">—</strong><small id="mapper-current-detail">Waiting to start</small></div>
+            <div><span>Active jobs</span><strong id="mapper-pass-progress">0</strong><small id="mapper-pass-count">0 receivers assigned</small></div>
+            <div><span>Total checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 completed passes</small></div>
+            <div><span>Hits</span><strong id="mapper-hits">0</strong><small id="mapper-last-activity">No activity yet</small></div>
+            <div><span>Successfully identified</span><strong id="mapper-identified">0</strong><small id="mapper-identified-detail">Authoritative matches</small></div>
+            <div><span>Elapsed</span><strong id="mapper-elapsed">—</strong><small id="mapper-channel-time">—</small></div>
+            <div><span>Next pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">No active pass</small></div>
+          </div>
+          <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
+          <div class="mapper-now">
+            <div><span>Operation</span><strong id="mapper-operation">Idle</strong><small id="mapper-operation-detail">Create or start a Mapper job</small></div>
+            <div><span>Receiver capture</span><strong id="mapper-capture">—</strong><small id="mapper-capture-detail">No sampled band yet</small></div>
+            <div class="mapper-now-channels"><span>Channels being checked now</span><div id="mapper-channel-list" class="mapper-channel-list"><small>Waiting for a receiver batch</small></div></div>
+          </div>
+</article>        <article class="panel mapper-rf-panel">
           <div class="panel-head"><div><h2>Latest receiver capture</h2><span id="mapper-rf-detail">Spectrum and waterfall update while Mapper is sampling</span></div><span id="mapper-rf-state" class="chip">Waiting</span></div>
           <div class="mapper-rf-grid">
             <div class="mapper-rf-view"><div class="mapper-rf-label"><span>Spectrum</span><small id="mapper-spectrum-caption">No capture yet</small></div><canvas id="mapper-spectrum" height="170" aria-label="Mapper spectrum display"></canvas><div class="frequency-axis"><span id="mapper-spectrum-start">—</span><span id="mapper-spectrum-mid">—</span><span id="mapper-spectrum-end">—</span></div></div>
             <div class="mapper-rf-view"><div class="mapper-rf-label"><span>Waterfall</span><small>Newest samples at top</small></div><canvas id="mapper-waterfall" height="170" aria-label="Mapper waterfall display"></canvas><div class="frequency-axis"><span id="mapper-waterfall-start">—</span><span id="mapper-waterfall-mid">—</span><span id="mapper-waterfall-end">—</span></div></div>
           </div>
         </article>
+<div id="mapper-job-grid" class="mapper-job-grid"></div></div></div>
         <article id="mapper-results-panel" class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-actions"><label class="check-line mapper-repeat-toggle" title="Hide frequencies recorded only once"><input id="mapper-filter-repeated" type="checkbox"> Repeated only</label><button id="mapper-results-toggle" type="button" aria-expanded="true" title="Collapse or expand Mapper results">Collapse</button></div></div><div id="mapper-results-content"><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver"><option value="">All receivers</option></select><select id="mapper-filter-type" title="Filter by modulation or decoded protocol"><option value="">All types</option></select><select id="mapper-filter-state" title="Filter by identification or activity"><option value="">All results</option><option value="verified">Successfully identified</option><option value="identified">Any identity</option><option value="unidentified">Unidentified</option><option value="decoded">Decoder evidence</option><option value="transcribed">Has transcript</option><option value="callsign">Has callsign</option><option value="recent">Seen in 1 hour</option><option value="frequent">10+ hits</option><option value="repeat">2+ hits</option><option value="oneoff">One-off only</option></select><select id="mapper-sort" title="Choose result order"><option value="recent">Most recent</option><option value="hits">Most received</option><option value="checks">Most checked</option><option value="occupancy">Highest successful checks</option><option value="strongest">Strongest signal</option><option value="snr">Best signal over noise</option><option value="confidence">Highest confidence</option><option value="receivers">Most receivers</option><option value="first-seen">First discovered</option><option value="identity">Identity A–Z</option><option value="frequency">Frequency low–high</option><option value="frequency-desc">Frequency high–low</option></select><input id="mapper-filter-search" type="search" placeholder="Search frequency, name, protocol, callsign…" aria-label="Search Mapper results"><button id="mapper-filter-reset" type="button">Reset filters</button><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></div></article>
         <details class="panel mapper-sheet-panel"><summary><span><strong>Google Sheet</strong><small>Optional Additions Queue upload</small></span><span id="mapper-upload-state" class="chip">Off</span></summary><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue automatically</label><label class="check-line" title="Require a nearby authoritative reference match or valid decoder frames"><input id="mapper-upload-verified" type="checkbox" checked> Identified only</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Setup script</button><button id="mapper-upload-now" type="button">Send eligible now</button></form><p id="mapper-upload-detail" class="range-sync-detail">Fully identified requires nearby reference data or valid decoded frames.</p></details>
       </section>

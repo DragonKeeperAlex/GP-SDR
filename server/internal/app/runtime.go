@@ -339,6 +339,9 @@ func (r *Runtime) Refresh() {
 	r.mu.RUnlock()
 	characterizing := r.characterization != nil && r.characterization.Status().Running
 	if !running && !mapperRunning && !characterizing {
+		// An idle persistent RTL helper still owns its USB interface. Release it
+		// before an explicit hardware refresh so rtl_test can enumerate devices.
+		shutdownLocalRTLSessions()
 		devices = DiscoverDevices(r.demo)
 		devices = append(devices, remoteDevices(r.remoteReceivers.List())...)
 	}

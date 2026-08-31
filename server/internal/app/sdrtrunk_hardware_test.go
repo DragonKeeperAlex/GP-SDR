@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ func TestSDRTrunkConnectedP25Receiver(t *testing.T) {
 		wanted = "HackRF"
 	}
 	var selected *SDRDevice
-	for _, device := range DiscoverDevices(false) {
+	devices := DiscoverDevices(false)
+	for _, device := range devices {
 		if device.Connected && strings.EqualFold(device.Kind, wanted) {
 			copy := device
 			selected = &copy
@@ -35,21 +37,39 @@ func TestSDRTrunkConnectedP25Receiver(t *testing.T) {
 	}}}
 	deviceID := selected.ID
 	plan := []ReceiverPlanItem{{DeviceID: &deviceID, Role: "control", State: "assigned"}}
-	manager := &OP25Manager{}
+	if frequencies := os.Getenv("GPSDR_TEST_CONTROL_HZ"); frequencies != "" {
+		profile.P25Systems[0].ControlChannelsHz = nil
+		for _, value := range strings.Split(frequencies, ",") {
+			f, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile.P25Systems[0].ControlChannelsHz = append(profile.P25Systems[0].ControlChannelsHz, f)
+		}
+	}
+	// Mute all talkgroups during unattended hardware tests, retaining decode logs.
+	manager := &OP25Manager{muted: map[uint32]bool{0: true}}
 	dataDirectory := os.Getenv("GPSDR_TEST_DATA")
 	if dataDirectory == "" {
 		dataDirectory = t.TempDir()
 	}
-	if err := manager.Start(profile, plan, []SDRDevice{*selected}, dataDirectory); err != nil {
+	if err := manager.Start(profile, plan, devices, dataDirectory); err != nil {
 		t.Fatal(err)
 	}
 	defer manager.Stop()
-	deadline := time.Now().Add(45 * time.Second)
+	deadline := time.Now().Add(90 * time.Second)
+	lockedAt := time.Time{}
+	observeSeconds, _ := strconv.Atoi(os.Getenv("GPSDR_TEST_LOCK_HOLD_SECONDS"))
 	for time.Now().Before(deadline) {
 		status := manager.Status()
 		t.Logf("%s: %s", status.Reception, status.Note)
 		if status.Reception == "locked" {
-			return
+			if lockedAt.IsZero() {
+				lockedAt = time.Now()
+			}
+			if time.Since(lockedAt) >= time.Duration(observeSeconds)*time.Second {
+				return
+			}
 		}
 		time.Sleep(3 * time.Second)
 	}
@@ -57,5 +77,5 @@ func TestSDRTrunkConnectedP25Receiver(t *testing.T) {
 	if status.State != "running" {
 		t.Fatalf("SDRTrunk stopped during hardware test: %+v", status)
 	}
-	t.Log("receiver remained healthy but no P25 control lock was observed during this bounded RF test")
+	t.Fatalf("no P25 control lock observed; startup alone is not acceptance: %+v", status)
 }

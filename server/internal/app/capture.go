@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -133,16 +134,21 @@ func soapyDeviceArguments(device SDRDevice) string {
 }
 
 type IQStream struct {
-	Reader io.ReadCloser
-	Format SampleFormat
-	cmd    *exec.Cmd
-	done   chan error
-	once   sync.Once
+	Reader  io.ReadCloser
+	Format  SampleFormat
+	cmd     *exec.Cmd
+	done    chan error
+	once    sync.Once
+	release func()
+	stderr  *bytes.Buffer
 }
 
 func StartIQStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
 	if device.Kind == "RTL-TCP" {
 		return startRTLTCPStream(device, spec)
+	}
+	if device.Kind == "RTL-SDR" {
+		return startLocalRTLStream(device, spec)
 	}
 	definition, err := BuildCaptureCommand(device, spec)
 	if err != nil {
@@ -153,12 +159,13 @@ func StartIQStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
 	if err != nil {
 		return nil, err
 	}
-	command.Stderr = io.Discard
+	stderr := &bytes.Buffer{}
+	command.Stderr = stderr
 	if err := command.Start(); err != nil {
 		_ = stdout.Close()
 		return nil, err
 	}
-	stream := &IQStream{Reader: stdout, Format: definition.Format, cmd: command, done: make(chan error, 1)}
+	stream := &IQStream{Reader: stdout, Format: definition.Format, cmd: command, done: make(chan error, 1), stderr: stderr}
 	go func() { stream.done <- command.Wait(); close(stream.done) }()
 	return stream, nil
 }
@@ -171,12 +178,28 @@ func startRTLTCPStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rtl_tcp connection failed: %w", err)
 	}
+	if err := initializeRTLTCPConnection(conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if err := configureRTLTCPConnection(conn, spec); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return &IQStream{Reader: conn, Format: ComplexUnsigned8, done: make(chan error, 1)}, nil
+}
+
+func initializeRTLTCPConnection(conn net.Conn) error {
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	header := make([]byte, 12)
-	if _, err = io.ReadFull(conn, header); err != nil || string(header[:4]) != "RTL0" {
-		_ = conn.Close()
-		return nil, errors.New("remote server did not provide a valid rtl_tcp stream")
+	if _, err := io.ReadFull(conn, header); err != nil || string(header[:4]) != "RTL0" {
+		return errors.New("remote server did not provide a valid rtl_tcp stream")
 	}
+	_ = conn.SetDeadline(time.Time{})
+	return nil
+}
+
+func configureRTLTCPConnection(conn net.Conn, spec CaptureSpec) error {
 	commands := [][2]uint32{{1, uint32(spec.CenterFrequencyHz)}, {2, uint32(spec.SampleRateHz)}}
 	if spec.AutoGain {
 		commands = append(commands, [2]uint32{3, 0})
@@ -193,18 +216,19 @@ func startRTLTCPStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
 		var packet [5]byte
 		packet[0] = byte(command[0])
 		binary.BigEndian.PutUint32(packet[1:], command[1])
-		if _, err = conn.Write(packet[:]); err != nil {
-			_ = conn.Close()
-			return nil, err
+		if _, err := conn.Write(packet[:]); err != nil {
+			return err
 		}
 	}
-	_ = conn.SetDeadline(time.Time{})
-	return &IQStream{Reader: conn, Format: ComplexUnsigned8, done: make(chan error, 1)}, nil
+	return nil
 }
 
 func (s *IQStream) Close() error {
 	var closeError error
 	s.once.Do(func() {
+		if s.release != nil {
+			defer s.release()
+		}
 		if s.cmd == nil {
 			closeError = s.Reader.Close()
 			return
@@ -219,6 +243,13 @@ func (s *IQStream) Close() error {
 		case <-time.After(2 * time.Second):
 			closeError = s.cmd.Process.Kill()
 		}
+		if closeError != nil && s.stderr != nil && strings.TrimSpace(s.stderr.String()) != "" {
+			closeError = fmt.Errorf("%w: %s", closeError, strings.TrimSpace(s.stderr.String()))
+		}
 	})
 	return closeError
 }
+
+// ShutdownCaptureSessions releases persistent local receiver helpers during
+// normal application shutdown so no rtl_tcp child process is left behind.
+func ShutdownCaptureSessions() { shutdownLocalRTLSessions() }

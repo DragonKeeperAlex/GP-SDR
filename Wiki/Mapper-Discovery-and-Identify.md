@@ -20,6 +20,17 @@ produce a valid frame.
 
 ## Map
 
+### Console layout (1.4)
+
+Job setup is on the left and live progress, spectrum/waterfall, and saved jobs
+are on the right. On phones these stack vertically; swipe the bottom navigation
+bar to reach every page. Start and Save are directly below the workflow buttons.
+Use Range preset for a common band or enter custom bounds. Receiver refresh is
+next to the receiver selector and is unavailable while jobs own radios. A
+diagnostic warning does not automatically exclude a working HackRF from RX.
+Counters continue updating while you edit a job. Changes apply when you save or
+start that job, not silently to another running job.
+
 Map is the beginner/default workflow. It repeats a start/end range until
 stopped and performs discovery, local waveform classification, available
 protocol decoding, and enabled offline transcription during the same job.

@@ -3,6 +3,7 @@ const state = {
   integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
   rangeSync: null, localDatabase: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, remoteReceivers: [], transmitStatus: null,
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live',
+  p25ProfileID: null, p25DeviceID: '', p25Search: '', p25ActiveOnly: false,
   p25Order: localStorage.getItem('gpsdr-p25-order') || 'recent',
   mixerOrder: localStorage.getItem('gpsdr-mixer-order') || 'active'
 };
@@ -223,6 +224,7 @@ function mapperFullyIdentified(record){const classification=String(record.protoc
 
 function renderMapper(){
   const body=$('#mapper-body'); if(!body)return; const connected=state.devices.filter(d=>d.connected&&d.available),select=$('#mapper-device'),selected=select.value; const sig=connected.map(d=>d.id).join(); if(select.dataset.signature!==sig){select.innerHTML=connected.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(receiverLabel(d,connected))} · ${escapeHTML(d.kind)}</option>`).join('')||'<option value="">No receiver</option>';select.dataset.signature=sig;if(connected.some(d=>d.id===selected))select.value=selected;}
+  updateMapperReceiverSelection();
   const m=state.mapper||{},jobs=m.jobs||[],jobNames=new Map(jobs.map(job=>[job.id,job.name])),deviceNames=new Map(state.devices.map(device=>[device.id,device.name]));
   const jobFilter=$('#mapper-filter-job'),deviceFilter=$('#mapper-filter-device'),oldJob=jobFilter.value,oldDevice=deviceFilter.value;jobFilter.innerHTML='<option value="">All jobs</option>'+jobs.map(job=>`<option value="${escapeHTML(job.id)}">${escapeHTML(job.name)}</option>`).join('');deviceFilter.innerHTML='<option value="">All receivers</option>'+connected.map(device=>`<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device,connected))}</option>`).join('');jobFilter.value=oldJob;deviceFilter.value=oldDevice;
   const allRecords=m.records||[],typeFilter=$('#mapper-filter-type'),oldType=typeFilter.value,types=[...new Set(allRecords.map(record=>record.protocolName||record.modulation).filter(Boolean))].sort((a,b)=>a.localeCompare(b));typeFilter.innerHTML='<option value="">All types</option>'+types.map(type=>`<option value="${escapeHTML(type)}">${escapeHTML(type)}</option>`).join('');typeFilter.value=types.includes(oldType)?oldType:'';
@@ -236,7 +238,7 @@ function renderMapper(){
   const moreRows=records.length>visibleRecords.length?`<tr class="mapper-results-more"><td colspan="7">Showing ${visibleRecords.length.toLocaleString()} of ${records.length.toLocaleString()} results · narrow the filters to view more</td></tr>`:'';
   body.innerHTML=rowHTML+moreRows||'<tr><td colspan="7">No mapped activity matches these filters</td></tr>';
   $('#mapper-count').textContent=allRecords.length?(records.length===allRecords.length?`${allRecords.length} active frequencies`:`${records.length} of ${allRecords.length} frequencies`):'No detected activity';const activeJobs=jobs.filter(job=>job.state==='running'||job.state==='stopping');$('#mapper-state').textContent=activeJobs.length?`${activeJobs.length} active`:'Idle';$('#mapper-state').className=`chip ${activeJobs.length?'ready':''}`;$('#mapper-start-button').disabled=!connected.length;$('#mapper-stop-button').disabled=!activeJobs.length;
-	if(!$('#mapper-form').contains(document.activeElement))$('#mapper-job-grid').innerHTML=jobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';
+	if(!$('#mapper-job-grid').contains(document.activeElement))$('#mapper-job-grid').innerHTML=jobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';
   if(m.config&&!$('#mapper-sheet-form').contains(document.activeElement)){ $('#mapper-sheet-url').value=m.config.sheetURL||''; $('#mapper-webhook').value=m.config.webhookURL||''; $('#mapper-contributor').value=m.config.contributor||'GP-SDR'; $('#mapper-secret').value=m.config.secret||''; $('#mapper-auto-upload').checked=!!m.config.autoUpload;$('#mapper-upload-verified').checked=!!m.config.uploadVerifiedOnly;$('#mapper-upload-state').textContent=m.lastError?'Error':m.config.autoUpload?'Automatic':m.config.webhookURL?'Ready':'Off';$('#mapper-upload-detail').textContent=m.lastError||`Additions Queue · ${m.uploadedRows||0} rows sent · ${m.verifiedRecords||0} fully identified${m.lastUpload?' · '+timeAgo(m.lastUpload):''}`;}
   setMapperResultsCollapsed(mapperResultsCollapsed,false);updateMapperWorkflow();renderMapperProgress();renderMapperRF();
 }
@@ -492,11 +494,12 @@ function renderProfiles() {
 
 function renderHardware() {
   $('#device-grid').innerHTML = state.devices.length ? state.devices.map(device => `
-    <article class="hardware-card"><div class="hardware-title"><i class="${device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
+    <article class="hardware-card"><div class="hardware-title"><i class="${device.healthWarning ? 'optional' : device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
 		<p>${escapeHTML(hardwareActivityText(device))}</p>
       <div class="hardware-detail">${device.kind === 'HackRF' ? 'LNA 0–40 dB · VGA 0–62 dB · RF amp · antenna power · 2–20 MS/s' : device.kind === 'RTL-SDR' ? 'Tuner AGC/manual gain · PPM correction · 0.225–3.2 MS/s' : 'SoapySDR gain · PPM and device-specific controls'}<br>${escapeHTML(hardwareRangeText(device))}<br>${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
+      ${device.healthWarning?`<div class="hardware-warning" role="status">⚠ ${escapeHTML(device.healthWarning)}</div>`:''}
       ${hardwareTelemetryHTML(device)}
-      <footer><span>${escapeHTML(device.kind)}</span><span>${device.connected ? 'Connected' : device.available ? 'Driver ready' : 'Driver needed'}</span></footer>
+      <footer><span>${escapeHTML(device.kind)}</span><span>${device.connected ? (device.healthWarning ? 'Connected · warning' : device.available ? 'Ready' : 'Unavailable') : device.available ? 'Driver ready' : 'Driver needed'}</span></footer>
       ${device.connected ? calibrationControls(device) : ''}
       ${device.connected || device.available ? '' : setupActions(device.kind === 'HackRF' ? 'hackrf' : device.kind === 'RTL-SDR' ? 'rtlsdr' : 'soapysdr')}</article>`).join('') : '<div class="empty-state">No receiver drivers were detected. Install one below, then refresh.</div>';
   $('#decoder-grid').innerHTML = state.decoders.length ? state.decoders.map(decoder => `
@@ -632,6 +635,8 @@ function decoderMatchesConfig(decoderID,value){value=String(value||'').toLowerCa
 function renderDecoders() {
   const nav = $('#decoder-nav'), detail = $('#decoder-detail');
   if (!nav || !detail) return;
+  // Preserve an open menu or focused control across polling updates.
+  if (detail.contains(document.activeElement)) return;
   if (!state.decoders.some(item => item.id === state.selectedDecoderID)) state.selectedDecoderID = state.decoders[0]?.id || 'analog';
   nav.innerHTML = state.decoders.map(decoder => `<button class="decoder-nav-item ${decoder.id === state.selectedDecoderID ? 'active' : ''}" data-decoder-id="${escapeHTML(decoder.id)}" aria-pressed="${decoder.id === state.selectedDecoderID}">
     <i class="${escapeHTML(decoder.state)}"></i><span><strong>${escapeHTML(decoder.name)}</strong><small>${escapeHTML(decoder.standards.slice(0,2).join(' · '))}</small></span></button>`).join('');
@@ -655,9 +660,9 @@ function renderDecoders() {
 
 function renderP25DecoderWorkspace() {
   const status = state.p25Status || {};
-  const profile = state.profiles.find(item=>item.id===(status.profileID||state.status?.activeProfileID));
+  const profile = state.profiles.find(item=>item.id===(state.p25ProfileID||status.profileID||state.status?.activeProfileID)) || state.profiles.find(item=>(item.p25Systems||[]).length);
   const configuredRate = profile?.settings?.p25SampleRateHz || 0;
-  const talkgroups = state.mixer.filter(item => item.talkgroupID).sort((left, right) => {
+  const talkgroups = state.mixer.filter(item => item.talkgroupID && (!state.p25ActiveOnly||item.active) && (!state.p25Search||[item.talkgroupID,item.channel?.name].join(' ').toLowerCase().includes(state.p25Search.toLowerCase()))).sort((left, right) => {
     if (!!left.active !== !!right.active) return left.active ? -1 : 1;
     const leftTime = left.lastHeardAt ? new Date(left.lastHeardAt).getTime() : 0;
     const rightTime = right.lastHeardAt ? new Date(right.lastHeardAt).getTime() : 0;
@@ -668,17 +673,47 @@ function renderP25DecoderWorkspace() {
   const connected = state.devices.filter(item=>item.connected);
   const calibrated = connected.filter(item=>item.calibration).length;
   const voiceSetup=setupComponent('p25-voice')?.state==='ready'?'':setupActions('p25-voice');
-  return `<article class="panel p25-overview"><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Control channel</span><strong>${status.controlChannelHz ? formatFrequency(status.controlChannelHz) : 'Searching'}</strong>${status.controlChannelHz ? `<small>${status.controlSource === 'decoded' ? 'Decoded current' : 'Configured primary'}</small>` : ''}</div><div><span>Capture width</span><strong>${status.captureRateHz ? `${status.captureRateHz/1e6} MS/s` : 'Auto'}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>${voiceSetup}
-    <div class="panel-head"><div><h2>Talkgroup mixer</h2><span>${active ? `${active} active · ` : ''}Mute and solo independently</span></div><div class="p25-mixer-tools"><label>Capture<select id="p25-live-rate" title="P25 receiver bandwidth; changing it restarts the active P25 profile">${p25RateOptions(configuredRate)}</select></label><label>Order<select id="p25-order" title="Order calls by latest activity or total received"><option value="recent" ${state.p25Order === 'recent' ? 'selected' : ''}>Most recent</option><option value="heard" ${state.p25Order === 'heard' ? 'selected' : ''}>Most received</option></select></label><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div></div>
+  return `<article class="panel p25-overview"><div class="p25-toolbar"><label>System profile<select id="p25-profile-choice">${state.profiles.filter(item=>(item.p25Systems||[]).length).map(item=>`<option value="${escapeHTML(item.id)}" ${profile?.id===item.id?'selected':''}>${escapeHTML(item.name)}</option>`).join('')}</select></label><label>Receiver<select id="p25-receiver-choice"><option value="">Profile assignments</option>${state.devices.filter(item=>item.connected&&item.available).map(item=>`<option value="${escapeHTML(item.id)}" ${state.p25DeviceID===item.id?'selected':''}>${escapeHTML(receiverLabel(item))}</option>`).join('')}</select></label><button id="p25-workspace-start" class="primary" ${profile?'':'disabled'} title="Start the selected profile on its assigned or chosen receiver">Start P25</button><button id="p25-workspace-stop" ${status.state==='running'?'':'disabled'}>Stop</button></div><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Control channel</span><strong>${status.controlChannelHz ? formatFrequency(status.controlChannelHz) : 'Searching'}</strong>${status.controlChannelHz ? `<small>${status.controlSource === 'decoded' ? 'Decoded current' : 'Configured primary'}</small>` : ''}</div><div><span>Capture width</span><strong>${status.captureRateHz ? `${status.captureRateHz/1e6} MS/s` : 'Auto'}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>${voiceSetup}
+    <div class="panel-head"><div><h2>Talkgroup mixer</h2><span>${active ? `${active} active · ` : ''}Mute and solo independently</span></div><div class="p25-mixer-tools"><input id="p25-search" class="p25-search" type="search" aria-label="Search talkgroups" placeholder="Talkgroup or name" value="${escapeHTML(state.p25Search)}"><label class="check-line"><input id="p25-active-only" type="checkbox" ${state.p25ActiveOnly?'checked':''}>Active only</label><label>Capture<select id="p25-live-rate" title="P25 receiver bandwidth; changing it restarts the active P25 profile">${p25RateOptions(configuredRate)}</select></label><label ${state.devices.find(d=>d.id===state.p25DeviceID)?.kind==='RTL-SDR'?'hidden':''}>RF amp<select id="p25-amp-mode" title="Keep the working SDRTrunk gain, or override the HackRF RF amplifier. Changes restart P25."><option value="" ${!profile?.settings?.p25AmpMode?'selected':''}>Saved</option><option value="off" ${profile?.settings?.p25AmpMode==='off'?'selected':''}>Off</option><option value="on" ${profile?.settings?.p25AmpMode==='on'?'selected':''}>On</option></select></label><label ${state.devices.find(d=>d.id===state.p25DeviceID)?.kind==='RTL-SDR'?'hidden':''}>LNA<input id="p25-lna-gain" type="number" min="0" max="40" step="8" placeholder="Saved" value="${profile?.settings?.p25LNAGainDB??''}" title="HackRF LNA gain in dB; blank preserves saved gain"></label><label ${state.devices.find(d=>d.id===state.p25DeviceID)?.kind==='RTL-SDR'?'hidden':''}>VGA<input id="p25-vga-gain" type="number" min="0" max="62" step="2" placeholder="Saved" value="${profile?.settings?.p25VGAGainDB??''}" title="HackRF VGA gain in dB; blank preserves saved gain"></label><label>Order<select id="p25-order" title="Order calls by latest activity or total received"><option value="recent" ${state.p25Order === 'recent' ? 'selected' : ''}>Most recent</option><option value="heard" ${state.p25Order === 'heard' ? 'selected' : ''}>Most received</option></select></label><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div></div>
     <div class="mixer-list p25-mixer">${talkgroups.length ? mixerRows(talkgroups) : '<div class="empty-state compact">Start a P25 profile to load talkgroups</div>'}</div></article>`;
 }
 
 function p25RateOptions(configuredRate) {
   const option = (rate, label) => `<option value="${rate}" ${configuredRate===rate?'selected':''}>${label}</option>`;
+  const selected=state.devices.find(d=>d.id===state.p25DeviceID);
   const rtlRates = [[1024000,'1.024'],[1200000,'1.2'],[1440000,'1.44'],[1600000,'1.6'],[1800000,'1.8'],[1920000,'1.92'],[2048000,'2.048'],[2304000,'2.304'],[2400000,'2.4'],[2560000,'2.56'],[2880000,'2.88']];
   const hackRFRates = [[5000000,'5'],[8000000,'8'],[10000000,'10'],[20000000,'20']];
-  return option(0, 'Auto · match receiver') + `<optgroup label="RTL-SDR">${rtlRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup><optgroup label="HackRF">${hackRFRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`;
+  return option(0, 'Auto · match receiver') + (selected?.kind==='HackRF'?'':`<optgroup label="RTL-SDR">${rtlRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`) + (selected?.kind==='RTL-SDR'?'':`<optgroup label="HackRF">${hackRFRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`);
 }
+
+async function startP25Workspace() {
+  const button=$('#p25-workspace-start');button.disabled=true;button.textContent='Starting…';
+  try {
+    const id=$('#p25-profile-choice').value;
+    let profile=state.profiles.find(item=>item.id===id);
+    if(!profile)throw new Error('Select a P25 system profile');
+    if(state.p25DeviceID) {
+      profile=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(id),{method:'POST'}):structuredClone(profile);
+      profile.deviceAssignments=[{id:crypto.randomUUID(),deviceID:state.p25DeviceID,role:'control',target:null}];
+      profile=await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});
+    }
+    await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:profile.id})});
+    state.selectedProfileID=state.p25ProfileID=profile.id;button.blur();await refreshAll();toast('P25 started');
+  } catch(error) {toast(error.message,true);button.disabled=false;button.textContent='Start P25';}
+}
+document.addEventListener('click',async event=>{
+  if(event.target.closest('#p25-workspace-start'))return startP25Workspace();
+  if(event.target.closest('#p25-workspace-stop')){try{await api('/api/control/stop',{method:'POST'});event.target.blur();await refreshAll();toast('P25 stopped');}catch(error){toast(error.message,true);}}
+});
+document.addEventListener('change',event=>{
+  const target=event.target;
+  if(target.id==='p25-profile-choice')state.p25ProfileID=target.value;
+  else if(target.id==='p25-receiver-choice')state.p25DeviceID=target.value;
+  else if(target.id==='p25-active-only')state.p25ActiveOnly=target.checked;
+  else if(target.id==='p25-search')state.p25Search=target.value;
+  else return;
+  target.blur();renderDecoders();
+});
 
 function renderIntegrations() {
   if (!state.integrations) return;
@@ -1275,7 +1310,29 @@ $('#characterization-form').addEventListener('submit',async event=>{event.preven
 $('#characterization-stop').addEventListener('click',async()=>{try{state.characterization=await api('/api/calibrations/characterization/stop',{method:'POST'});toast('Receiver comparison stopping');renderCharacterization();}catch(error){toast(error.message,true);}});
 $('#characterization-export').addEventListener('click',()=>{window.location.href=`/api/calibrations/characterization/export${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;});
 $('#characterization-clear').addEventListener('click',async()=>{if(!await confirmAction({title:'Clear receiver comparison?',message:'Remove the saved receiver and antenna response measurements? Device calibration values are kept.',confirmLabel:'Clear results'}))return;try{state.characterization=await api('/api/calibrations/characterization',{method:'DELETE'});toast('Receiver comparison cleared');renderCharacterization();}catch(error){toast(error.message,true);}});
-function updateMapperReceiverSelection(){const all=$('#mapper-all-receivers')?.checked||false;const select=$('#mapper-device');if(select)select.disabled=all;}
+function updateMapperReceiverSelection(){
+  const all=$('#mapper-all-receivers')?.checked||false,select=$('#mapper-device'),device=state.devices.find(d=>d.id===select?.value);
+  if(select)select.disabled=all;
+  const radios=all?state.devices.filter(d=>d.connected&&d.available):device?[device]:[];
+  const rate=$('#mapper-rate'),limit=radios.length?Math.min(...radios.map(d=>d.sampleRateLimit||20e6)):20e6;
+  for(const option of rate.options)option.disabled=Number(option.value)>limit||(Number(option.value)>0&&radios.some(d=>d.kind==='HackRF')&&Number(option.value)<2e6);
+  if(rate.selectedOptions[0]?.disabled)rate.value='0';
+  const note=$('#mapper-receiver-note');
+  note.textContent=all?`${radios.length} receivers · each range is clamped to its hardware limits`:device?`${hardwareRangeText(device)}${device.healthWarning?' · Diagnostic warning; receive enabled':''}`:'No receiver selected. Refresh after connecting a radio.';
+  note.classList.toggle('warning',!!device?.healthWarning&&!all);
+  $('#mapper-refresh-receivers').disabled=!!state.status?.running||mapperActiveJobs().length>0;
+}
+$('#mapper-device').addEventListener('change',updateMapperReceiverSelection);
+$('#mapper-refresh-receivers').addEventListener('click',async()=>{const button=$('#mapper-refresh-receivers');button.disabled=true;try{state.devices=await api('/api/devices/refresh',{method:'POST'});await refreshAll();toast('Receivers refreshed');}catch(error){toast(error.message,true);}finally{updateMapperReceiverSelection();}});
+$('#mapper-band-preset').addEventListener('change',event=>{
+  const value=event.target.value;if(!value)return;
+  const device=state.devices.find(d=>d.id===$('#mapper-device').value);
+  const limits=value==='full'?[(device?.frequencyMinimumHz||10e6)/1e6,(device?.frequencyMaximumHz||6e9)/1e6]:value.split(',').map(Number);
+  $('#mapper-start').value=limits[0];$('#mapper-end').value=limits[1];
+  if(value==='88,108'){$('#mapper-step').value='100';$('#mapper-mode').value='wfm';}
+  else{$('#mapper-mode').value='auto';$('#mapper-step').value='12.5';}
+  toast('Range applied');
+});
 function collectMapperJob(){const workflow=mapperWorkflowValue(),start=Number($('#mapper-start').value)*1e6,end=Number($('#mapper-end').value)*1e6,allReceivers=$('#mapper-all-receivers')?.checked||false,deviceID=$('#mapper-device').value||state.devices.find(device=>device.connected&&device.available)?.id||'',step=Number($('#mapper-step').value)*1000,dwell=mapperDwellMilliseconds(),includeLocation=$('#mapper-location').checked;
   const latitude=$('#mapper-latitude').value===''?null:Number($('#mapper-latitude').value),longitude=$('#mapper-longitude').value===''?null:Number($('#mapper-longitude').value);
   const decipherListenSeconds=Math.round(Number($('#mapper-listen-value').value)*Number($('#mapper-listen-unit').value));
@@ -1326,7 +1383,7 @@ $('#master-mute').addEventListener('click',()=>{masterAudio.muted=!masterAudio.m
 $('#master-volume').addEventListener('input',event=>{masterAudio.volume=Number(event.currentTarget.value);masterAudio.muted=false;applyMasterAudio();});
 document.addEventListener('change', async event => {
 	const order=event.target.closest('#p25-order');if(order){state.p25Order=order.value;localStorage.setItem('gpsdr-p25-order',order.value);renderDecoders();return;}
-	const p25Rate=event.target.closest('#p25-live-rate');if(p25Rate){const profile=state.profiles.find(item=>item.id===(state.p25Status?.profileID||state.status?.activeProfileID));if(!profile)return toast('Start or select a P25 profile first',true);try{const wasRunning=state.status?.running&&state.status.activeProfileID===profile.id;let updated=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):structuredClone(profile);updated.settings||={};updated.settings.p25SampleRateHz=Number(p25Rate.value)||0;updated=await api('/api/profiles',{method:'POST',body:JSON.stringify(updated)});if(wasRunning){await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:updated.id})});}state.selectedProfileID=updated.id;toast(profile.builtIn?'Editable profile created · capture width applied':'P25 capture width applied');await refreshAll();}catch(error){toast(error.message,true);}return;}
+	const p25Rate=event.target.closest('#p25-live-rate,#p25-amp-mode,#p25-lna-gain,#p25-vga-gain');if(p25Rate){const profile=state.profiles.find(item=>item.id===(state.p25ProfileID||state.p25Status?.profileID||state.status?.activeProfileID||$('#p25-profile-choice')?.value));if(!profile)return toast('Start or select a P25 profile first',true);try{const wasRunning=state.status?.running&&state.status.activeProfileID===profile.id;let updated=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):structuredClone(profile);updated.settings||={};if(p25Rate.id==='p25-live-rate')updated.settings.p25SampleRateHz=Number(p25Rate.value)||0;else if(p25Rate.id==='p25-amp-mode')updated.settings.p25AmpMode=p25Rate.value;else updated.settings[p25Rate.id==='p25-lna-gain'?'p25LNAGainDB':'p25VGAGainDB']=p25Rate.value===''?null:Number(p25Rate.value);updated=await api('/api/profiles',{method:'POST',body:JSON.stringify(updated)});if(wasRunning){await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:updated.id})});}state.selectedProfileID=state.p25ProfileID=updated.id;p25Rate.blur();toast('P25 receiver settings applied');await refreshAll();}catch(error){toast(error.message,true);}return;}
 	const volume=event.target.closest('.mixer-volume'),pan=event.target.closest('.mixer-pan');if(!volume&&!pan)return;const slider=volume||pan,row=slider.closest('[data-mixer-id]');
 	try{await api('/api/mixer',{method:'POST',body:JSON.stringify({id:row.dataset.mixerId,...(volume?{volume:Number(slider.value)}:{pan:Number(slider.value)})})});await refreshAll();}catch(error){toast(error.message,true);}
 });
@@ -1360,12 +1417,10 @@ resetMapperJob();
 refreshAll();
 setInterval(async()=>{
   if(document.hidden)return;
-	if(state.view==='mapper'&&$('#mapper-form').contains(document.activeElement))return;
-	try{const requests=[api('/api/status'),api('/api/mixer'),api('/api/p25/status')],mapperIndex=state.view==='mapper'?requests.push(api('/api/mapper/jobs'))-1:-1,characterizationIndex=state.view==='hardware'&&state.characterization?.running?requests.push(api('/api/calibrations/characterization'))-1:-1,responses=await Promise.all(requests),[status,mixer,p25Status]=responses,mapperJobs=mapperIndex>=0?responses[mapperIndex]:null,characterization=characterizationIndex>=0?responses[characterizationIndex]:null;Object.assign(state,{status,mixer,p25Status});if(characterization){state.characterization=characterization;renderCharacterization();}if(mapperJobs&&state.mapper){state.mapper.jobs=mapperJobs;const active=mapperJobs.filter(job=>job.state==='running'||job.state==='stopping');if(!$('#mapper-form').contains(document.activeElement))$('#mapper-job-grid').innerHTML=mapperJobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';$('#mapper-state').textContent=active.length?`${active.length} active`:'Idle';$('#mapper-state').className=`chip ${active.length?'ready':''}`;$('#mapper-stop-button').disabled=!active.length;}renderStatus();if(state.view==='live')renderMixer();if(state.view==='tuner')renderTuner();if(state.view==='decoders')renderDecoders();if(state.view==='mapper')renderMapperProgress();}catch(_){ }
+	try{const requests=[api('/api/status'),api('/api/mixer'),api('/api/p25/status')],mapperIndex=state.view==='mapper'?requests.push(api('/api/mapper/jobs'))-1:-1,characterizationIndex=state.view==='hardware'&&state.characterization?.running?requests.push(api('/api/calibrations/characterization'))-1:-1,responses=await Promise.all(requests),[status,mixer,p25Status]=responses,mapperJobs=mapperIndex>=0?responses[mapperIndex]:null,characterization=characterizationIndex>=0?responses[characterizationIndex]:null;Object.assign(state,{status,mixer,p25Status});if(characterization){state.characterization=characterization;renderCharacterization();}if(mapperJobs&&state.mapper){state.mapper.jobs=mapperJobs;const active=mapperJobs.filter(job=>job.state==='running'||job.state==='stopping');if(!$('#mapper-job-grid').contains(document.activeElement))$('#mapper-job-grid').innerHTML=mapperJobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';$('#mapper-state').textContent=active.length?`${active.length} active`:'Idle';$('#mapper-state').className=`chip ${active.length?'ready':''}`;$('#mapper-stop-button').disabled=!active.length;}renderStatus();if(state.view==='live')renderMixer();if(state.view==='tuner')renderTuner();if(state.view==='decoders')renderDecoders();if(state.view==='mapper')renderMapperProgress();}catch(_){ }
 },750);
 setInterval(async()=>{
 	if(document.hidden)return;
-	if(state.view==='mapper'&&$('#mapper-form').contains(document.activeElement))return;
 	try{const eventQuery=$('#event-search')?.value.trim()||'';const requests=[api(`/api/events?limit=150${eventQuery?`&q=${encodeURIComponent(eventQuery)}`:''}`),api('/api/signals?limit=400')];if(state.view==='mapper')requests.push(api('/api/mapper'));const [events,signals,mapper]=await Promise.all(requests);Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='mapper'&&mapper)renderMapper();}catch(_){ }
 },5000);
 async function pollSpectrum() {

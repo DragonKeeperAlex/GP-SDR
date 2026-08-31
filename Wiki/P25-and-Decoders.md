@@ -13,12 +13,21 @@ system, grant, call, talkgroup, encryption, and audio state into the app.
 2. Add the system name and current control-channel frequencies.
 3. Add NAC, WACN, system ID, TDMA control setting, and talkgroups when known.
 4. Assign one wideband receiver, or separate Control and Voice receivers.
-5. Choose P25 capture width. Auto starts at 10 MS/s and falls back if the USB
-   stream becomes unstable.
+5. Choose P25 capture width. HackRF Auto starts at 10 MS/s and falls back if
+   transport becomes unstable. RTL-SDR Auto uses 2.4 MS/s; its dropdown excludes
+   HackRF-only rates. Wider capture does not itself improve antenna sensitivity.
 6. Start the profile and open **Decoders → P25/SDRTrunk**.
 7. Create JMBE locally if unencrypted calls decode but remain silent.
 
 ## P25 acceptance indicators
+
+In version 1.4, select a System profile and Receiver directly on the P25 page,
+then Start P25. Profile assignments preserves your existing multi-radio plan;
+selecting one named receiver makes a single-receiver configuration. Search and
+Active only filter the talkgroup mixer; Order selects most recent or most heard.
+HackRF RF amp/LNA/VGA fields preserve saved SDRTrunk settings when left at Saved
+or blank. Explicit overrides are saved to the profile and restart active P25.
+They are HackRF-only controls, not an RTL-SDR RF amplifier.
 
 Successful control-channel reception means more than a peak or audible digital
 noise. Look for:

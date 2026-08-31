@@ -73,7 +73,7 @@ but keeps jobs. Cancel intentionally changes nothing.
 ## Current external or engineering limits
 
 - Encrypted P25 is identified and skipped, not decrypted.
-- GP-SDR 1.3.3 includes a guarded HackRF transmit workspace; digital voice
+- GP-SDR 1.4.0 includes a guarded HackRF transmit workspace; digital voice
   transmission and unattended/continuous transmission are intentionally not implemented.
 - RadioReference live API use needs Premium access and an approved application
   key; official local exports work without one.

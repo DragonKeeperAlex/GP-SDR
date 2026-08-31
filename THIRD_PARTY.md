@@ -42,6 +42,12 @@ states otherwise.
 
 ## Original GP-SDR work
 
+The original `gpsdr-usb` macOS helper uses the public
+[libusb](https://libusb.info/) C ABI to read USB serial and bus/port descriptors.
+It dynamically loads the separately installed libusb library (LGPL-2.1-or-later);
+it does not claim interfaces or reset receivers. SDRTrunk's public tuner IDs
+and configuration format are used for interoperation, not copied decoder code.
+
 The GP-SDR process adapter, isolated playlist generator, event normalization,
 DSP, Mapper, web/mobile interface, native macOS shell, setup workflow, tests,
 and packaging scripts are original project code. Missing or incorrect

@@ -1,12 +1,26 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func formattedTunerJSON(t *testing.T, data []byte) string {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
 
 func sdrTrunkTestProfile() ScanProfile {
 	return ScanProfile{ID: "p25-test", P25Systems: []P25SystemConfig{{
@@ -102,13 +116,13 @@ func TestOptimizeP25SampleRatesConfiguresAssignedHackRFOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(data)
-	if !strings.Contains(text, `"sampleRate": "RATE_10_0"`) || !strings.Contains(text, `"amplifierEnabled": false`) || !strings.Contains(text, `"sampleRate": "RATE_2_048MHZ"`) {
+	text := formattedTunerJSON(t, data)
+	if !strings.Contains(text, `"sampleRate": "RATE_10_0"`) || !strings.Contains(text, `"amplifierEnabled": true`) || !strings.Contains(text, `"sampleRate": "RATE_2_048MHZ"`) {
 		t.Fatalf("unexpected optimized tuner configuration:\n%s", text)
 	}
 }
 
-func TestOptimizeP25SampleRatesDisablesHackRFAmplifierAtSafeRate(t *testing.T) {
+func TestOptimizeP25SampleRatesPreservesWorkingHackRFAmplifier(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -126,8 +140,8 @@ func TestOptimizeP25SampleRatesDisablesHackRFAmplifierAtSafeRate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"amplifierEnabled": false`) {
-		t.Fatalf("HackRF amplifier remained enabled: %s", data)
+	if !strings.Contains(string(data), `"amplifierEnabled": true`) {
+		t.Fatalf("working HackRF amplifier setting was overwritten: %s", data)
 	}
 }
 
@@ -179,7 +193,7 @@ func TestOptimizeP25SampleRatesPreservesWideHackRFSystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"sampleRate": "RATE_10_0"`) {
+	if !strings.Contains(formattedTunerJSON(t, data), `"sampleRate": "RATE_10_0"`) {
 		t.Fatalf("wide system sample rate was unexpectedly changed: %s", data)
 	}
 }

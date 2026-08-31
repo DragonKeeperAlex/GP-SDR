@@ -72,6 +72,9 @@ build_shell arm64 "$BUILD_ROOT/bin/GP-SDR-shell-arm64"
 build_shell x86_64 "$BUILD_ROOT/bin/GP-SDR-shell-amd64"
 
 mkdir -p "$PROJECT_ROOT/build/helpers/darwin-arm64" "$PROJECT_ROOT/build/helpers/darwin-amd64"
+xcrun clang++ -std=c++17 -O2 -target arm64-apple-macos13.0 "$PROJECT_ROOT/helpers/usb_inventory/main.cpp" -o "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-usb"
+xcrun clang++ -std=c++17 -O2 -target x86_64-apple-macos13.0 "$PROJECT_ROOT/helpers/usb_inventory/main.cpp" -o "$PROJECT_ROOT/build/helpers/darwin-amd64/gpsdr-usb"
+lipo -create "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-usb" "$PROJECT_ROOT/build/helpers/darwin-amd64/gpsdr-usb" -output "$BUILD_ROOT/bin/gpsdr-usb-darwin-universal"
 xcrun clang -fobjc-arc -O2 -target arm64-apple-macos13.0 -framework Foundation \
   "$PROJECT_ROOT/macos/GPSDRPreferences.m" \
   -o "$PROJECT_ROOT/build/helpers/darwin-arm64/gpsdr-mac-prefs"
@@ -112,6 +115,13 @@ make_mac_app() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$app_root/Contents/Info.plist"
   cp "$shell_binary" "$app_root/Contents/MacOS/GP-SDR"
   cp "$server_binary" "$app_root/Contents/Resources/bin/gpsdr-server"
+  usb_arch=$architecture
+  if [ "$usb_arch" = "x86_64" ]; then usb_arch=amd64; fi
+  if [ "$usb_arch" = "universal" ]; then
+    cp "$BUILD_ROOT/bin/gpsdr-usb-darwin-universal" "$app_root/Contents/Resources/bin/gpsdr-usb"
+  else
+    cp "$PROJECT_ROOT/build/helpers/darwin-$usb_arch/gpsdr-usb" "$app_root/Contents/Resources/bin/gpsdr-usb"
+  fi
   cp "$PROJECT_ROOT/LICENSE" "$PROJECT_ROOT/NOTICE" "$PROJECT_ROOT/THIRD_PARTY.md" "$app_root/Contents/Resources/Documentation/"
   cp "$PROJECT_ROOT/Scripts/install_optional_decoders_macos.sh" "$app_root/Contents/Resources/Scripts/"
   chmod 755 "$app_root/Contents/Resources/Scripts/install_optional_decoders_macos.sh"
@@ -147,6 +157,7 @@ make_mac_app() {
   fi
   codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/MacOS/GP-SDR"
   codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-server"
+  codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-usb"
   if [ -f "$app_root/Contents/Resources/bin/gpsdr-soapy" ]; then
     codesign --force $codesign_options --sign "$signing_identity" "$app_root/Contents/Resources/bin/gpsdr-soapy"
   fi

@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+func TestMapperSettingsFocusDoesNotSuspendTelemetry(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "if(state.view==='mapper'&&$('#mapper-form').contains(document.activeElement))return;") {
+		t.Fatal("editing Mapper settings must not suspend receiver progress or result polling")
+	}
+}
+
 func TestHiddenSpectrumCanvasCannotCreateZeroIncrementLoop(t *testing.T) {
 	path := filepath.Join("..", "..", "web", "app.js")
 	data, err := os.ReadFile(path)

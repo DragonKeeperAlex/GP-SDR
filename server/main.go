@@ -73,6 +73,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	runtimeState.Stop()
+	app.ShutdownCaptureSessions()
 	_ = server.Close()
 }
 

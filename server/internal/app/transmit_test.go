@@ -8,6 +8,25 @@ import (
 	"time"
 )
 
+func TestTransmitUsesSignedIQAndWholeSource(t *testing.T) {
+	if int8(signedIQByte(-110)) != -110 || signedIQByte(0) != 0 {
+		t.Fatal("IQ must use signed bytes without an unsigned midpoint")
+	}
+	// Two seconds at 2 Hz: first half negative, second half positive.
+	iq, err := modulateTransmitAudio([]int16{-16000, -16000, 16000, 16000}, 2, 8, 16, "am")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int8(iq[16]) <= int8(iq[0]) {
+		t.Fatal("second source second was replaced by a repeat of the first")
+	}
+	for i := 1; i < len(iq); i += 2 {
+		if iq[i] != 0 {
+			t.Fatal("AM carrier must remain centered, without an unintended 1 kHz offset")
+		}
+	}
+}
+
 func testPCM16WAV(t *testing.T, path string) {
 	t.Helper()
 	const rate, frames = 8000, 800

@@ -128,7 +128,10 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	busy := r.running && r.profileUsesDeviceLocked(device.ID)
 	r.mu.RUnlock()
 	if device.ID == "" || !device.Connected || !device.Available || !strings.EqualFold(device.Kind, "HackRF") {
-		return r.TransmitStatus(), errors.New("select an available HackRF; RTL-SDR and failed self-test devices cannot transmit")
+		return r.TransmitStatus(), errors.New("select a connected, available HackRF; RTL-SDR cannot transmit")
+	}
+	if device.HealthWarning != "" && !request.DryRun {
+		return r.TransmitStatus(), errors.New("resolve the HackRF diagnostic warning before RF transmission; receive and transmit dry runs remain available")
 	}
 	if busy {
 		return r.TransmitStatus(), fmt.Errorf("%s is already in use by Live, Tuner, or P25", device.Name)
@@ -215,7 +218,7 @@ func (r *Runtime) StopTransmit() TransmitStatus {
 	return r.TransmitStatus()
 }
 
-// modulateTransmitAudio converts mono PCM into HackRF's unsigned interleaved
+// modulateTransmitAudio converts mono PCM into HackRF's signed interleaved
 // IQ format. It is deterministic and bounded so unit tests can validate the
 // waveform without claiming that an antenna test has occurred.
 func modulateTransmitAudio(audio []int16, sourceRate, sampleRate, sampleCount int, mode string) ([]byte, error) {
@@ -229,23 +232,32 @@ func modulateTransmitAudio(audio []int16, sourceRate, sampleRate, sampleCount in
 		deviation = 75_000
 	}
 	for i := 0; i < sampleCount; i++ {
-		position := int(float64(i%sampleRate) * float64(sourceRate) / float64(sampleRate))
-		if position >= len(audio) {
-			position = len(audio) - 1
+		// Consume the whole source rather than repeating its first second.
+		// Linear interpolation avoids nearest-neighbor resampling steps.
+		position := float64(i) * float64(sourceRate) / float64(sampleRate)
+		index := int(position)
+		level := 0.0
+		if index < len(audio) {
+			next := min(index+1, len(audio)-1)
+			fraction := position - float64(index)
+			level = (float64(audio[index])*(1-fraction) + float64(audio[next])*fraction) / 32768
 		}
-		level := float64(audio[position]) / 32768
 		if mode == "am" {
 			amplitude := 0.45 + 0.35*level
-			output[2*i] = uint8(clampByte(127 + amplitude*127*math.Cos(phase)))
-			output[2*i+1] = uint8(clampByte(127 + amplitude*127*math.Sin(phase)))
-			phase += 2 * math.Pi * 1000 / float64(sampleRate)
+			output[2*i] = signedIQByte(amplitude * 127)
+			output[2*i+1] = 0
 			continue
 		}
 		phase += 2 * math.Pi * deviation * level / float64(sampleRate)
-		output[2*i] = uint8(clampByte(127 + 110*math.Cos(phase)))
-		output[2*i+1] = uint8(clampByte(127 + 110*math.Sin(phase)))
+		phase = math.Remainder(phase, 2*math.Pi)
+		output[2*i] = signedIQByte(110 * math.Cos(phase))
+		output[2*i+1] = signedIQByte(110 * math.Sin(phase))
 	}
 	return output, nil
+}
+
+func signedIQByte(value float64) byte {
+	return byte(int8(max(-127, min(127, int(math.Round(value))))))
 }
 
 func clampByte(value float64) int {

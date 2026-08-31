@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.3.3"
+var Version = "1.4.0"
 
 type SDRDevice struct {
 	ID                 string             `json:"id"`
@@ -17,6 +17,8 @@ type SDRDevice struct {
 	Driver             string             `json:"driver"`
 	Connected          bool               `json:"connected"`
 	Available          bool               `json:"available"`
+	HealthWarning      string             `json:"healthWarning,omitempty"`
+	TunerID            string             `json:"tunerID,omitempty"`
 	SampleRateLimit    *float64           `json:"sampleRateLimit"`
 	FrequencyMinimumHz float64            `json:"frequencyMinimumHz,omitempty"`
 	FrequencyMaximumHz float64            `json:"frequencyMaximumHz,omitempty"`
@@ -121,6 +123,9 @@ type SurveySettings struct {
 	TranscribeVoice    bool    `json:"transcribeVoice"`
 	MaxRecordingDays   int     `json:"maxRecordingDays"`
 	P25SampleRateHz    int     `json:"p25SampleRateHz,omitempty"`
+	P25AmpMode         string  `json:"p25AmpMode,omitempty"`
+	P25LNAGainDB       *int    `json:"p25LNAGainDB,omitempty"`
+	P25VGAGainDB       *int    `json:"p25VGAGainDB,omitempty"`
 }
 
 type ScanProfile struct {

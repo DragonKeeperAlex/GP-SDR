@@ -23,14 +23,19 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 				Driver: "built-in", Connected: true, Available: true, SampleRateLimit: &limit,
 				Note: ptr("Second simulated receiver for simultaneous Discovery and Identify testing.")})
 	}
-	devices = append(devices, discoverHackRF()...)
-	devices = append(devices, discoverRTLSDR()...)
-	devices = append(devices, discoverSoapy()...)
+	devices = append(devices, discoverPhysicalDevices()...)
 	devices = uniquePhysicalDevices(devices)
+	applyUSBIdentities(devices)
 	for index := range devices {
 		applyNominalFrequencyRange(&devices[index])
 	}
 	return devices
+}
+
+var discoverPhysicalDevices = func() []SDRDevice {
+	devices := discoverHackRF()
+	devices = append(devices, discoverRTLSDR()...)
+	return append(devices, discoverSoapy()...)
 }
 
 // applyNominalFrequencyRange reports the commonly supported tuning range for
@@ -109,20 +114,28 @@ func discoverHackRF() []SDRDevice {
 	}
 	items := make([]SDRDevice, 0, len(probes))
 	for index, probe := range probes {
-		serial := probe.Serial
-		s := serial
-		id := fmt.Sprintf("hackrf-%d", index)
-		var serialPointer *string
-		if serial != "" {
-			id, serialPointer = "hackrf-"+serial, &s
-		}
-		device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: !probe.SelfTestFailed, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
-		if probe.SelfTestFailed {
-			device.Note = ptr("HackRF self-test failed; receiver disabled until the hardware is repaired or replaced.")
-		}
-		items = append(items, device)
+		items = append(items, hackRFDevice(probe, index, tool, limit))
 	}
 	return items
+}
+
+// Firmware diagnostics are advisory: a warning does not establish that USB
+// streaming or reception failed. Keep the radio selectable and report capture
+// failures at the point of use instead of silently removing it from every UI.
+func hackRFDevice(probe hackRFProbe, index int, tool string, limit float64) SDRDevice {
+	serial := probe.Serial
+	s := serial
+	id := fmt.Sprintf("hackrf-%d", index)
+	var serialPointer *string
+	if serial != "" {
+		id, serialPointer = "hackrf-"+serial, &s
+	}
+	device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
+	if probe.SelfTestFailed {
+		device.HealthWarning = "Firmware reported a self-test warning. Receive is enabled; verify reception and USB stability before relying on this radio."
+		device.Note = ptr(device.HealthWarning)
+	}
+	return device
 }
 
 type hackRFProbe struct {
@@ -154,6 +167,14 @@ func discoverRTLSDR() []SDRDevice {
 	limit := 3.2e6
 	if err != nil {
 		return []SDRDevice{{ID: "rtlsdr-driver", Name: "RTL-SDR", Kind: "RTL-SDR", Driver: "librtlsdr", Available: false, SampleRateLimit: &limit, Note: ptr("Install RTL-SDR host tools to enable this driver.")}}
+	}
+	// Enumeration must not run rtl_test's tuner benchmark or claim a device
+	// merely to populate a menu. A successful USB inventory is authoritative,
+	// including an empty result after a dongle disconnects.
+	if helper, helperErr := findTool("gpsdr-usb"); helperErr == nil {
+		if output, inventoryErr := runTool(helper, nil, 3*time.Second); inventoryErr == nil {
+			return rtlDevicesFromUSBInventory(output, tool)
+		}
 	}
 	output, _ := runTool(tool, []string{"-t"}, 4*time.Second)
 	re := regexp.MustCompile(`(?i)found\s+(\d+)\s+device`)
