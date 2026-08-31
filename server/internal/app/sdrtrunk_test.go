@@ -282,7 +282,7 @@ func TestPreferredSDRTrunkHackRFNameUsesHardwareSerial(t *testing.T) {
 	}
 }
 
-func TestPreferredSDRTrunkHackRFUsesConfiguredUSBID(t *testing.T) {
+func TestPreferredSDRTrunkHackRFIgnoresConfiguredUSBIDs(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -294,8 +294,8 @@ func TestPreferredSDRTrunkHackRFUsesConfiguredUSBID(t *testing.T) {
 	}
 	serial := "000000000000000024b862dc3140c5cb"
 	name := preferredSDRTrunkTuner([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Serial: &serial}}}, root)
-	if name != "" {
-		t.Fatalf("multiple configured HackRFs must not receive an invented preference, got %q", name)
+	if name != "HackRF ONE 00000000-00000000-24B862DC-3140C5CB" {
+		t.Fatalf("HackRF preference must use its serial rather than settings USB IDs, got %q", name)
 	}
 }
 

@@ -18,6 +18,16 @@ func TestRTLInventoryDoesNotInventDisconnectedReceiver(t *testing.T) {
 	}
 }
 
+func TestRTLPreferredNameUsesEEPROMSerialAndTunerLabel(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "configuration"), 0700)
+	os.WriteFile(filepath.Join(root, "configuration", "tuner_configuration.json"), []byte(`{"tunerConfigurations":[{"type":"e4KTunerConfiguration","uniqueID":"RTL-2832 USB Bus:2 Port:1.3"}]}`), 0600)
+	device := SDRDevice{Kind: "RTL-SDR", Serial: ptr("00000001"), TunerID: "RTL-2832 USB Bus:2 Port:1.3"}
+	if got := preferredSDRTrunkTuner([]p25AssignedDevice{{Device: device}}, root); got != "RTL-2832/E4000 00000001" {
+		t.Fatalf("wrong preferred name %q", got)
+	}
+}
+
 func TestUSBIdentityMatchesSerialAndRestrictsP25Ownership(t *testing.T) {
 	serialA, serialB := "aaaaaaaa", "bbbbbbbb"
 	devices := []SDRDevice{{ID: "a", Kind: "HackRF", Serial: &serialA}, {ID: "b", Kind: "HackRF", Serial: &serialB}}
@@ -30,8 +40,8 @@ func TestUSBIdentityMatchesSerialAndRestrictsP25Ownership(t *testing.T) {
 	path := filepath.Join(root, "configuration", "tuner_configuration.json")
 	os.WriteFile(path, []byte(`{"tunerConfigurations":[],"otherSetting":true}`), 0600)
 	assigned := []p25AssignedDevice{{Device: devices[1], Role: "control"}}
-	if preferredSDRTrunkTuner(assigned, root) != devices[1].TunerID {
-		t.Fatal("selected serial did not map to current USB port")
+	if preferredSDRTrunkTuner(assigned, root) != "HackRF ONE BBBBBBBB" {
+		t.Fatal("playlist preference must use serial; disable list must use USB port")
 	}
 	if err := restrictP25Tuners(root, assigned, devices); err != nil {
 		t.Fatal(err)

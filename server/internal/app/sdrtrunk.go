@@ -470,10 +470,10 @@ func preferredSDRTrunkTuner(devices []p25AssignedDevice, applicationRoot string)
 	if len(devices) != 1 {
 		return ""
 	}
-	if devices[0].Device.TunerID != "" {
-		return devices[0].Device.TunerID
-	}
 	if strings.EqualFold(devices[0].Device.Kind, "RTL-SDR") {
+		if devices[0].Device.TunerID != "" {
+			return rtlPreferredName(devices[0].Device, applicationRoot)
+		}
 		return preferredRTLSDRTuner(applicationRoot)
 	}
 	if devices[0].Device.Kind != "HackRF" || devices[0].Device.Serial == nil {
@@ -483,27 +483,38 @@ func preferredSDRTrunkTuner(devices []p25AssignedDevice, applicationRoot string)
 	if len(serial) == 32 {
 		serial = serial[0:8] + "-" + serial[8:16] + "-" + serial[16:24] + "-" + serial[24:32]
 	}
-	// SDRTrunk identifies USB HackRFs by its persisted bus/port uniqueID, not
-	// by the 32-character hardware serial returned by hackrf_info. Prefer an
-	// exact configured ID when one is available. With several configured
-	// HackRFs, returning an invented serial ID makes SDRTrunk silently bind the
-	// wrong tuner, so leave the preference empty and let its tuner manager use
-	// the matching configured devices.
-	configured := configuredHackRFTunerIDs(applicationRoot)
-	for _, id := range configured {
-		if strings.Contains(strings.ToUpper(strings.ReplaceAll(id, "-", "")), serial) {
-			return id
-		}
+	// SDRTrunk 0.6.1 HackRFTuner.getPreferredName uses the board serial.
+	// DiscoveredUSBTuner's bus/port ID is only for settings and disable lists.
+	return "HackRF ONE " + serial
+}
+
+// RTL2832TunerController.getUniqueID includes the tuner label when an EEPROM
+// serial exists. Its DiscoveredUSBTuner configuration ID is a different key.
+func rtlPreferredName(device SDRDevice, root string) string {
+	if device.Serial == nil || *device.Serial == "" {
+		return device.TunerID
 	}
-	if len(configured) == 1 {
-		return configured[0]
+	data, err := os.ReadFile(filepath.Join(root, "configuration", "tuner_configuration.json"))
+	if err != nil {
+		return "" // Do not invent a preferred name without a known tuner type.
 	}
-	if len(configured) > 1 {
+	var config struct {
+		Tuners []map[string]any `json:"tunerConfigurations"`
+	}
+	if json.Unmarshal(data, &config) != nil {
 		return ""
 	}
-	// Preserve the serial form as a fallback for fresh SDRTrunk profiles that
-	// have not yet persisted a USB tuner configuration.
-	return "HackRF ONE " + serial
+	for _, tuner := range config.Tuners {
+		if tuner["uniqueID"] != device.TunerID {
+			continue
+		}
+		kind, _ := tuner["type"].(string)
+		labels := map[string]string{"e4KTunerConfiguration": "E4000", "r820TTunerConfiguration": "R820T", "r828DTunerConfiguration": "R828D", "fc0013TunerConfiguration": "FC0013"}
+		if label := labels[kind]; label != "" {
+			return "RTL-2832/" + label + " " + *device.Serial
+		}
+	}
+	return ""
 }
 
 func configuredHackRFTunerIDs(applicationRoot string) []string {
