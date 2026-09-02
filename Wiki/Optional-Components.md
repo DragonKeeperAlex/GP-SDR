@@ -188,3 +188,11 @@ logged without being promoted to a successful identification.
 | Decoder starts but produces no messages | Verify frequency, mode, bandwidth, signal quality, and supported protocol. |
 | Digital voice has no audio | Check encryption, JMBE/DSD-FME readiness, audio routing, and dropped samples. |
 | Mapper labels only Candidate | Valid decoder frames or authoritative nearby reference evidence have not been received yet. |
+
+---
+
+1.4.1 baseline source: [integrations.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/integrations.go), [install_optional_decoders_macos.sh](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/Scripts/install_optional_decoders_macos.sh).
+
+The rc9 [Local Intelligence](Local-Intelligence) guide adds Ollama model setup. Ollama and whisper.cpp serve different stages: the former correlates evidence; the latter transcribes audio. Neither replaces a missing protocol decoder. Android’s preview has separate [platform limits](Android-Preview).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

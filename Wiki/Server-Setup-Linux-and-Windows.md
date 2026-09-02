@@ -253,3 +253,9 @@ LAN or VPN.
 | Decoder says Setup | Install the executable, put it on a searched path or `GPSDR_HELPERS`, restart, then Refresh. |
 | Server restarts repeatedly | Inspect `journalctl -u gp-sdr` on Linux or Task Scheduler History/Event Viewer on Windows. |
 | Storage grows unexpectedly | Configure recording/IQ caps, rejected-IQ retention, and automatic cleanup under Settings. |
+
+---
+
+1.4.1 baseline source: [build_release.sh](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/Scripts/build_release.sh), [main.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/main.go).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

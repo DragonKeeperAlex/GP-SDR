@@ -1,5 +1,7 @@
 # P25 Trunking and Decoder Pages
 
+In **1.5.0-rc9**, the navigation item **Channels** opens Channels & profiles (called **Profiles** in 1.4.1). Instructions referring to Profiles use this same workspace.
+
 ## P25 stack
 
 Release packages include SDRTrunk for P25 Phase 1/2 trunk following and JMBE
@@ -22,7 +24,7 @@ system, grant, call, talkgroup, encryption, and audio state into the app.
 ## P25 acceptance indicators
 
 In version 1.4, select a System profile and Receiver directly on the P25 page,
-then Start P25. Profile assignments preserves your existing multi-radio plan;
+then Start P25. **Profile assignments** preserves your existing multi-radio plan;
 selecting one named receiver makes a single-receiver configuration. Search and
 Active only filter the talkgroup mixer; Order selects most recent or most heard.
 HackRF RF amp/LNA/VGA fields preserve saved SDRTrunk settings when left at Saved
@@ -94,3 +96,21 @@ pinned model from its integration card, then enable transcription in a profile
 or **Dictate voice** in Mapper Identify. Transcripts appear in Activity search,
 expanded Mapper evidence, and exports. Poor or digital/encrypted audio will not
 produce reliable speech text.
+
+## Start another decoder from its workspace
+
+1. Open Decoders and choose the tool for the signal type in the table above.
+2. Use its Install/How to action until the component is Ready. A ready executable is only setup confirmation.
+3. Choose a matching built-in profile, or press **New configuration** and create a channel bank or range with verified frequencies and the intended decoder.
+4. Save/use that profile, assign an idle receiver, and start Live.
+5. Check the decoder’s **Recent activity** and Activity Timeline for valid messages. Return to Tuner to verify RF quality if there are no messages.
+
+For Mapper, choose the same backend in the job’s **Decoder** field, or Auto for routing by signal/target. For a known DMR channel, start in Tuner with DMR and confirm DSD-FME produces frames before widening the survey. DMR trunk following is not the same capability as the bundled P25 trunk engine; selecting DMR does not create a DMR trunking controller.
+
+The P25 control display distinguishes **Configured primary** from **Decoded current**. Only decoded status and valid system/grant evidence establish reception. Search/filter controls affect the displayed mixer, while receiver and capture/gain changes can restart the active profile.
+
+---
+
+1.4.1 baseline source: [app.js](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/app.js), [decoder_runner.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/decoder_runner.go).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

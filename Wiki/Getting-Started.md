@@ -1,5 +1,7 @@
 # Getting Started
 
+In **1.5.0-rc9**, the navigation item **Channels** opens Channels & profiles (called **Profiles** in 1.4.1). Instructions referring to Profiles use this same workspace.
+
 ## Choose a package
 
 ### macOS 13 or newer
@@ -9,9 +11,11 @@ Intel (`x86_64`) ZIP. Drag **GP-SDR.app** to Applications. Public builds are
 ad-hoc signed rather than Apple-notarized, so the first launch may require
 Control-clicking the app and selecting **Open**.
 
-The native app launches its own local receiver service and prevents idle system
-sleep while a receiver, Mapper job, or P25 session is active. Display sleep is
-still allowed.
+The native app launches its own receiver service and prevents idle system
+sleep while the app is open. Display sleep is still allowed; quitting releases
+the assertion. It serves a token-protected LAN console on a dynamically chosen
+port. See [Remote and Settings](Remote-and-Settings) for the distinction from
+the command-line server’s loopback default.
 
 ### Windows 10 or 11
 
@@ -83,3 +87,19 @@ A strong broadcast FM station is the best initial test because it separates
 basic hardware/audio problems from trunking or decoder configuration. If it is
 not intelligible in GP-SDR, fix receiver ownership, antenna, gain, sample rate,
 squelch, and audio before attempting P25.
+
+## Confirm the version and choose the next task
+
+Download packages from [GitHub Releases](https://github.com/DragonKeeperAlex/GP-SDR/releases) and check **Settings → Build → Version** after installation. This guide targets 1.4.1. Keep the previous application and a stopped-service backup of your data when updating.
+
+Once one known signal works, stop the Tuner before giving that same radio to a profile, Mapper, or P25. Continue with [Profiles](Profiles-and-Mixer), [Mapper](Mapper-Discovery-and-Identify), or [P25](P25-and-Decoders). On a phone, scroll the bottom navigation to reach all workspaces.
+
+---
+
+1.4.1 baseline source: [GPSDRApp.swift](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/macos/GPSDRApp.swift), [INSTALL.md](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/Docs/INSTALL.md).
+
+## Installing the current release candidate
+
+The repository now also publishes **1.5.0-rc9**, with [Band monitor](Band-Monitor), [Analyze/Schedule](Analyze-and-Schedule), and [Local intelligence](Local-Intelligence). Use the explicitly labeled rc9 assets from Releases rather than assuming the latest-stable link selects them. In the package commands above, substitute the actual downloaded version’s filename. Stop analysis and capture before replacing the app, retain the data backup, and verify Version after restarting.
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

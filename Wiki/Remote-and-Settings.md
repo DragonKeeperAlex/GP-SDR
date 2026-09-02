@@ -2,15 +2,19 @@
 
 ## Native app and companion interface
 
-The macOS app is the primary interface. It starts a private service on an
-available loopback port and opens the complete UI in its WebKit window. The
+The macOS app is the primary interface. It opens the complete UI in its WebKit window and starts a token-protected
+service on all interfaces at an available port. The
 companion interface uses the same API and is designed for desktop and mobile
 browsers.
 
 ## LAN access
 
-GP-SDR binds to `127.0.0.1` by default. To reach it from another device on a
-trusted LAN, enable LAN listening in Settings or start:
+The standalone command-line server and packaged Linux service bind to
+`127.0.0.1` by default. The native macOS wrapper in 1.4.1 instead starts its
+server with `0.0.0.0`, a random token, and a dynamically chosen port. The
+Settings Web console card shows an address, not a LAN-enable toggle.
+
+For a standalone server reachable on a trusted LAN, start:
 
 ```bash
 gp-sdr -listen 0.0.0.0 -port 8073
@@ -36,18 +40,18 @@ permissions, private-network firewall rules, logs, updates, and backups.
 5. Set finite recording and IQ retention.
 6. Back up the data directory shown in Settings.
 
-Active receiver, P25, and Mapper sessions prevent idle system sleep. Display
-sleep is allowed and the assertion is released when GP-SDR exits.
+The native macOS app prevents idle system sleep while it is open. Display
+sleep is allowed and the assertion is released when GP-SDR exits. A standalone
+server needs the host’s power settings configured for unattended operation.
 
 ## Display performance
 
 Settings controls waterfall frame rate, quality/FFT detail, smoothing, peak
-hold, and history. Suggested order when reducing lag:
+hold, and display floor/ceiling. Suggested order when reducing lag:
 
 1. Lower waterfall frame rate.
 2. Lower FFT/detail quality.
-3. Reduce waterfall history.
-4. Reduce receiver sample rate only if USB or DSP is overloaded.
+3. Reduce receiver sample rate only if USB or DSP is overloaded.
 
 The spectrum can remain responsive at a lower display rate because capture and
 audio processing are not tied to every visual frame.
@@ -63,8 +67,8 @@ is not removed. Cleanup stays inside GP-SDR's Recordings and IQ directories;
 profiles, Mapper history, calibration, local channel databases, and range sync
 data are never targets. General automatic cleanup is off until explicitly
 enabled. Mapper's rejected-IQ cleanup is separate: after local analysis
-finishes, low-value IQ remains recoverable for 24 hours by default and is then
-removed. The Data and Managed IQ cards show analyzing, retained, and rejected
+finishes, quarantined low-value IQ remains recoverable for 24 hours by default and is then
+removed. In rc9, the job’s Delete after analysis policy instead removes rejected IQ immediately after finalization, without that recovery timer. The Data and Managed IQ cards show analyzing, retained, and rejected
 usage separately; the recovery period can be set from one hour through seven
 days.
 
@@ -85,9 +89,26 @@ names and platform-specific setup and verification steps.
 
 ## Security model
 
-- Local-only binding is the default.
+- Local-only binding is the standalone server default; the native macOS wrapper enables a token-protected LAN listener.
 - Non-loopback binding requires an access token and generates one when absent.
-- RadioReference credentials remain in the process environment, not profiles or
-  browser storage.
+- RadioReference credentials use the process environment or, on macOS, the supported Keychain form; they are not embedded in shared profiles.
 - Imported profiles are untrusted and validated.
 - Only media paths inside GP-SDR storage can be served.
+
+## Connect a phone or tablet
+
+1. Keep GP-SDR running on the host and both devices on the same trusted LAN/VPN.
+2. Use **Settings → Web console → Address** to obtain the current tokenized URL. If it shows a loopback address, substitute the host’s LAN IP while retaining the displayed port and token.
+3. Open that URL in the other device’s browser. Do not assume the native app uses port 8073 every time; its token/port may change after restart.
+4. Scroll the bottom navigation to reach Tuner, Mapper, and other pages. The same host jobs are controlled by all connected clients.
+5. If connection fails, check the listener, host firewall, IP, current port, and token before changing radio settings.
+
+The SDR stays attached to the host. Local database-folder changes and transmit controls are restricted to the host’s local interface. P25’s native system-output audio may play on the host; do not assume every decoder’s live audio is streamed to the phone. Recording playback is a separate workflow.
+
+For strict loopback-only operation, run the standalone server explicitly with `-listen 127.0.0.1`. The built-in server uses HTTP; keep external access behind a VPN or an appropriately configured HTTPS proxy. No app UI toggle changes the native wrapper’s listen arguments in this version.
+
+---
+
+1.4.1 baseline source: [GPSDRApp.swift](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/macos/GPSDRApp.swift), [main.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/main.go).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

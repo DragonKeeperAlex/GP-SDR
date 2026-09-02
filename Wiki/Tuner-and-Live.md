@@ -65,13 +65,15 @@ Squelch is a margin above that floor, not an absolute guarantee of speech.
 The spectrum shows current power over frequency; the waterfall adds time with
 newest samples at the top. Hover for frequency/power and click to move the VFO.
 Settings provides frame rate, quality/FFT detail, smoothing, peak hold, and
-waterfall history controls. Reduce these before lowering receiver sample rate
+display floor/ceiling controls. Reduce these before lowering receiver sample rate
 when the interface is sluggish but audio is otherwise stable.
 
 ## Audio and mixer
 
 The top bar controls whole-app mute and volume. Live and decoder mixers add
-per-channel or per-talkgroup mute, solo, volume, pan, and priority ducking.
+mute/solo; analog channel rows also offer volume and Advanced-mode pan. P25
+talkgroup rows use system output and do not have those sliders. Channel priority
+settings control ducking.
 If spectrum activity is present but audio is silent, check master mute, the
 selected row, solo state, squelch, mode, output device, and P25 JMBE status.
 
@@ -86,3 +88,23 @@ Activity identifies a protocol.
 
 P25 trunk following remains in the dedicated P25/SDRTrunk workspace. The Tuner
 P25 choice is for conventional single-frequency experiments.
+
+## Tune within a fixed capture
+
+1. Select an idle receiver and enter the desired **Listen VFO** frequency.
+2. Leave **Hardware center** blank for automatic offset placement, or enter a center whose passband contains the desired channel.
+3. Start reception, then enable **Lock center · software VFO** when you want to keep the hardware tuned while listening to other channels within that window.
+4. Click the spectrum/waterfall to move the software VFO. Keep the complete channel bandwidth inside the capture, not just its center frequency.
+5. Use **Recent frequencies** to return to a previous tuning. If the next signal is outside the capture window, unlock/change the center as needed.
+
+If audio is distorted, verify mode and channel bandwidth, then reduce front-end gain before applying stronger audio cleanup. CTCSS detection can appear in Activity for analog signals; DCS decoding is not implemented.
+
+---
+
+1.4.1 baseline source: [index.html](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/index.html), [app.js](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/app.js).
+
+## rc9 compact tuning controls
+
+In 1.5.0-rc9, click above or below a digit in the frequency readout to step that digit. The VFO row labels are **Step**, **Recent**, and **Lock hardware center**. Use **Save** beside Start/Stop to save the current frequency as a reusable profile. **Audio level auto** labels audio AGC; **Auto calibration** applies saved calibration. These controls do not make RF overload disappear or establish calibrated receiver sensitivity.
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

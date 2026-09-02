@@ -1,52 +1,44 @@
-# GP-SDR Wiki
+# GP-SDR user guide
 
-GP-SDR (General Purpose Software Designed Radio) is an app-first, receive-only
-SDR workstation. It combines direct tuning, spectrum and waterfall displays,
-wide-range discovery, frequency identification, recording, analog audio,
-P25 trunk following, optional protocol decoders, and later review in one
-interface.
+**Current coverage: 1.5.0-rc9 release candidate, plus the 1.4.1 baseline.** Use [What’s New](Whats-New) to compare versions. The release candidate is not a final 1.5 release.
 
-The native macOS app is the primary experience. The same local service also
-provides an authenticated companion interface for a browser, phone, tablet, or
-headless computer.
+This wiki was checked against the published source through **1.5.0-rc9** on September 2, 2026. GP-SDR brings tuning, scanning, P25 trunk following, optional digital decoders, multi-receiver mapping, recordings, and offline transcription into one console. It also includes a guarded, local-only HackRF WAV transmit workspace; receive workflows do not transmit.
 
-## Start here
+[Download GP-SDR and release candidates](https://github.com/DragonKeeperAlex/GP-SDR/releases) · [What changed and how to use it](Whats-New) · [Troubleshooting](Troubleshooting-and-Limits)
+
+## First successful session
 
 1. [Install and complete first run](Getting-Started).
-2. [Connect and configure a receiver](Hardware-and-Drivers).
-3. [Tune a known signal and verify audio](Tuner-and-Live).
-4. [Choose or import a scan profile](Profiles-and-Mixer).
-5. Use [Mapper](Mapper-Discovery-and-Identify) for unattended discovery.
-6. Use [P25 and decoder pages](P25-and-Decoders) for digital systems.
-7. Use [Server Setup](Server-Setup-Linux-and-Windows) for an always-on Linux or
-   Windows host.
-8. Use [Optional Components](Optional-Components) to enable additional protocol
-   decoders and offline transcription.
+2. [Connect your radio and check its drivers](Hardware-and-Drivers).
+3. [Tune a known signal and hear clear audio](Tuner-and-Live).
+4. [Create or import a profile and start scanning](Profiles-and-Mixer).
+5. [Review recordings and search the timeline](Activity-Recordings-and-Storage).
 
-## Main pages
+## Choose a task
 
-| Page | Purpose |
+| I want to… | Guide |
 | --- | --- |
-| Live | Current receiver state, RF controls, waterfall, active channels, and the mixer |
-| Tuner | Direct tuning, spectrum, waterfall, software VFO, audio, and calibration |
-| Activity | Searchable transmission timeline, signal groups, recordings, and transcripts |
-| Mapper | Independent long-running Discovery and Identify jobs for one or more SDRs |
-| Hardware | Local and remote receivers, ownership, telemetry, and dependency setup |
-| Decoders | Status and dedicated views for P25, digital voice, sensors, ADS-B, paging, ACARS, and AIS |
-| Profiles | Built-in, imported, and custom channel/range/P25 configurations |
-| Settings | Interface mode, display performance, retention, integrations, LAN access, and storage |
+| Listen to one frequency or use the spectrum/waterfall | [Tuner and Live](Tuner-and-Live) |
+| Scan a channel bank or import CHIRP files | [Profiles and Mixer](Profiles-and-Mixer) |
+| Follow a P25 system or decode DMR, sensors, aircraft, paging, or AIS | [P25 and Decoders](P25-and-Decoders) |
+| Find and identify activity across a band | [Mapper: Map, Discovery, and Identify](Mapper-Discovery-and-Identify) |
+| Run separate jobs on several radios | [Multiple Receivers](Multiple-Receivers) |
+| Compare receivers or antennas | [Receiver and Antenna Lab](Receiver-and-Antenna-Lab) |
+| Find an earlier call, transcribe it, or limit capture storage | [Activity, Recordings, and Storage](Activity-Recordings-and-Storage) |
+| Import local databases, sync ranges, or queue results to Sheets | [Data and Integrations](Data-and-Integrations) |
+| Install optional decoders or whisper.cpp | [Optional Components](Optional-Components) |
+| Operate from a phone or another computer | [Remote and Settings](Remote-and-Settings) |
+| Set up an always-on Linux or Windows host | [Server Setup](Server-Setup-Linux-and-Windows) |
+| Prepare HackRF audio-file transmission | [Transmit](Transmit) |
+| Monitor a whole fitting channel bank with independent audio | [Band Monitor](Band-Monitor) |
+| Collect now, analyze later, or alternate timed phases | [Analyze and Schedule](Analyze-and-Schedule) |
+| Configure a local model and confirmed examples | [Local Intelligence](Local-Intelligence) |
+| Try standalone Android HackRF USB reception | [Android Preview](Android-Preview) |
 
-## Important operating boundary
+## Know what a result proves
 
-GP-SDR does not transmit. It does not decrypt encrypted P25 traffic. Decoder
-availability and reception depend on the receiver, antenna, local signals, USB
-throughput, gain, frequency calibration, and any required third-party driver or
-decoder. A process starting or a spectrum peak is not proof of successful
-decoding; use the acceptance indicators described on each decoder page.
+A spectrum peak proves RF energy. A decoder candidate suggests which tool to try. Valid frames provide protocol evidence; intelligible unencrypted audio provides voice evidence. An automatic label or transcript can be wrong. Encrypted traffic is identified and skipped, never decrypted.
 
-## More help
+Optional decoders need their executables and dependencies installed. Phone/tablet browser access operates the receiver attached to the host computer. The separate [Android preview](Android-Preview) has experimental HackRF USB support and is not included in the desktop release downloads. See [What’s New](Whats-New) for release-specific evidence and remaining limits.
 
-- [Data, imports, Sheets, and RadioReference](Data-and-Integrations)
-- [Remote use, headless operation, and settings](Remote-and-Settings)
-- [Troubleshooting and current limitations](Troubleshooting-and-Limits)
-- [Source, licenses, and credits](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/THIRD_PARTY.md)
+The source repository includes a matching `Wiki/` copy for maintenance. [Source and credits](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/THIRD_PARTY.md).

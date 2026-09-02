@@ -1,5 +1,7 @@
 # Profiles, Scanning, and the Mixer
 
+In **1.5.0-rc9**, the navigation item **Channels** opens Channels & profiles (called **Profiles** in 1.4.1). Instructions referring to Profiles use this same workspace.
+
 Profiles group scan ranges, fixed channels, P25 systems, receiver roles, and
 logging behavior into a shareable configuration.
 
@@ -57,8 +59,8 @@ Controls are independent:
 
 - Mute or unmute one row
 - Solo a row
-- Adjust row volume and left/right pan
-- Mark priority channels for ducking behavior
+- Adjust analog/channel row volume and, in Advanced mode, left/right pan
+- Set channel priority in the profile for ducking behavior
 - Mute all channels or use the top-bar master control
 
 P25 talkgroups are ordered by recent or frequent activity rather than
@@ -72,3 +74,15 @@ callsigns, transcript, system/talkgroup, signal evidence, and linked recordings
 when available. Retention can be 1, 7, 30, 90, or 365 days, or Forever. Long
 retention and IQ capture can consume substantial storage; monitor the Data card
 in Settings.
+
+## P25 audio differs from channel audio
+
+P25 talkgroup rows expose mute and solo and use the selected system audio output. They do not expose the analog rows’ volume/pan sliders. Use the P25 page’s search, Active only, and Order controls to find a talkgroup quickly. See [P25 and Decoders](P25-and-Decoders).
+
+For a useful first scan, duplicate a small built-in bank, disable out-of-area channels, assign one free receiver, enable recording if needed, and start Live. Confirm the mixer shows activity on the expected channel; review a recording under [Activity](Activity-Recordings-and-Storage).
+
+---
+
+1.4.1 baseline source: [app.js](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/app.js), [channel_import.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/channel_import.go).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

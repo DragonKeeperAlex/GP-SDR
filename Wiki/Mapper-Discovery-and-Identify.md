@@ -1,5 +1,7 @@
 # Mapper: Map, Discovery, and Identify
 
+In **1.5.0-rc9**, Mapping has separate **Overview, Discovery, Identify, Analyze, Schedule, and Results** pages. Map remains a workflow choice in job setup. See [Analyze and Schedule](Analyze-and-Schedule) for deferred processing and timed phases.
+
 Mapper runs unattended receiver jobs and keeps RF evidence for later review.
 Each physical receiver may own one independent job, so two SDRs can scan
 different ranges, split a large survey, or run Discovery and Identify at the
@@ -56,9 +58,7 @@ Mapper no longer archives every narrowband observation at the full wideband
 HackRF rate. It shifts the detected channel to baseband and stores only the rate
 needed for later local analysis and decoders. Evidence stays in **Analyzing**
 until classification, available decoding, and enabled transcription finish.
-Useful evidence moves to **Retained**. Low-value evidence moves to a recoverable
-**Rejected** quarantine, which is removed automatically after 24 hours by
-default. The recovery period is adjustable from one hour to seven days in
+Useful evidence moves to **Retained**. In rc9, Identify’s Rejected IQ policy defaults to **Delete after analysis**; choose **Keep briefly in quarantine** to retain a recovery window. Quarantined low-value evidence is removed after 24 hours by default. Version 1.4.1 used quarantine rather than this new immediate-delete option. The recovery period is adjustable from one hour to seven days in
 Settings. Pending and retained evidence are not part of that short cleanup.
 
 ## Discovery
@@ -76,11 +76,11 @@ Configure:
 - Dwell time per step
 - Preferred mode or Auto
 - Capture width/sample rate
-- Channels at once (1–32, or Auto)
+- Channels at once (1–1,024, or Auto in rc9; 1–32 in 1.4.1)
 - Optional location and precision
 
 Nearby frequency steps are measured from the same wide IQ capture instead of
-retuning once for every step. Auto monitors up to 16 Discovery steps at once.
+retuning once for every step. In rc9, Auto monitors up to 512 Discovery steps at once (64 for Map). Version 1.4.1 used up to 16 Discovery steps.
 The actual batch may be smaller when the selected sample rate cannot contain
 all requested frequencies. One receiver process remains in control, so this
 increases DSP work without multiplying USB bandwidth.
@@ -121,10 +121,7 @@ Identify observations still increment the combined hit/check totals and are
 shown separately from Discovery totals in the expanded evidence view and CSV.
 
 Identify can monitor nearby found frequencies at the same instant when they fit
-inside the SDR's sampled bandwidth. Auto uses up to four at once because
-classification, demodulation, decoder matching, recording, and transcription
-cost more CPU than Discovery. Select 1 for the lightest load, or raise the limit
-through 32 on a faster computer. Frequencies outside the current sample window
+inside the SDR's sampled bandwidth. In rc9, Auto uses one at a time for maximum-accuracy Identify; 1.4.1 used up to four. Classification, demodulation, decoder matching, recording, and transcription cost more CPU than Discovery. Raise Channels at once only after checking analysis and capture performance (rc9 allows up to 1,024). Frequencies outside the current sample window
 are automatically split into later capture batches.
 
 The result table expands when a frequency is clicked. Details include:
@@ -189,3 +186,24 @@ Location is opt-in. Choose approximate, exact, or city/region precision and add
 a label such as Home or Field site. The macOS app requests system location
 permission when **Use current location** is pressed; coordinates can also be
 entered manually. Disable location for exports you plan to share publicly.
+
+## First useful mapping run
+
+1. Verify a known signal in Tuner, then stop Tuner to release that receiver.
+2. Open Mapper and press **New job**. Select one receiver and **Map**.
+3. Choose a **Range preset** or enter a small range in MHz. Match Step and mode/decoder to the channels you expect. Start with Auto RF controls and a modest observation time.
+4. Save the job and press Start. Confirm the job card names the intended radio and shows changing frequency/pass progress.
+5. Watch clipping, overload, and actual gain before interpreting a large hit count. A screen full of hits can be overload.
+6. Expand a result to inspect decoded evidence, transcription, and verification reason. Use **Repeated only**, search, and receiver/job filters to narrow the table.
+7. For deeper review, stop or save the first job, choose **Identify**, set eligibility and a longer listening time, and run it on an available receiver.
+8. Download CSV before clearing results. Queue only observations you intend to share.
+
+Combined results renders a limited visible set (up to 250 filtered/sorted rows in this version); search/export operates on the retained dataset. A short table does not imply that the remaining observations were deleted.
+
+[Multiple Receivers](Multiple-Receivers) explains independent jobs and template fan-out. [Activity and Storage](Activity-Recordings-and-Storage) explains cleanup controls, including the separately enabled rejected-IQ timer.
+
+---
+
+1.4.1 baseline source: [index.html](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/index.html), [mapper.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/mapper.go).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

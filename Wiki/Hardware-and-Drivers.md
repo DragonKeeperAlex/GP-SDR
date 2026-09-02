@@ -4,7 +4,7 @@
 
 | Receiver path | Typical capabilities |
 | --- | --- |
-| HackRF One / PortaPack in USB mode | Wide tuning range, selectable sample rate, LNA/VGA, RF amplifier, DC/IQ correction; half-duplex hardware used receive-only by GP-SDR |
+| HackRF One / PortaPack in USB mode | Wide tuning range, selectable sample rate, LNA/VGA, RF amplifier, DC/IQ correction; half-duplex hardware; receive workflows plus guarded local WAV transmission |
 | RTL-SDR family | Low-cost receive-only IQ source, gain control, model-dependent direct sampling and bias tee |
 | SoapySDR | Other local SDRs supported by an installed Soapy module |
 | `rtl_tcp` | Remote RTL-SDR stream with reduced hardware-control visibility |
@@ -83,3 +83,17 @@ Open **Hardware → Remote RTL-SDR**, enter the `rtl_tcp` host and port, save it
 and refresh. Remote gain, bias tee, calibration, and supported sample rates
 depend on the remote server. Use a VPN for untrusted networks; do not expose an
 unauthenticated `rtl_tcp` port to the public internet.
+
+## Version 1.4 receiver behavior
+
+A HackRF that enumerates successfully can remain selectable for reception despite a diagnostic warning. Read the warning and verify actual receive data; RF transmission remains blocked. Version 1.4.1 fixes preferred P25 receiver selection by hardware serial. Refresh and check the intended receiver after reconnecting or moving ports.
+
+Native RTL-SDR captures reuse persistent sessions instead of reopening USB for every short scan. Refresh uses non-claiming USB enumeration on macOS. These changes do not prove long-duration USB reliability; a dongle disappearing from USB still needs physical troubleshooting.
+
+Follow [Receiver and Antenna Lab](Receiver-and-Antenna-Lab) for a complete comparison workflow and [Multiple Receivers](Multiple-Receivers) for ownership and concurrent jobs.
+
+---
+
+1.4.1 baseline source: [discovery.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/discovery.go), [index.html](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/index.html).
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).

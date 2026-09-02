@@ -1,5 +1,7 @@
 # Data, Imports, Google Sheets, and RadioReference
 
+In **1.5.0-rc9**, the navigation item **Channels** opens Channels & profiles (called **Profiles** in 1.4.1). Instructions referring to Profiles use this same workspace.
+
 ## Channel and profile imports
 
 Use **Profiles → Import** to select multiple GP-SDR JSON, CHIRP CSV, or generic
@@ -81,3 +83,23 @@ in GP-SDR-owned storage. The Settings Data card can enforce separate Recording
 and IQ caps, age-based retention, and optional automatic cleanup. Cleanup is
 off by default and removes oldest captures only; Mapper results, profiles,
 calibration, range data, and imported channel files are preserved.
+
+## Import a folder of official channel exports
+
+On the GP-SDR host, open **Settings → Local database → Choose folder**, select the export folder, and scan it. GP-SDR recursively reads `.csv`, `.tsv`, and GP-SDR `.json` files. Large tables are split into stable 4,000-channel banks so rescanning updates those banks rather than creating a fresh duplicate set. Check the resulting profile names and channel counts before scanning.
+
+Folder selection/scanning is local-computer only. Keep downloaded source files as a recoverable reference and use the source’s receive-area information; an exact frequency match alone cannot establish local identity.
+
+For live API lookup, configure `GPSDR_RR_USERNAME`, `GPSDR_RR_PASSWORD`, and `GPSDR_RR_APP_KEY` in the host process environment, then restart. Keep these credentials out of shared profiles and screenshots.
+
+Detailed formats and examples: [Channel data/import columns](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/CHANNEL_DATA.md), [Sheets range schema and example CSV](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/GOOGLE_SHEETS_SYNC.md), [Mapper queue deployment](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/MAPPER_SHEET_WRITE.md). Read-only range synchronization and writable Mapper queue upload are separate integrations with separate configuration.
+
+---
+
+1.4.1 baseline source: [CHANNEL_DATA.md](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/Docs/CHANNEL_DATA.md), [MAPPER_SHEET_WRITE.md](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/Docs/MAPPER_SHEET_WRITE.md).
+
+## macOS RadioReference credentials
+
+On the local Mac, the RadioReference account card accepts Username, Password, and Application key with **Save to Keychain**. Enter your own authorized credentials, save, then use **Channels → Location import**. **Clear** removes the configured Keychain credentials. This form is host-local and macOS-specific; other hosts use the environment variables above. Never include credentials in a shared profile, wiki example, or screenshot.
+
+Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).
