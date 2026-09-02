@@ -59,6 +59,15 @@ type MapperConfig struct {
 	Latitude                 *float64 `json:"latitude,omitempty"`
 	Longitude                *float64 `json:"longitude,omitempty"`
 	LocationLabel            string   `json:"locationLabel,omitempty"`
+	// AnalysisPolicy controls when expensive decoder, transcription, and local
+	// model work runs: live, after-job, or manual. RF detection and bounded IQ
+	// evidence capture always remain real-time.
+	AnalysisPolicy           string `json:"analysisPolicy,omitempty"`
+	RejectedIQPolicy         string `json:"rejectedIQPolicy,omitempty"`
+	ScheduleEnabled          bool   `json:"scheduleEnabled,omitempty"`
+	DiscoveryDurationSeconds int64  `json:"discoveryDurationSeconds,omitempty"`
+	IdentifyDurationSeconds  int64  `json:"identifyDurationSeconds,omitempty"`
+	ScheduleRepeat           bool   `json:"scheduleRepeat,omitempty"`
 }
 
 type MapperFrequencyRecord struct {
@@ -138,6 +147,7 @@ type MapperProgress struct {
 	StoppedAt          *time.Time         `json:"stoppedAt,omitempty"`
 	TargetStartedAt    *time.Time         `json:"targetStartedAt,omitempty"`
 	TargetEndsAt       *time.Time         `json:"targetEndsAt,omitempty"`
+	PhaseEndsAt        *time.Time         `json:"phaseEndsAt,omitempty"`
 	LastCheckAt        *time.Time         `json:"lastCheckAt,omitempty"`
 	LastActivityAt     *time.Time         `json:"lastActivityAt,omitempty"`
 	Tuning             MapperTuningStatus `json:"tuning"`
@@ -305,6 +315,32 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if config.Mode != "adaptive" && config.Mode != "discovery" && config.Mode != "decipher" {
 		return config, errors.New("Mapper workflow must be Map, Discovery, or Identify")
 	}
+	config.AnalysisPolicy = strings.ToLower(strings.TrimSpace(config.AnalysisPolicy))
+	if config.AnalysisPolicy == "" {
+		if config.Mode == "discovery" {
+			config.AnalysisPolicy = "manual"
+		} else {
+			config.AnalysisPolicy = "live"
+		}
+	}
+	if config.AnalysisPolicy != "live" && config.AnalysisPolicy != "after-job" && config.AnalysisPolicy != "manual" {
+		return config, errors.New("analysis timing must be Live, after job, or manual")
+	}
+	config.RejectedIQPolicy = strings.ToLower(strings.TrimSpace(config.RejectedIQPolicy))
+	if config.RejectedIQPolicy == "" {
+		config.RejectedIQPolicy = "delete"
+	}
+	if config.RejectedIQPolicy != "delete" && config.RejectedIQPolicy != "quarantine" {
+		return config, errors.New("rejected IQ policy must be delete or quarantine")
+	}
+	if config.ScheduleEnabled {
+		if config.DiscoveryDurationSeconds < 5 || config.DiscoveryDurationSeconds > 7*24*60*60 {
+			return config, errors.New("scheduled Discovery must run between 5 seconds and 7 days")
+		}
+		if config.IdentifyDurationSeconds < 5 || config.IdentifyDurationSeconds > 7*24*60*60 {
+			return config, errors.New("scheduled Identify must run between 5 seconds and 7 days")
+		}
+	}
 	config.PreferredMode = strings.ToLower(strings.TrimSpace(config.PreferredMode))
 	if config.PreferredMode == "" {
 		config.PreferredMode = "auto"
@@ -328,7 +364,7 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if strings.TrimSpace(config.DeviceID) == "" {
 		return config, errors.New("choose a receiver for this Mapper job")
 	}
-	if config.Mode != "decipher" {
+	if config.Mode != "decipher" || config.ScheduleEnabled {
 		if !isFinitePositive(config.StartHz) || !isFinitePositive(config.EndHz) || config.EndHz < config.StartHz {
 			return config, errors.New("enter a valid discovery frequency range")
 		}
@@ -380,8 +416,8 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	if config.ConcurrentChannels == 0 {
 		config.ConcurrentChannels = defaultMapperConcurrentChannels(config.Mode)
 	}
-	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 32 {
-		return config, errors.New("simultaneous Mapper channels must be between 1 and 32")
+	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 1024 {
+		return config, errors.New("simultaneous Mapper channels must be between 1 and 1,024")
 	}
 	config.GainMode = strings.ToLower(strings.TrimSpace(config.GainMode))
 	if config.GainMode == "" {
@@ -442,9 +478,12 @@ func (m *MapperManager) UpdateJobTuning(id string, sessionID uint64, status Mapp
 
 func defaultMapperConcurrentChannels(mode string) int {
 	if strings.EqualFold(mode, "decipher") {
-		return 4
+		return 1
 	}
-	return 16
+	if strings.EqualFold(mode, "discovery") {
+		return 512
+	}
+	return 64
 }
 
 func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
@@ -542,6 +581,17 @@ func (m *MapperManager) BeginJobSession(id string, totalTargets, totalBatches in
 	}
 	m.mu.Unlock()
 	return sessionID
+}
+
+func (m *MapperManager) SetJobPhase(id string, sessionID uint64, mode string, endsAt *time.Time) {
+	m.mu.Lock()
+	if m.jobSessions[id] == sessionID {
+		job := m.jobs[id]
+		job.Progress.Mode = mode
+		job.Progress.PhaseEndsAt = endsAt
+		m.jobs[id] = job
+	}
+	m.mu.Unlock()
 }
 
 func (m *MapperManager) BeginJobBatch(id string, sessionID uint64, batchIndex, totalBatches, targetIndex, totalTargets int, frequencies []float64, label string, listenFor time.Duration) {
@@ -702,6 +752,24 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	if config.Mode != "adaptive" && config.Mode != "discovery" && config.Mode != "decipher" {
 		return MapperStatus{}, errors.New("Mapper mode must be Map, Discovery, or Identify")
 	}
+	config.AnalysisPolicy = strings.ToLower(strings.TrimSpace(config.AnalysisPolicy))
+	if config.AnalysisPolicy == "" {
+		if config.Mode == "discovery" {
+			config.AnalysisPolicy = "manual"
+		} else {
+			config.AnalysisPolicy = "live"
+		}
+	}
+	if config.AnalysisPolicy != "live" && config.AnalysisPolicy != "after-job" && config.AnalysisPolicy != "manual" {
+		return MapperStatus{}, errors.New("analysis timing must be Live, after job, or manual")
+	}
+	config.RejectedIQPolicy = strings.ToLower(strings.TrimSpace(config.RejectedIQPolicy))
+	if config.RejectedIQPolicy == "" {
+		config.RejectedIQPolicy = "delete"
+	}
+	if config.RejectedIQPolicy != "delete" && config.RejectedIQPolicy != "quarantine" {
+		return MapperStatus{}, errors.New("rejected IQ policy must be delete or quarantine")
+	}
 	if config.DecipherListenSeconds == 0 {
 		config.DecipherListenSeconds = 60
 	}
@@ -714,8 +782,8 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	if config.ConcurrentChannels == 0 {
 		config.ConcurrentChannels = defaultMapperConcurrentChannels(config.Mode)
 	}
-	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 32 {
-		return MapperStatus{}, errors.New("simultaneous Mapper channels must be between 1 and 32")
+	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 1024 {
+		return MapperStatus{}, errors.New("simultaneous Mapper channels must be between 1 and 1,024")
 	}
 	if config.IncludeLocation {
 		if config.Latitude == nil || config.Longitude == nil || *config.Latitude < -90 || *config.Latitude > 90 || *config.Longitude < -180 || *config.Longitude > 180 {

@@ -13,6 +13,16 @@ import (
 )
 
 func DiscoverDevices(includeSimulator bool) []SDRDevice {
+	if host := platformHost(); host != nil {
+		devices, err := host.Devices()
+		if err != nil {
+			return []SDRDevice{}
+		}
+		for i := range devices {
+			applyNominalFrequencyRange(&devices[i])
+		}
+		return devices
+	}
 	devices := make([]SDRDevice, 0)
 	if includeSimulator {
 		limit := 20e6
@@ -131,10 +141,11 @@ func hackRFDevice(probe hackRFProbe, index int, tool string, limit float64) SDRD
 		id, serialPointer = "hackrf-"+serial, &s
 	}
 	device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
-	if probe.SelfTestFailed {
-		device.HealthWarning = "Firmware reported a self-test warning. Receive is enabled; verify reception and USB stability before relying on this radio."
-		device.Note = ptr(device.HealthWarning)
-	}
+	// Some third-party HackRF/PortaPack firmware reports an advisory self-test
+	// result even while sustained receive streaming is healthy. Do not turn that
+	// firmware diagnostic into a permanent receiver warning. Keep it internally
+	// so transmit remains blocked until the hardware is explicitly validated.
+	device.FirmwareSelfTestWarning = probe.SelfTestFailed
 	return device
 }
 

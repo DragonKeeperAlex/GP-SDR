@@ -7,27 +7,28 @@ import (
 	"time"
 )
 
-var Version = "1.4.1"
+var Version = "1.5.0-rc9"
 
 type SDRDevice struct {
-	ID                 string             `json:"id"`
-	Name               string             `json:"name"`
-	Kind               string             `json:"kind"`
-	Serial             *string            `json:"serial"`
-	Driver             string             `json:"driver"`
-	Connected          bool               `json:"connected"`
-	Available          bool               `json:"available"`
-	HealthWarning      string             `json:"healthWarning,omitempty"`
-	TunerID            string             `json:"tunerID,omitempty"`
-	SampleRateLimit    *float64           `json:"sampleRateLimit"`
-	FrequencyMinimumHz float64            `json:"frequencyMinimumHz,omitempty"`
-	FrequencyMaximumHz float64            `json:"frequencyMaximumHz,omitempty"`
-	FrequencyRangeNote string             `json:"frequencyRangeNote,omitempty"`
-	HelperArchitecture *string            `json:"helperArchitecture"`
-	Note               *string            `json:"note"`
-	Calibration        *DeviceCalibration `json:"calibration,omitempty"`
-	Host               string             `json:"host,omitempty"`
-	Port               int                `json:"port,omitempty"`
+	ID                      string             `json:"id"`
+	Name                    string             `json:"name"`
+	Kind                    string             `json:"kind"`
+	Serial                  *string            `json:"serial"`
+	Driver                  string             `json:"driver"`
+	Connected               bool               `json:"connected"`
+	Available               bool               `json:"available"`
+	HealthWarning           string             `json:"healthWarning,omitempty"`
+	FirmwareSelfTestWarning bool               `json:"-"`
+	TunerID                 string             `json:"tunerID,omitempty"`
+	SampleRateLimit         *float64           `json:"sampleRateLimit"`
+	FrequencyMinimumHz      float64            `json:"frequencyMinimumHz,omitempty"`
+	FrequencyMaximumHz      float64            `json:"frequencyMaximumHz,omitempty"`
+	FrequencyRangeNote      string             `json:"frequencyRangeNote,omitempty"`
+	HelperArchitecture      *string            `json:"helperArchitecture"`
+	Note                    *string            `json:"note"`
+	Calibration             *DeviceCalibration `json:"calibration,omitempty"`
+	Host                    string             `json:"host,omitempty"`
+	Port                    int                `json:"port,omitempty"`
 }
 
 type RemoteReceiver struct {
@@ -126,6 +127,24 @@ type SurveySettings struct {
 	P25AmpMode         string  `json:"p25AmpMode,omitempty"`
 	P25LNAGainDB       *int    `json:"p25LNAGainDB,omitempty"`
 	P25VGAGainDB       *int    `json:"p25VGAGainDB,omitempty"`
+	SampleRateHz       int     `json:"sampleRateHz,omitempty"`
+	GainDB             float64 `json:"gainDB,omitempty"`
+	LNAGainDB          *int    `json:"lnaGainDB,omitempty"`
+	VGAGainDB          *int    `json:"vgaGainDB,omitempty"`
+	AmpEnabled         *bool   `json:"ampEnabled,omitempty"`
+	AutoGain           bool    `json:"autoGain,omitempty"`
+	DCRemoval          *bool   `json:"dcRemoval,omitempty"`
+}
+
+type BandReceiverSettings struct {
+	SampleRateHz int     `json:"sampleRateHz"`
+	GainDB       float64 `json:"gainDB"`
+	LNAGainDB    int     `json:"lnaGainDB"`
+	VGAGainDB    int     `json:"vgaGainDB"`
+	AmpEnabled   bool    `json:"ampEnabled"`
+	AutoGain     bool    `json:"autoGain"`
+	SquelchDB    float64 `json:"squelchDB"`
+	DCRemoval    bool    `json:"dcRemoval"`
 }
 
 type ScanProfile struct {
@@ -156,31 +175,38 @@ type ProfileReferenceArea struct {
 }
 
 type TransmissionEvent struct {
-	ID              string               `json:"id"`
-	StartedAt       time.Time            `json:"startedAt"`
-	DurationSeconds float64              `json:"durationSeconds"`
-	FrequencyHz     float64              `json:"frequencyHz"`
-	BandwidthHz     float64              `json:"bandwidthHz"`
-	SignalDBFS      float64              `json:"signalDBFS"`
-	NoiseDBFS       float64              `json:"noiseDBFS"`
-	Modulation      string               `json:"modulation"`
-	ProtocolName    *string              `json:"protocolName"`
-	Label           *string              `json:"label"`
-	DeviceID        string               `json:"deviceID"`
-	SystemName      *string              `json:"systemName,omitempty"`
-	TalkgroupID     *uint32              `json:"talkgroupID,omitempty"`
-	SourceRadioID   *uint32              `json:"sourceRadioID,omitempty"`
-	Encrypted       bool                 `json:"encrypted,omitempty"`
-	Transcript      *string              `json:"transcript"`
-	Callsigns       []string             `json:"callsigns,omitempty"`
-	Analysis        *SignalIntelligence  `json:"analysis,omitempty"`
-	DecoderMessages []DecoderMessage     `json:"decoderMessages,omitempty"`
-	CTCSSHz         *float64             `json:"ctcssHz,omitempty"`
-	Confidence      float64              `json:"confidence"`
-	AudioPath       *string              `json:"audioPath"`
-	IQPath          *string              `json:"iqPath"`
-	Simulated       bool                 `json:"simulated"`
-	Location        *ObservationLocation `json:"location,omitempty"`
+	ID                  string               `json:"id"`
+	StartedAt           time.Time            `json:"startedAt"`
+	DurationSeconds     float64              `json:"durationSeconds"`
+	FrequencyHz         float64              `json:"frequencyHz"`
+	BandwidthHz         float64              `json:"bandwidthHz"`
+	SignalDBFS          float64              `json:"signalDBFS"`
+	NoiseDBFS           float64              `json:"noiseDBFS"`
+	Modulation          string               `json:"modulation"`
+	ProtocolName        *string              `json:"protocolName"`
+	Label               *string              `json:"label"`
+	DeviceID            string               `json:"deviceID"`
+	SystemName          *string              `json:"systemName,omitempty"`
+	TalkgroupID         *uint32              `json:"talkgroupID,omitempty"`
+	SourceRadioID       *uint32              `json:"sourceRadioID,omitempty"`
+	Encrypted           bool                 `json:"encrypted,omitempty"`
+	Transcript          *string              `json:"transcript"`
+	Callsigns           []string             `json:"callsigns,omitempty"`
+	Analysis            *SignalIntelligence  `json:"analysis,omitempty"`
+	DecoderMessages     []DecoderMessage     `json:"decoderMessages,omitempty"`
+	CTCSSHz             *float64             `json:"ctcssHz,omitempty"`
+	Confidence          float64              `json:"confidence"`
+	AudioPath           *string              `json:"audioPath"`
+	IQPath              *string              `json:"iqPath"`
+	Simulated           bool                 `json:"simulated"`
+	Location            *ObservationLocation `json:"location,omitempty"`
+	MapperJobID         string               `json:"mapperJobID,omitempty"`
+	RequestedDecoder    string               `json:"requestedDecoder,omitempty"`
+	AnalysisPolicy      string               `json:"analysisPolicy,omitempty"`
+	IQRetentionPolicy   string               `json:"iqRetentionPolicy,omitempty"`
+	AnalysisStatus      string               `json:"analysisStatus,omitempty"`
+	AnalysisError       string               `json:"analysisError,omitempty"`
+	AnalysisCompletedAt *time.Time           `json:"analysisCompletedAt,omitempty"`
 }
 
 // SignalIntelligence records locally-derived evidence. It deliberately keeps

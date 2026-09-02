@@ -2,12 +2,10 @@ package main
 
 import (
 	"crypto/rand"
-	"embed"
 	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -21,10 +19,8 @@ import (
 	"time"
 
 	"gpsdr.local/gpsdr/internal/app"
+	"gpsdr.local/gpsdr/web"
 )
-
-//go:embed web/*
-var webFiles embed.FS
 
 func main() {
 	defaultData := defaultDataDirectory()
@@ -51,11 +47,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	web, err := fs.Sub(webFiles, "web")
-	if err != nil {
-		log.Fatal(err)
-	}
-	server := app.NewServer(runtimeState, web, *host, uint16(*port), *token)
+	server := app.NewServer(runtimeState, web.Files, *host, uint16(*port), *token)
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		if *openBrowser {

@@ -14,6 +14,7 @@ type IntegrationOverview struct {
 	P25            P25Status            `json:"p25"`
 	Transcription  TranscriptionStatus  `json:"transcription"`
 	RadioReference RadioReferenceStatus `json:"radioReference"`
+	LocalAI        LocalAIStatus        `json:"localAI"`
 }
 
 func (r *Runtime) Integrations() IntegrationOverview {
@@ -35,7 +36,7 @@ func (r *Runtime) Integrations() IntegrationOverview {
 	}
 	return IntegrationOverview{
 		DSP:      ComponentStatus{State: "ready", Note: "Built-in AM, NFM, and WFM demodulation is ready."},
-		SoapySDR: soapy, P25: r.P25Status(), Transcription: r.TranscriptionStatus(), RadioReference: referenceStatus,
+		SoapySDR: soapy, P25: r.P25Status(), Transcription: r.TranscriptionStatus(), RadioReference: referenceStatus, LocalAI: r.LocalAIStatus(),
 	}
 }
 

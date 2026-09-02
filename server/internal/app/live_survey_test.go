@@ -77,8 +77,8 @@ func TestSurveyTuningOffsetKeepsWideFMNoiseWindowAwayFromDC(t *testing.T) {
 
 func TestLiveSampleRateHonorsHackRFMinimumForWFM(t *testing.T) {
 	device := SDRDevice{Kind: "HackRF", Driver: "/opt/homebrew/bin/hackrf_transfer"}
-	if rate := liveSampleRate(device, surveyTarget{Mode: "wfm"}); rate != 8_000_000 {
-		t.Fatalf("HackRF WFM survey must use 2 Msps, got %d", rate)
+	if rate := liveSampleRate(device, surveyTarget{Mode: "wfm"}); rate != 10_000_000 {
+		t.Fatalf("HackRF WFM survey must use 10 MS/s, got %d", rate)
 	}
 }
 
@@ -86,8 +86,8 @@ func TestAutomaticTunerRateFitsSeparatedHackRFVFO(t *testing.T) {
 	limit := 20_000_000.0
 	device := SDRDevice{Kind: "HackRF", SampleRateLimit: &limit}
 	request := TunerRequest{FrequencyHz: 100_100_000, HardwareCenterHz: 98_000_000, BandwidthHz: 180_000}
-	if rate := automaticTunerSampleRate(device, request, 2_000_000); rate != 8_000_000 {
-		t.Fatalf("automatic rate = %d, want 8000000", rate)
+	if rate := automaticTunerSampleRate(device, request, 2_000_000); rate != 10_000_000 {
+		t.Fatalf("automatic rate = %d, want 10000000", rate)
 	}
 }
 

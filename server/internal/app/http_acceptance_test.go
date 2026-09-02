@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -59,10 +60,23 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 	for _, endpoint := range []string{
 		"/api/status", "/api/devices", "/api/decoders", "/api/integrations", "/api/setup",
 		"/api/p25/status", "/api/spectrum?bins=64", "/api/storage", "/api/calibrations", "/api/calibrations/characterization", "/api/remote-receivers",
-		"/api/range-sync", "/api/local-database", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
+		"/api/range-sync", "/api/local-database", "/api/local-ai", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
 		"/api/events?limit=10", "/api/signals?limit=10", "/api/mixer", "/api/receiver-plan",
 	} {
 		acceptanceRequest(t, server, http.MethodGet, endpoint, nil, http.StatusOK)
+	}
+	acceptanceRequest(t, server, http.MethodGet, "/api/local-ai/learning", nil, http.StatusOK)
+	learningEvent := TransmissionEvent{ID: "acceptance-learning", StartedAt: time.Now(), FrequencyHz: 462.55e6, BandwidthHz: 20e3, Modulation: "NFM", SignalDBFS: -40, NoiseDBFS: -70}
+	if err := runtimeState.Events.Append(learningEvent); err != nil {
+		t.Fatal(err)
+	}
+	confirmed := decodeAcceptance[ConfirmedSignalSample](t, acceptanceRequest(t, server, http.MethodPost, "/api/local-ai/learning", map[string]any{"eventID": learningEvent.ID, "modulation": "NFM", "protocol": "Analog voice", "notes": "acceptance confirmed"}, http.StatusCreated))
+	if confirmed.EventID != learningEvent.ID || runtimeState.LearningStatus().Count != 1 {
+		t.Fatalf("learning sample was not stored: %+v", confirmed)
+	}
+	learningExport := acceptanceRequest(t, server, http.MethodGet, "/api/local-ai/learning/export", nil, http.StatusOK)
+	if !strings.Contains(learningExport.Body.String(), `"protocol":"Analog voice"`) {
+		t.Fatal("learning export omitted confirmed label")
 	}
 
 	storagePolicy := StoragePolicy{AutoCleanup: false, MaxCaptureDays: 14, RecordingCapBytes: 8 * gibibyte, IQCapBytes: 4 * gibibyte}

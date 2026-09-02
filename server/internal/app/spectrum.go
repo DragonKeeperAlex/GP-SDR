@@ -84,8 +84,8 @@ func MeasureChannelSpectrum(data []byte, format SampleFormat, sampleRate int, ce
 }
 
 func BuildSpectrumSnapshot(spec CaptureSpec, data []byte, format SampleFormat) (SpectrumSnapshot, error) {
-	const fftSize = 4096
-	const outputBins = 1024
+	const fftSize = 8192
+	const outputBins = 4096
 	if spec.SampleRateHz <= 0 || len(data)/2 < fftSize {
 		return SpectrumSnapshot{}, errors.New("capture is too short for waterfall analysis")
 	}

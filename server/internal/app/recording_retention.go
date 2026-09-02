@@ -173,6 +173,17 @@ func finalizeIQEvidence(iqPath string, event TransmissionEvent) (string, IQCaptu
 		reasons = append(reasons, "strong signal evidence")
 	}
 	valuable := len(reasons) > 0
+	if !valuable && strings.EqualFold(event.IQRetentionPolicy, "delete") {
+		if err := os.Remove(iqPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return iqPath, metadata, err
+		}
+		if err := os.Remove(metadataPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return iqPath, metadata, err
+		}
+		metadata.LifecycleStatus = "deleted-low-value"
+		metadata.AnalysisCompleted, metadata.Valuable, metadata.ValueReasons, metadata.EventID = ptr(time.Now().UTC()), false, reasons, event.ID
+		return "", metadata, nil
+	}
 	destinationClass := "Quarantine"
 	metadata.LifecycleStatus = "quarantined-low-value"
 	if valuable {

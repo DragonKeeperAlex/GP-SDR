@@ -137,6 +137,54 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Decoders())
 	case r.Method == "GET" && path == "/api/integrations":
 		writeJSON(w, 200, s.runtime.Integrations())
+	case r.Method == "GET" && path == "/api/local-ai":
+		status := s.runtime.LocalAIStatus()
+		status.CanManage = requestIsLocal(r)
+		writeJSON(w, 200, status)
+	case r.Method == "PUT" && path == "/api/local-ai":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Local model settings can only be changed from the GP-SDR computer.")
+			return
+		}
+		var config LocalAIConfig
+		if !decodeBody(w, r, &config) {
+			return
+		}
+		status, err := s.runtime.UpdateLocalAI(config)
+		writeResult(w, status, err, 200)
+	case r.Method == "GET" && path == "/api/local-ai/learning":
+		writeJSON(w, 200, s.runtime.LearningStatus())
+	case r.Method == "POST" && path == "/api/local-ai/learning":
+		var body struct {
+			EventID        string `json:"eventID"`
+			Modulation     string `json:"modulation"`
+			Protocol       string `json:"protocol"`
+			Notes          string `json:"notes"`
+			RetainCaptures bool   `json:"retainCaptures"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		result, err := s.runtime.ConfirmLearningSample(body.EventID, body.Modulation, body.Protocol, body.Notes, body.RetainCaptures)
+		writeResult(w, result, err, http.StatusCreated)
+	case r.Method == "GET" && path == "/api/local-ai/learning/export":
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Confirmed-Signal-Training.jsonl")
+		_, _ = w.Write(s.runtime.LearningJSONL())
+	case r.Method == "GET" && path == "/api/analysis":
+		writeJSON(w, 200, s.runtime.DeferredAnalysisStatus())
+	case r.Method == "POST" && path == "/api/analysis/start":
+		var body struct {
+			JobID       string `json:"jobID"`
+			Concurrency int    `json:"concurrency"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		status, err := s.runtime.StartDeferredAnalysis(body.JobID, body.Concurrency)
+		writeResult(w, status, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/analysis/stop":
+		writeJSON(w, 200, s.runtime.StopDeferredAnalysis())
 	case r.Method == "GET" && path == "/api/setup":
 		writeJSON(w, 200, s.runtime.Setup())
 	case r.Method == "POST" && path == "/api/setup/install":
@@ -412,12 +460,14 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Events.Signals(intQuery(r, "limit", 500)))
 	case r.Method == "POST" && path == "/api/control/start":
 		var body struct {
-			ProfileID string `json:"profileID"`
+			ProfileID string                `json:"profileID"`
+			DeviceID  string                `json:"deviceID,omitempty"`
+			Controls  *BandReceiverSettings `json:"controls,omitempty"`
 		}
 		if !decodeBody(w, r, &body) {
 			return
 		}
-		if err := s.runtime.Start(body.ProfileID); err != nil {
+		if err := s.runtime.StartOnDevice(body.ProfileID, body.DeviceID, body.Controls); err != nil {
 			writeError(w, 400, err.Error())
 		} else {
 			writeJSON(w, 200, s.runtime.Status())

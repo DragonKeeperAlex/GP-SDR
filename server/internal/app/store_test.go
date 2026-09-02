@@ -113,3 +113,30 @@ func TestEventSearchIndexesTranscriptCallsignProtocolAndFrequency(t *testing.T) 
 		t.Fatalf("unexpected search tokens: %s", tokens)
 	}
 }
+
+func TestDeferredAnalysisQueueAndStatusUpdates(t *testing.T) {
+	store, err := NewEventStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued := TransmissionEvent{ID: "queued", StartedAt: time.Now(), FrequencyHz: 155.25e6, MapperJobID: "job-a", AnalysisPolicy: "manual", AnalysisStatus: "pending"}
+	complete := TransmissionEvent{ID: "complete", StartedAt: time.Now(), FrequencyHz: 155.26e6, MapperJobID: "job-a", AnalysisPolicy: "manual", AnalysisStatus: "complete"}
+	for _, event := range []TransmissionEvent{queued, complete} {
+		if err := store.Append(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pending := store.PendingAnalysis(10, "job-a"); len(pending) != 1 || pending[0].ID != queued.ID {
+		t.Fatalf("unexpected deferred queue: %#v", pending)
+	}
+	if err := store.UpdateAnalysisStatus(queued.ID, "complete", ""); err != nil {
+		t.Fatal(err)
+	}
+	if pending := store.PendingAnalysis(10, "job-a"); len(pending) != 0 {
+		t.Fatalf("completed event remained queued: %#v", pending)
+	}
+	updated, ok := store.Get(queued.ID)
+	if !ok || updated.AnalysisStatus != "complete" || updated.AnalysisCompletedAt == nil {
+		t.Fatalf("analysis completion was not recorded: %#v", updated)
+	}
+}

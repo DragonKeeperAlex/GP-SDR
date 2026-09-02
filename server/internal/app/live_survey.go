@@ -66,9 +66,10 @@ func surveyTargets(profile ScanProfile) []surveyTarget {
 
 func liveSampleRate(device SDRDevice, target surveyTarget) int {
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
-		// HackRF's documented sampling path is best behaved at 8 MS/s or above;
-		// GP-SDR digitally narrows the requested channel after capture.
-		return 8_000_000
+		// Keep useful guard room for multiple software VFOs and DC-spike avoidance.
+		// Ten MS/s remains substantially lighter than forcing the 20 MS/s ceiling
+		// during every always-on scan.
+		return 10_000_000
 	}
 	if canonicalDecoderID(stringValue(target.Decoder)) == "dump1090" {
 		return 2_400_000
@@ -86,7 +87,7 @@ func automaticTunerSampleRate(device SDRDevice, request TunerRequest, fallback i
 	required := (math.Abs(request.FrequencyHz-request.HardwareCenterHz) + request.BandwidthHz/2) / .44
 	minimum, maximum := 225_000, 20_000_000
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
-		minimum = 2_000_000
+		minimum = 10_000_000
 	}
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		maximum = 3_200_000
@@ -176,7 +177,7 @@ func mapperJobTargetBatches(job MapperJob, device SDRDevice, targets []surveyTar
 	if limit == 0 {
 		limit = defaultMapperConcurrentChannels(job.Config.Mode)
 	}
-	limit = maxInt(1, minInt(32, limit))
+	limit = maxInt(1, minInt(1024, limit))
 	ordered := append([]surveyTarget(nil), targets...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].FrequencyHz < ordered[j].FrequencyHz })
 	batches := make([]surveyTargetBatch, 0, (len(ordered)+limit-1)/limit)
@@ -478,27 +479,75 @@ func mapperIdentifyHistory(record MapperFrequencyRecord, source string) (hits, c
 }
 
 func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJobRuntime) {
+	if !job.Config.ScheduleEnabled {
+		stopped, sessionID, err := r.mapperJobPhase(job, device, handle, 0)
+		_ = stopped
+		r.finishMapperJob(job.ID, handle, sessionID, err)
+		return
+	}
+	phases := []struct {
+		mode     string
+		duration time.Duration
+	}{
+		{"discovery", time.Duration(job.Config.DiscoveryDurationSeconds) * time.Second},
+		{"decipher", time.Duration(job.Config.IdentifyDurationSeconds) * time.Second},
+	}
+	for {
+		for _, phase := range phases {
+			phaseJob := job
+			phaseJob.Config.Mode = phase.mode
+			stopped, sessionID, err := r.mapperJobPhase(phaseJob, device, handle, phase.duration)
+			if stopped || err != nil {
+				r.finishMapperJob(job.ID, handle, sessionID, err)
+				return
+			}
+		}
+		if !job.Config.ScheduleRepeat {
+			r.finishMapperJob(job.ID, handle, 0, nil)
+			return
+		}
+	}
+}
+
+// mapperJobPhase owns one bounded Discovery or Identify phase. A zero duration
+// preserves the traditional loop-until-stopped behavior.
+func (r *Runtime) mapperJobPhase(job MapperJob, device SDRDevice, handle *mapperJobRuntime, phaseDuration time.Duration) (bool, uint64, error) {
 	targets, err := mapperJobTargets(job, r.mapper.Status().Records)
 	if err != nil {
-		r.finishMapperJob(job.ID, handle, 0, err)
-		return
+		return false, 0, err
 	}
 	config := job.Config
 	batches := mapperJobTargetBatches(job, device, targets)
 	if len(batches) == 0 {
-		r.finishMapperJob(job.ID, handle, 0, errors.New("Mapper could not create a receiver pass for these frequencies"))
-		return
+		return false, 0, errors.New("Mapper could not create a receiver pass for these frequencies")
 	}
 	sessionID := r.mapper.BeginJobSession(job.ID, len(targets), len(batches))
+	phaseEnds := time.Time{}
+	if phaseDuration > 0 {
+		phaseEnds = time.Now().Add(phaseDuration)
+	}
+	var phaseEndsPointer *time.Time
+	if !phaseEnds.IsZero() {
+		phaseEndsPointer = &phaseEnds
+	}
+	r.mapper.SetJobPhase(job.ID, sessionID, config.Mode, phaseEndsPointer)
 	tuning := newMapperAdaptiveTuning(device, config)
-	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: config.NoiseMarginDB, RecordAudio: config.Mode == "decipher" || config.Mode == "adaptive", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
+	// Deferred analysis must retain a compact demodulated artifact for every hit;
+	// otherwise known analog/digital activity could be impossible to revisit after
+	// the receiver has moved on. IQ remains reserved for unknown/ambiguous signals
+	// and is governed by the independent IQ storage cap.
+	recordForLater := config.AnalysisPolicy == "manual" || config.AnalysisPolicy == "after-job"
+	profile := ScanProfile{ID: "mapper-job-" + job.ID, Name: job.Name, Settings: SurveySettings{NoiseMarginDB: config.NoiseMarginDB, RecordAudio: recordForLater || config.Mode == "decipher" || config.Mode == "adaptive", RecordIQForUnknown: true, TranscribeVoice: config.Transcribe}}
 	for {
 		targetIndex := 0
 		for batchIndex, batch := range batches {
+			if !phaseEnds.IsZero() && !time.Now().Before(phaseEnds) {
+				r.mapper.EndJobSession(job.ID, sessionID)
+				return false, 0, nil
+			}
 			select {
 			case <-handle.stop:
-				r.finishMapperJob(job.ID, handle, sessionID, nil)
-				return
+				return true, sessionID, nil
 			default:
 			}
 			listenFor := time.Duration(0)
@@ -533,8 +582,7 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 					}
 					select {
 					case <-handle.stop:
-						r.finishMapperJob(job.ID, handle, sessionID, nil)
-						return
+						return true, sessionID, nil
 					case <-time.After(wait):
 					}
 					// Every simulated receiver exposes one stable active target per
@@ -549,8 +597,7 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 						}
 					}
 				} else if !r.processSurveyBatch(handle.stop, profile, device, batch, &mapperRunContext{JobID: job.ID, SessionID: sessionID, Config: config, Tuning: tuning}) {
-					r.finishMapperJob(job.ID, handle, sessionID, nil)
-					return
+					return true, sessionID, nil
 				}
 				if listenFor == 0 || !time.Now().Before(deadline) {
 					break
@@ -563,6 +610,7 @@ func (r *Runtime) mapperJobLoop(job MapperJob, device SDRDevice, handle *mapperJ
 }
 
 func (r *Runtime) finishMapperJob(id string, handle *mapperJobRuntime, sessionID uint64, runError error) {
+	job, _ := r.mapper.Job(id)
 	if sessionID != 0 {
 		r.mapper.EndJobSession(id, sessionID)
 	}
@@ -574,6 +622,9 @@ func (r *Runtime) finishMapperJob(id string, handle *mapperJobRuntime, sessionID
 		delete(r.mapperJobs, id)
 	}
 	r.mu.Unlock()
+	if runError == nil && job.Config.AnalysisPolicy == "after-job" {
+		_, _ = r.StartDeferredAnalysis(id, 0)
+	}
 }
 
 // processSurveyTarget captures one short window. Identify mode calls this
@@ -629,21 +680,73 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 	}
 	ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
 	r.updateSpectrum(spec, data, format)
-	for _, target := range batch.Targets {
+	// Measure every software VFO from one shared FFT. Previously each target
+	// repeated the same FFT before discovering whether it was quiet, which made
+	// wide HackRF captures CPU-bound long before they reached the RF bandwidth
+	// limit. Demodulation and classification remain per-hit below.
+	definitions := make([]ChannelDefinition, 0, len(batch.Targets))
+	for index, target := range batch.Targets {
+		bandwidth := target.BandwidthHz
+		if bandwidth <= 0 {
+			bandwidth = 12_500
+		}
+		maximumBandwidth := float64(spec.SampleRateHz) / 4
+		if bandwidth > maximumBandwidth {
+			bandwidth = maximumBandwidth
+		}
+		definitions = append(definitions, ChannelDefinition{ID: fmt.Sprintf("mapper-%d", index), FrequencyHz: target.FrequencyHz, BandwidthHz: bandwidth})
+	}
+	levels, spectrumErr := MeasureChannelSpectrum(data, format, spec.SampleRateHz, float64(spec.CenterFrequencyHz), definitions)
+	if spectrumErr != nil {
+		r.setRuntimeError(spectrumErr.Error())
+		return true
+	}
+	for index, target := range batch.Targets {
 		select {
 		case <-stop:
 			return false
 		default:
 		}
-		if !r.processSurveyTargetCapture(stop, profile, device, target, mapperRun, spec, data, format) {
+		level, measured := levels[fmt.Sprintf("mapper-%d", index)]
+		if peakAdjusted := level.PeakDB - 12; peakAdjusted > level.SignalDB {
+			level.SignalDB = peakAdjusted
+		}
+		if !r.processSurveyTargetCapture(stop, profile, device, target, mapperRun, spec, data, format, &level, measured) {
 			return false
 		}
 	}
 	return true
 }
 
-func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat) bool {
+func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat, measuredLevel *ChannelSpectrumLevel, measured bool) bool {
 	rate := spec.SampleRateHz
+	level := ChannelSpectrumLevel{}
+	if measuredLevel != nil {
+		level = *measuredLevel
+	} else {
+		var err error
+		level, measured, err = measureSurveyTarget(data, format, rate, float64(spec.CenterFrequencyHz), target)
+		if err != nil {
+			r.setRuntimeError(err.Error())
+			return true
+		}
+	}
+	// Use the inexpensive shared spectrum result to reject noise before running
+	// per-channel classification and demodulation.
+	// Three dB is only a cheap prefilter. The configured sensitivity and the
+	// adaptive noise margin are applied after classification below; using the
+	// final threshold here would discard weak signals before Auto could examine
+	// them.
+	preliminaryMargin := 3.0
+	preliminarySNR := level.SignalDB - level.NoiseDB
+	if !measured || preliminarySNR < preliminaryMargin {
+		r.clearRuntimeError()
+		r.updateMixerActivity(target.FrequencyHz, 0, false)
+		if mapperRun != nil && r.mapper != nil {
+			r.mapper.ObserveJob(mapperRun.JobID, device.ID, mapperRun.Config, target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
+		}
+		return true
+	}
 	analysis := AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
 	if mapperRun != nil && target.Decoder == nil && analysis.Modulation == "DIGITAL" {
 		target.Decoder = ptr("dsd-fme")
@@ -656,11 +759,6 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		}
 	}
 	result, err := DemodulateIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationMode)
-	if err != nil {
-		r.setRuntimeError(err.Error())
-		return true
-	}
-	level, measured, err := measureSurveyTarget(data, format, rate, float64(spec.CenterFrequencyHz), target)
 	if err != nil {
 		r.setRuntimeError(err.Error())
 		return true
@@ -751,6 +849,15 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB,
 		NoiseDBFS: level.NoiseDB, Modulation: mode, ProtocolName: protocol, Label: &label,
 		DeviceID: device.ID, Confidence: math.Max(confidence, analysis.Confidence), Analysis: &analysis}
+	if mapperRun != nil {
+		event.MapperJobID = mapperRun.JobID
+		event.RequestedDecoder = mapperRun.Config.PreferredDecoder
+		event.AnalysisPolicy = firstNonEmpty(mapperRun.Config.AnalysisPolicy, "live")
+		event.IQRetentionPolicy = firstNonEmpty(mapperRun.Config.RejectedIQPolicy, "quarantine")
+		if event.AnalysisPolicy != "live" {
+			event.AnalysisStatus = "pending"
+		}
+	}
 	if (mode == "NFM" || mode == "FM") && len(result.Audio) > 0 {
 		if tone, _, detected := DetectCTCSS(result.Audio, result.AudioRateHz); detected {
 			event.CTCSSHz = &tone
@@ -785,12 +892,13 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		r.setRuntimeError(err.Error())
 		return true
 	}
-	if mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {
+	deferAnalysis := mapperRun != nil && mapperRun.Config.AnalysisPolicy != "" && mapperRun.Config.AnalysisPolicy != "live"
+	if !deferAnalysis && mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {
 		go r.deepAnalyzeMapperEvent(stop, event, candidate, hasCandidate && r.decoderReady(candidate.DecoderID), result.Audio, result.AudioRateHz, evidenceSpec, profile.Settings.TranscribeVoice)
-	} else if hasCandidate && r.decoderReady(candidate.DecoderID) {
+	} else if !deferAnalysis && hasCandidate && r.decoderReady(candidate.DecoderID) {
 		go r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, evidenceSpec)
 	}
-	if !(mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil) && profile.Settings.TranscribeVoice && event.AudioPath != nil {
+	if !deferAnalysis && !(mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil) && profile.Settings.TranscribeVoice && event.AudioPath != nil {
 		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
 	}
 	return true
@@ -820,6 +928,16 @@ func (r *Runtime) deepAnalyzeMapperEvent(stop <-chan struct{}, event Transmissio
 			_ = r.Events.UpdateTranscript(event.ID, transcript)
 			if r.mapper != nil {
 				r.mapper.SetTranscript(event.FrequencyHz, transcript)
+			}
+		}
+	}
+	if ctx.Err() == nil && r.localAI != nil {
+		if current, ok := r.Events.Get(event.ID); ok {
+			if analysis, err := r.localAI.Analyze(ctx, current); err == nil {
+				_ = r.Events.UpdateAnalysis(event.ID, analysis)
+				if r.mapper != nil {
+					r.mapper.SetSignalIntelligence(event.FrequencyHz, analysis)
+				}
 			}
 		}
 	}
@@ -875,6 +993,25 @@ func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, dec
 	_ = r.Events.UpdateDecoderMessages(event.ID, messages)
 	if r.mapper != nil {
 		r.mapper.SetDecodedMessages(event.FrequencyHz, decoderID, messages)
+	}
+	r.analyzeEventWithLocalAI(decoderContext, event.ID, event.FrequencyHz)
+}
+
+func (r *Runtime) analyzeEventWithLocalAI(ctx context.Context, eventID string, frequencyHz float64) {
+	if r.localAI == nil {
+		return
+	}
+	event, ok := r.Events.Get(eventID)
+	if !ok {
+		return
+	}
+	analysis, err := r.localAI.Analyze(ctx, event)
+	if err != nil {
+		return
+	}
+	_ = r.Events.UpdateAnalysis(eventID, analysis)
+	if r.mapper != nil {
+		r.mapper.SetSignalIntelligence(frequencyHz, analysis)
 	}
 }
 
@@ -1066,6 +1203,7 @@ func (r *Runtime) transcribeEvent(stop <-chan struct{}, eventID string, frequenc
 					Summary: "Local speech transcription produced one or more callsign candidates.", Evidence: []string{"Callsign pattern found in offline transcript"}})
 			}
 		}
+		r.analyzeEventWithLocalAI(transcriptionContext, eventID, frequencyHz)
 	}
 }
 
@@ -1120,7 +1258,7 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 	rates := []int{1_000_000, 2_000_000, 2_400_000, 3_200_000, 4_000_000, 8_000_000, 10_000_000, 12_000_000, 16_000_000, 20_000_000}
 	minimumRate, maximumRate := 225_000, 20_000_000
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
-		minimumRate = 8_000_000
+		minimumRate = 10_000_000
 	}
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		maximumRate = 3_200_000
@@ -1138,12 +1276,27 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 	if selectedRate == 0 {
 		return CaptureSpec{}, nil, false
 	}
+	if profile.Settings.SampleRateHz > 0 && profile.Settings.SampleRateHz >= minimumRate && profile.Settings.SampleRateHz <= maximumRate && float64(profile.Settings.SampleRateHz)*.86 >= required {
+		selectedRate = profile.Settings.SampleRateHz
+	}
 	center := (minimum + maximum) / 2
-	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(center)), SampleRateHz: selectedRate, GainDB: 20}
+	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(center)), SampleRateHz: selectedRate, GainDB: 20, AutoGain: profile.Settings.AutoGain}
 	if calibration := device.Calibration; calibration != nil {
 		spec.PPMCorrection = calibration.PPMCorrection
 		spec.LNAGainDB, spec.VGAGainDB = calibration.LNAGainDB, calibration.VGAGainDB
 		spec.AmpEnabled = calibration.AmpEnabled
+	}
+	if profile.Settings.GainDB > 0 {
+		spec.GainDB = profile.Settings.GainDB
+	}
+	if profile.Settings.LNAGainDB != nil {
+		spec.LNAGainDB = *profile.Settings.LNAGainDB
+	}
+	if profile.Settings.VGAGainDB != nil {
+		spec.VGAGainDB = *profile.Settings.VGAGainDB
+	}
+	if profile.Settings.AmpEnabled != nil {
+		spec.AmpEnabled = *profile.Settings.AmpEnabled
 	}
 	return spec, channels, true
 }
@@ -1191,9 +1344,14 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			}
 		}
 		format := DetectSampleFormat(data, stream.Format)
+		removeDC, iqGain, iqPhase, iqSwap := true, 1.0, 0.0, false
 		if calibration := device.Calibration; calibration != nil {
-			ApplyIQCorrection(data, format, calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap)
+			removeDC, iqGain, iqPhase, iqSwap = calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap
 		}
+		if profile.Settings.DCRemoval != nil {
+			removeDC = *profile.Settings.DCRemoval
+		}
+		ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
 		r.updateSpectrum(spec, data, format)
 		levels, err := MeasureChannelSpectrum(data, format, spec.SampleRateHz, float64(spec.CenterFrequencyHz), channels)
 		if err != nil {
@@ -1281,7 +1439,9 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		case <-closed:
 		}
 	}()
-	const frameDuration = 50 * time.Millisecond
+	// A 25 ms tuner frame permits up to 40 fresh spectrum/waterfall updates per
+	// second on performance-class machines. Lower UI rates still downsample this.
+	const frameDuration = 25 * time.Millisecond
 	frameBytes := int(float64(spec.SampleRateHz*2) * frameDuration.Seconds())
 	noiseFloor := -150.0
 	analysisFrames := 0

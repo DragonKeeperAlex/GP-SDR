@@ -6,7 +6,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
-@interface GPSDRAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler, CLLocationManagerDelegate>
+@interface GPSDRAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, CLLocationManagerDelegate>
 @property(nonatomic, strong) NSWindow *window;
 @property(nonatomic, strong) WKWebView *webView;
 @property(nonatomic, strong) NSTask *serverProcess;
@@ -113,21 +113,35 @@
     configuration.allowsAirPlayForMediaPlayback = YES;
     self.webView = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:configuration];
     self.webView.navigationDelegate = self;
+    self.webView.UIDelegate = self;
     [self.webView setValue:@NO forKey:@"drawsBackground"];
 
     NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable | NSWindowStyleMaskFullSizeContentView;
+        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
     self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1240, 820)
         styleMask:style backing:NSBackingStoreBuffered defer:NO];
     self.window.title = @"GP-SDR";
-    self.window.titlebarAppearsTransparent = YES;
-    self.window.titleVisibility = NSWindowTitleHidden;
+    self.window.titlebarAppearsTransparent = NO;
+    self.window.titleVisibility = NSWindowTitleVisible;
     self.window.backgroundColor = [NSColor colorWithRed:0.043 green:0.051 blue:0.063 alpha:1];
     self.window.minSize = NSMakeSize(880, 620);
     self.window.contentView = self.webView;
     self.window.delegate = self;
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
+}
+
+- (void)webView:(WKWebView *)webView
+    runOpenPanelWithParameters:(WKOpenPanelParameters *)parameters
+    initiatedByFrame:(WKFrameInfo *)frame
+    completionHandler:(void (^)(NSArray<NSURL *> * _Nullable URLs))completionHandler {
+    NSOpenPanel *panel = [[NSOpenPanel alloc] init];
+    panel.canChooseDirectories = parameters.allowsDirectories;
+    panel.canChooseFiles = YES;
+    panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
+    [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
+        completionHandler(response == NSModalResponseOK ? panel.URLs : nil);
+    }];
 }
 
 - (void)startBundledServer {

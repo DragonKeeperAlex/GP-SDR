@@ -79,15 +79,26 @@ func TestMapperRejectsDecipherListenPeriodsOutsideFiveSecondsToSevenDays(t *test
 func TestMapperAppliesSafeWorkflowConcurrencyDefaultsAndLimits(t *testing.T) {
 	manager := &MapperManager{path: filepath.Join(t.TempDir(), "mapper.json"), records: make(map[string]MapperFrequencyRecord)}
 	discovery, err := manager.Update(MapperConfig{Mode: "discovery", DecipherListenSeconds: 5})
-	if err != nil || discovery.Config.ConcurrentChannels != 16 {
-		t.Fatalf("expected Discovery to default to 16 simultaneous channels: status=%+v error=%v", discovery, err)
+	if err != nil || discovery.Config.ConcurrentChannels != 512 {
+		t.Fatalf("expected Discovery to default to 512 simultaneous channels: status=%+v error=%v", discovery, err)
 	}
 	identify, err := manager.Update(MapperConfig{Mode: "decipher", DecipherListenSeconds: 5})
-	if err != nil || identify.Config.ConcurrentChannels != 4 {
-		t.Fatalf("expected Identify to default to 4 simultaneous channels: status=%+v error=%v", identify, err)
+	if err != nil || identify.Config.ConcurrentChannels != 1 {
+		t.Fatalf("expected Identify to default to one maximum-accuracy channel: status=%+v error=%v", identify, err)
 	}
-	if _, err := manager.Update(MapperConfig{Mode: "discovery", DecipherListenSeconds: 5, ConcurrentChannels: 33}); err == nil {
-		t.Fatal("expected more than 32 simultaneous channels to be rejected")
+	if _, err := manager.Update(MapperConfig{Mode: "discovery", DecipherListenSeconds: 5, ConcurrentChannels: 1025}); err == nil {
+		t.Fatal("expected more than 1,024 simultaneous channels to be rejected")
+	}
+}
+
+func TestDiscoveryDefaultsToDeferredAnalysis(t *testing.T) {
+	manager := &MapperManager{path: filepath.Join(t.TempDir(), "mapper.json"), records: make(map[string]MapperFrequencyRecord)}
+	status, err := manager.Update(MapperConfig{Mode: "discovery", DeviceID: "radio", StartHz: 100e6, EndHz: 101e6, StepHz: 12_500, DwellMilliseconds: 100, DecipherListenSeconds: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Config.AnalysisPolicy != "manual" {
+		t.Fatalf("Discovery must collect first and analyze later, got %q", status.Config.AnalysisPolicy)
 	}
 }
 
@@ -229,6 +240,27 @@ func TestMapperAcceptsForcedDMRDecoder(t *testing.T) {
 	}
 	if config.PreferredDecoder != "dmr" || canonicalDecoderID(config.PreferredDecoder) != "dsd-fme" {
 		t.Fatalf("DMR decoder was not preserved: %#v", config)
+	}
+}
+
+func TestMapperValidatesDeferredAnalysisAndSchedule(t *testing.T) {
+	config, err := validateMapperScanConfig(MapperConfig{Mode: "discovery", DeviceID: "receiver", StartHz: 150e6, EndHz: 151e6,
+		StepHz: 12_500, DwellMilliseconds: 250, DecipherListenSeconds: 5, AnalysisPolicy: "manual",
+		ScheduleEnabled: true, DiscoveryDurationSeconds: 60, IdentifyDurationSeconds: 30, ScheduleRepeat: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AnalysisPolicy != "manual" || !config.ScheduleEnabled || !config.ScheduleRepeat {
+		t.Fatalf("deferred schedule settings were not preserved: %#v", config)
+	}
+	if _, err := validateMapperScanConfig(MapperConfig{Mode: "discovery", DeviceID: "receiver", StartHz: 150e6, EndHz: 151e6,
+		StepHz: 12_500, DwellMilliseconds: 250, DecipherListenSeconds: 5, AnalysisPolicy: "later"}); err == nil {
+		t.Fatal("expected an invalid analysis policy to be rejected")
+	}
+	if _, err := validateMapperScanConfig(MapperConfig{Mode: "discovery", DeviceID: "receiver", StartHz: 150e6, EndHz: 151e6,
+		StepHz: 12_500, DwellMilliseconds: 250, DecipherListenSeconds: 5, ScheduleEnabled: true,
+		DiscoveryDurationSeconds: 1, IdentifyDurationSeconds: 30}); err == nil {
+		t.Fatal("expected a too-short scheduled phase to be rejected")
 	}
 }
 

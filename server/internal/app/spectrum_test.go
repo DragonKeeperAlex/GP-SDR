@@ -39,7 +39,7 @@ func TestMeasureChannelSpectrumFindsOffsetCarrier(t *testing.T) {
 func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 	const rate = 1_000_000
 	const offset = 100_000
-	data := make([]byte, 4096*2)
+	data := make([]byte, 8192*2)
 	for index := 0; index < len(data)/2; index++ {
 		phase := 2 * math.Pi * offset * float64(index) / rate
 		data[index*2] = byte(int8(math.Round(math.Cos(phase) * 120)))
@@ -49,7 +49,7 @@ func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.StartFrequencyHz != 99_500_000 || snapshot.EndFrequencyHz != 100_500_000 || len(snapshot.BinsDBFS) != 1024 {
+	if snapshot.StartFrequencyHz != 99_500_000 || snapshot.EndFrequencyHz != 100_500_000 || len(snapshot.BinsDBFS) != 4096 {
 		t.Fatalf("unexpected spectrum metadata: %#v", snapshot)
 	}
 	peak := 0
@@ -58,7 +58,7 @@ func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 			peak = index
 		}
 	}
-	expected := int((offset + rate/2) * 1024 / rate)
+	expected := int((offset + rate/2) * 4096 / rate)
 	if peak < expected-2 || peak > expected+2 {
 		t.Fatalf("expected peak near bin %d, got %d", expected, peak)
 	}

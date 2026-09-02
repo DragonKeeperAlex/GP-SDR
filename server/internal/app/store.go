@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -442,6 +443,28 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	return writeEventFile(s.path, s.events)
 }
 
+func (s *EventStore) UpdateAnalysis(id string, analysis SignalIntelligence) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.events {
+		if s.events[index].ID != id {
+			continue
+		}
+		// A language model may summarize evidence but cannot overrule a real
+		// decoder. Keep decoder-proven protocol and confidence authoritative.
+		if len(s.events[index].DecoderMessages) > 0 {
+			analysis.Modulation = s.events[index].Modulation
+			analysis.SignalFamily = stringValue(s.events[index].ProtocolName)
+			analysis.Confidence = maxFloat(analysis.Confidence, s.events[index].Confidence)
+		}
+		s.events[index].Analysis = &analysis
+		s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, analysis.Callsigns)
+		s.rebuildSearchIndexLocked()
+		return writeEventFile(s.path, s.events)
+	}
+	return ErrNotFound
+}
+
 func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage) error {
 	if len(messages) == 0 {
 		return nil
@@ -481,11 +504,52 @@ func (s *EventStore) UpdateIQPath(id, path string) error {
 	defer s.mu.Unlock()
 	for index := range s.events {
 		if s.events[index].ID == id {
-			s.events[index].IQPath = ptr(path)
+			if strings.TrimSpace(path) == "" {
+				s.events[index].IQPath = nil
+			} else {
+				s.events[index].IQPath = ptr(path)
+			}
 			return writeEventFile(s.path, s.events)
 		}
 	}
 	return ErrNotFound
+}
+
+func (s *EventStore) UpdateAnalysisStatus(id, status, message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.events {
+		if s.events[index].ID != id {
+			continue
+		}
+		s.events[index].AnalysisStatus = status
+		s.events[index].AnalysisError = strings.TrimSpace(message)
+		if status == "complete" || status == "error" {
+			now := time.Now().UTC()
+			s.events[index].AnalysisCompletedAt = &now
+		} else {
+			s.events[index].AnalysisCompletedAt = nil
+		}
+		return writeEventFile(s.path, s.events)
+	}
+	return ErrNotFound
+}
+
+func (s *EventStore) PendingAnalysis(limit int, jobID string) []TransmissionEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit < 1 || limit > 25_000 {
+		limit = 25_000
+	}
+	items := make([]TransmissionEvent, 0, minInt(limit, len(s.events)))
+	for index := len(s.events) - 1; index >= 0 && len(items) < limit; index-- {
+		event := s.events[index]
+		if event.AnalysisStatus != "pending" || (jobID != "" && event.MapperJobID != jobID) {
+			continue
+		}
+		items = append(items, event)
+	}
+	return items
 }
 
 func (s *EventStore) Signals(limit int) []SignalSummary {

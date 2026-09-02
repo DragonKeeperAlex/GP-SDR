@@ -30,6 +30,8 @@ encryption and marks or excludes encrypted calls.
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | Device discovery and streaming through the original, dynamically loaded `gpsdr-soapy` bridge | Boost Software License 1.0 | The GP-SDR bridge is bundled on macOS; upstream SoapySDR/modules are not |
 | [OP25, boatbod fork](https://github.com/boatbod/op25) | Developer/source compatibility code; it is not the packaged or selected P25 backend | GPL-3.0-or-later | No |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | Offline transcription through `whisper-cli` | MIT | No; the in-app installer can install the executable and download a checksum-pinned English base model on request |
+| [Ollama](https://github.com/ollama/ollama) | Optional localhost-only model runtime for radio-evidence correlation | MIT | No; GP-SDR detects or installs the separate runtime |
+| [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | Default optional 1.5B local evidence-synthesis model | Apache-2.0 | No; downloaded separately through Ollama when requested |
 | [HackRF host software](https://github.com/greatscottgadgets/hackrf) | Analog IQ discovery and capture through `hackrf_info` and `hackrf_transfer` | GPL-2.0 | No |
 | [rtl-sdr](https://github.com/osmocom/rtl-sdr) | Analog IQ discovery and capture through `rtl_test`, `rtl_eeprom`, and `rtl_sdr` | GPL-2.0 | No |
 | [RadioReference](https://www.radioreference.com/) | Authorized subscriber location/range searches and selected imports | RadioReference account, subscription, API-key, and service terms | No code or database content |

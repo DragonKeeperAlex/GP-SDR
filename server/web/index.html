@@ -8,8 +8,8 @@
   <title>GP-SDR</title>
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
-  <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/console.css">
+  <link rel="stylesheet" href="/app.css?v=1.5.0-rc8a">
+  <link rel="stylesheet" href="/console.css?v=1.5.0-rc8a">
 </head>
 <body>
   <div class="shell">
@@ -19,29 +19,39 @@
         <span>GP-SDR</span>
       </div>
       <nav aria-label="Main navigation">
+        <span class="nav-group-label">Operate</span>
         <button class="nav-item active" data-view="live" title="Live receiver and channel mixer">
           <span class="nav-icon">◉</span><span>Live</span>
         </button>
         <button class="nav-item" data-view="tuner" title="Tune one frequency and inspect its live spectrum">
           <span class="nav-icon">⌖</span><span>Tuner</span>
         </button>
-        <button class="nav-item" data-view="transmit" title="Prepare a guarded HackRF audio transmission">
-          <span class="nav-icon">TX</span><span>Transmit</span>
+        <button class="nav-item" data-view="band" title="Monitor an entire channelized band at once">
+          <span class="nav-icon">▥</span><span>Band monitor</span>
         </button>
+        <span class="nav-group-label">Mapping</span>
+        <button class="nav-item" data-view="mapper" data-mapper-page="overview" title="All Mapper jobs and live receiver status"><span class="nav-icon">⌘</span><span>Overview</span></button>
+        <button class="nav-item" data-view="mapper" data-mapper-page="discovery" title="Collect activity across a frequency range"><span class="nav-icon">↻</span><span>Discovery</span></button>
+        <button class="nav-item" data-view="mapper" data-mapper-page="identify" title="Revisit and identify collected frequencies"><span class="nav-icon">◎</span><span>Identify</span></button>
+        <button class="nav-item" data-view="mapper" data-mapper-page="analysis" title="Process stored captures and inspect live analysis"><span class="nav-icon">▸</span><span>Analyze</span></button>
+        <button class="nav-item" data-view="mapper" data-mapper-page="schedule" title="Schedule collection, identification, and offline analysis"><span class="nav-icon">◷</span><span>Schedule</span></button>
+        <button class="nav-item" data-view="mapper" data-mapper-page="results" title="Search, review, and export Mapper results"><span class="nav-icon">≡</span><span>Results</span></button>
+        <span class="nav-group-label">Review</span>
         <button class="nav-item" data-view="activity" title="Recorded activity and discovered signals">
           <span class="nav-icon">≋</span><span>Activity</span>
         </button>
-        <button class="nav-item" data-view="mapper" title="Sweep a receiver range and map detected activity">
-          <span class="nav-icon">⌘</span><span>Mapper</span>
-        </button>
         <button class="nav-item" data-view="profiles" title="Scan ranges, channels, and receiver assignments">
-          <span class="nav-icon">▤</span><span>Profiles</span>
+          <span class="nav-icon">▤</span><span>Channels</span>
         </button>
         <button class="nav-item" data-view="decoders" title="Open a workspace for each decoder">
           <span class="nav-icon">⌗</span><span>Decoders</span>
         </button>
         <button class="nav-item" data-view="hardware" title="Connected SDRs and decoder availability">
           <span class="nav-icon">⌁</span><span>Hardware</span>
+        </button>
+        <span class="nav-group-label">System</span>
+        <button class="nav-item" data-view="transmit" title="Prepare a guarded HackRF audio transmission">
+          <span class="nav-icon">TX</span><span>Transmit</span>
         </button>
         <button class="nav-item" data-view="settings" title="Server, storage, and application information">
           <span class="nav-icon">⚙︎</span><span>Settings</span>
@@ -91,22 +101,25 @@
         <article class="panel receiver-controls-panel">
           <div class="panel-head"><div><h2>Receiver controls</h2><span id="audio-state">Ready</span></div><div class="signal-state"><i id="live-signal-light"></i><span id="live-signal-text">No signal</span></div><button id="audio-monitor" title="Enable or resume receiver audio">Audio</button><button id="live-apply-radio" class="primary" title="Controls apply automatically; click to retry now">Applied</button></div>
           <div class="receiver-control-grid">
+            <h3 class="control-group-title">Receiver</h3>
             <label>Receiver<select id="live-radio-device" title="Receiver to control"></select></label>
 			<label>Mode<select id="live-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></select></label>
 			<label>Bandwidth · kHz<input id="live-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Channel bandwidth; digital voice normally uses 12.5 kHz"></label>
+            <h3 class="control-group-title">RF</h3>
             <label>LNA · dB<select id="live-lna" title="HackRF RF LNA gain"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
             <label>VGA · dB<input id="live-vga" type="number" min="0" max="62" step="2" value="20" title="HackRF baseband VGA gain"></label>
             <label>PPM<input id="live-ppm" type="number" min="-200" max="200" value="0" title="Frequency correction"></label>
             <label class="check-line"><input id="live-amp" type="checkbox"> RF amp</label>
             <label class="check-line"><input id="live-bias" type="checkbox"> Antenna power</label>
+            <h3 class="control-group-title">Signal</h3>
             <label class="check-line"><input id="live-dc" type="checkbox" checked> DC removal</label>
             <label>Q balance<input id="live-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label>
             <label>IQ phase · °<input id="live-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label>
             <label class="check-line"><input id="live-iq-swap" type="checkbox"> Swap I/Q</label>
-            <label class="check-line"><input id="live-agc" type="checkbox" checked> AGC</label>
+            <label class="check-line"><input id="live-agc" type="checkbox" checked> Audio level auto</label>
             <label>Squelch · dB<input id="live-squelch" type="number" min="0" max="60" step="1" value="8"></label>
             <label class="check-line"><input id="live-monitor-open" type="checkbox"> Open squelch</label>
-			<label class="check-line"><input id="live-use-calibration" type="checkbox" checked> Calibration</label>
+			<label class="check-line"><input id="live-use-calibration" type="checkbox" checked> Auto calibration</label>
           </div>
           <p class="control-warning">RF amp and antenna power default off. Antenna power is only for compatible powered accessories.</p>
         </article>
@@ -139,43 +152,54 @@
         </div>
       </section>
 
+      <section id="view-band" class="view">
+        <article class="panel band-command-panel">
+          <div class="panel-head"><div><h2>Band monitor</h2><span>One wide capture · independent channel audio</span></div><span id="band-state" class="chip">Idle</span></div>
+          <div class="band-command-grid"><label>Band<select id="band-profile"></select></label><label>Receiver<select id="band-device" title="A HackRF can cover the entire GMRS/FRS allocation in one capture"></select></label><div class="band-listen-mode"><span>Listen mode</span><strong>Carrier · all codes</strong></div><button id="band-start" class="primary" type="button">Monitor band</button><button id="band-stop" type="button">Stop</button></div>
+          <div class="band-radio-controls">
+            <label>Sample rate<select id="band-rate"><option value="0">Auto</option><option value="2400000">2.4 MS/s · RTL</option><option value="3200000">3.2 MS/s · RTL max</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000" selected>20 MS/s · HackRF</option></select></label>
+            <label>Receiver gain · dB<input id="band-gain" type="number" min="0" max="62" step="1" value="20"></label>
+            <label>HackRF LNA · dB<select id="band-lna"><option>0</option><option>8</option><option selected>16</option><option>24</option><option>32</option><option>40</option></select></label>
+            <label>HackRF VGA · dB<input id="band-vga" type="number" min="0" max="62" step="2" value="16"></label>
+            <label>Squelch · dB<input id="band-squelch" type="number" min="0" max="60" step="1" value="6"></label>
+            <label class="check-line"><input id="band-auto-gain" type="checkbox" checked> Auto gain</label><label class="check-line"><input id="band-amp" type="checkbox"> HackRF RF amp</label><label class="check-line"><input id="band-dc" type="checkbox" checked> DC removal</label>
+          </div>
+          <p class="band-help"><strong>Privacy codes are squelch tones, not encryption.</strong> Carrier mode hears every transmission, including radios with no code. GP‑SDR identifies CTCSS on active audio and leaves the code blank when there is not enough evidence.</p>
+        </article>
+        <div class="band-summary"><article><span>Channels</span><strong id="band-channel-count">0</strong><small>monitored</small></article><article><span>Active now</span><strong id="band-active-count">0</strong><small>receiving</small></article><article><span>Last tone</span><strong id="band-last-code">—</strong><small>CTCSS detected</small></article><article><span>Capture</span><strong id="band-capture-width">—</strong><small>shared bandwidth</small></article></div>
+        <article class="panel band-channel-panel"><div class="panel-head"><div><h2>Channels</h2><span>Active channels rise to the top</span></div><div class="mixer-head-actions"><input id="band-search" type="search" placeholder="Channel, frequency, code" aria-label="Filter band channels"><button id="band-mute-all" class="icon-button" title="Mute or unmute every channel">M</button></div></div><div id="band-channel-list" class="band-channel-list empty-state compact">Choose a band and start monitoring</div></article>
+      </section>
+
       <section id="view-tuner" class="view">
-        <div class="tuner-layout">
-          <article class="panel tuner-controls">
+        <div class="tuner-layout tuner-console">
+          <article class="panel tuner-controls tuner-command-panel">
             <form id="tuner-form">
-              <div class="tuner-readout"><span>Frequency</span><strong id="tuner-readout">462.6750</strong><small>MHz</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
-              <label>Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
-              <div class="form-grid two"><label>Hardware center · MHz<input id="tuner-hardware-center" type="number" min="0.001" step="0.000001" placeholder="Auto offset" title="Physical SDR tuning center; leave blank to place the VFO away from the DC spike"></label><label>Listen VFO · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Software-demodulated frequency; Up and Down use the selected tuning step"></label></div>
-              <label>Tuning step<select id="tuner-step" title="Frequency change used by the arrow keys"><option value="0.001">1 kHz</option><option value="0.0025">2.5 kHz</option><option value="0.005">5 kHz</option><option value="0.00625">6.25 kHz</option><option value="0.0125" selected>12.5 kHz</option><option value="0.025">25 kHz</option><option value="0.1">100 kHz</option></select></label>
-              <label>Recent frequencies<select id="tuner-history" title="Return to a recently tuned frequency"><option value="">No recent frequencies</option></select></label>
-              <label class="check-line"><input id="tuner-lock-center" type="checkbox"> Lock center · software VFO</label>
-              <div class="form-grid two">
-				<label>Mode / decoder<select id="tuner-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><optgroup label="Digital voice"><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></optgroup><optgroup label="Data and signaling"><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></optgroup></select></label>
+              <div class="tuner-command-row">
+                <div class="tuner-readout"><span>Listen frequency</span><div class="tuner-digit-readout"><strong id="tuner-readout" aria-label="462.675000 megahertz">462.675000</strong><small>MHz</small></div><small class="tuner-readout-help">Click above or below a digit to step it</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
+                <label class="tuner-receiver-field">Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
+                <label>Mode / decoder<select id="tuner-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><optgroup label="Digital voice"><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></optgroup><optgroup label="Data and signaling"><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></optgroup></select></label>
                 <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Audio channel bandwidth"></label>
+                <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Start</button><button id="tuner-stop" type="button">Stop</button><button id="tuner-bookmark" type="button" title="Save the current frequency as a reusable scan profile">Save</button></div>
               </div>
-              <div class="form-grid two">
-                <label>Sample rate<select id="tuner-rate" title="Receiver sample rate; Auto chooses a safe value"><option value="0">Auto</option><option value="1000000">1.0 MS/s</option><option value="2000000">2.0 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8.0 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
-                <label>Gain · dB<input id="tuner-gain" type="number" min="0" max="62" step="1" value="20" title="Receiver gain"></label>
+              <div class="tuner-vfo-row">
+                <label>Listen VFO · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Software-demodulated frequency; Up and Down use the selected tuning step"></label>
+                <label>Hardware center · MHz<input id="tuner-hardware-center" type="number" min="0.001" step="0.000001" placeholder="Auto offset" title="Physical SDR tuning center; leave blank to place the VFO away from the DC spike"></label>
+                <label>Step<select id="tuner-step" title="Frequency change used by the arrow keys"><option value="0.001">1 kHz</option><option value="0.0025">2.5 kHz</option><option value="0.005">5 kHz</option><option value="0.00625">6.25 kHz</option><option value="0.0125" selected>12.5 kHz</option><option value="0.025">25 kHz</option><option value="0.1">100 kHz</option></select></label>
+                <label>Recent<select id="tuner-history" title="Return to a recently tuned frequency"><option value="">No recent frequencies</option></select></label>
+                <label class="check-line"><input id="tuner-lock-center" type="checkbox"> Lock hardware center</label>
               </div>
-              <details class="advanced-radio"><summary>RF and IQ controls</summary>
-                <div class="form-grid two">
-                  <label>LNA · dB<select id="tuner-lna"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
-                  <label>VGA · dB<input id="tuner-vga" type="number" min="0" max="62" step="2" value="20"></label>
-                  <label>PPM<input id="tuner-ppm" type="number" min="-200" max="200" value="0"></label>
-                  <label>Q balance<input id="tuner-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label>
-                  <label>IQ phase · °<input id="tuner-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label>
-                </div>
-                <div class="form-grid two"><label>Squelch · dB<input id="tuner-squelch" type="number" min="0" max="60" step="1" value="8"></label><label>Noise reduction<select id="tuner-noise" title="Local low-latency speech noise reduction"><option value="off">Off</option><option value="voice" selected>Voice</option><option value="strong">Strong</option></select></label></div>
-                <div class="toggle-grid"><label><input id="tuner-amp" type="checkbox"> RF amp</label><label><input id="tuner-bias" type="checkbox"> Antenna power</label><label><input id="tuner-dc" type="checkbox" checked> DC removal</label><label><input id="tuner-iq-swap" type="checkbox"> Swap I/Q</label><label><input id="tuner-agc" type="checkbox" checked> Audio AGC</label><label><input id="tuner-monitor-open" type="checkbox"> Open squelch</label><label><input id="tuner-use-calibration" type="checkbox" checked> Apply saved calibration</label></div>
-              </details>
-              <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Tune</button><button id="tuner-stop" type="button">Stop</button><button id="tuner-bookmark" type="button" title="Save the current frequency as a reusable scan profile">Save channel</button></div>
-              <p id="tuner-status">Choose a receiver and frequency.</p>
             </form>
+            <div class="radio-controls tuner-grouped-controls"><div class="tuner-control-dock">
+              <div class="tuner-dock-section"><h3>Receiver</h3><div class="tuner-dock-grid"><label>Sample rate<select id="tuner-rate" title="Receiver sample rate; Auto chooses a safe value"><option value="0">Auto</option><option value="1000000">1.0 MS/s</option><option value="2000000">2.0 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8.0 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label><label>Gain · dB<input id="tuner-gain" type="number" min="0" max="62" step="1" value="20" title="Receiver gain"></label><label>LNA · dB<select id="tuner-lna"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label><label>VGA · dB<input id="tuner-vga" type="number" min="0" max="62" step="2" value="20"></label></div></div>
+              <div class="tuner-dock-section"><h3>Signal</h3><div class="tuner-dock-grid"><label>Squelch · dB<input id="tuner-squelch" type="number" min="0" max="60" step="1" value="8"></label><label>Noise reduction<select id="tuner-noise" title="Local low-latency speech noise reduction"><option value="off">Off</option><option value="voice" selected>Voice</option><option value="strong">Strong</option></select></label><label>PPM<input id="tuner-ppm" type="number" min="-200" max="200" value="0"></label><label>Q balance<input id="tuner-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label><label>IQ phase · °<input id="tuner-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label></div></div>
+              <div class="tuner-dock-section tuner-switches"><h3>Automatic &amp; front end</h3><div class="toggle-grid"><label><input id="tuner-amp" type="checkbox"> RF amp</label><label><input id="tuner-bias" type="checkbox"> Antenna power</label><label><input id="tuner-dc" type="checkbox" checked> DC removal</label><label><input id="tuner-iq-swap" type="checkbox"> Swap I/Q</label><label><input id="tuner-agc" type="checkbox" checked> Auto level</label><label><input id="tuner-monitor-open" type="checkbox"> Open squelch</label><label><input id="tuner-use-calibration" type="checkbox" checked> Auto calibration</label></div></div>
+              <div class="tuner-dock-status"><span id="tuner-status">Choose a receiver and frequency.</span></div>
+            </div></div>
           </article>
           <div class="tuner-displays">
             <article class="panel spectrum-panel tuner-spectrum-panel">
               <div class="panel-head"><div><h2>Spectrum</h2><span id="tuner-span">No IQ data</span></div><span id="tuner-cursor" class="frequency-caption">Hover for frequency</span><span id="tuner-center" class="frequency-caption">—</span></div>
-              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum; click to copy a frequency into the tuner" title="Click a signal to copy its frequency into the tuner"></canvas>
+              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum; click to move the software listening frequency" title="Click a signal to listen there without moving the hardware center"></canvas>
             </article>
             <article class="panel waterfall-panel">
               <div class="panel-head"><div><h2>Waterfall</h2><span>Newest samples appear at the top</span></div><div class="waterfall-scale"><i></i><span>−110</span><span>−20 dBFS</span></div></div>
@@ -251,16 +275,16 @@
             <label><span id="mapper-end-caption">End · MHz</span><input id="mapper-end" type="number" min="0.001" step="0.001" value="6000"></label>
             <label class="mapper-discovery-control">Step · kHz<select id="mapper-step"><option value="12.5" selected>12.5</option><option value="25">25</option><option value="100">100</option><option value="500">500</option></select></label>
             <label class="mapper-discovery-control">Time per channel<div class="mapper-duration-input"><input id="mapper-dwell-value" type="number" min="0.1" step="0.1" value="0.5"><select id="mapper-dwell-unit"><option value="1000" selected>seconds</option><option value="60000">minutes</option><option value="3600000">hours</option><option value="86400000">days</option></select></div></label>
-            <details class="mapper-tuning-panel"><summary>Receiver tuning <small>Auto gain · safe sample rate · simultaneous channels</small></summary><div class="mapper-tuning-grid">
+            <details class="mapper-tuning-panel" open><summary>Receiver tuning <small>Auto gain · safe sample rate · simultaneous channels</small></summary><div class="mapper-tuning-grid">
               <label>Capture width<select id="mapper-rate" title="Receiver sample rate; rates beyond the selected receiver limits are disabled"><option value="0">Auto</option><option value="1024000">1.024 MS/s</option><option value="2000000">2 MS/s</option><option value="2400000">2.4 MS/s · RTL recommended</option><option value="3200000">3.2 MS/s · may drop samples</option><option value="5000000">5 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
-              <label>Channels at once<select id="mapper-concurrent" title="Software VFOs monitored from one IQ capture. Higher values scan faster but use more CPU."><option value="0" selected>Auto · 16 / 4</option><option value="1">1 · lowest CPU</option><option value="2">2</option><option value="4">4 · balanced</option><option value="8">8</option><option value="16">16 · fast discovery</option><option value="32">32 · highest CPU</option></select></label>
+              <label>Channels at once<select id="mapper-concurrent" title="Software VFOs measured from one IQ capture. Auto uses 512 for Discovery, 64 for Map, and one channel for maximum-accuracy Identify."><option value="0" selected>Auto · matched to workflow</option><option value="1">1 · maximum-accuracy Identify</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64 · Map balanced</option><option value="128">128</option><option value="256">256 · fast collection</option><option value="512">512 · maximum collection</option><option value="1024">1,024 · extreme collection</option></select><small>Actual count is limited by capture width, spacing, and usable receiver bandwidth.</small></label>
               <label>Receiver gain<select id="mapper-gain-mode" title="Auto continuously adjusts receiver RF gain between bounded captures"><option value="auto" selected>Auto</option><option value="saved">Saved calibration</option><option value="manual">Manual</option></select></label>
               <label>Sensitivity<select id="mapper-sensitivity" title="Controls the automatic gain target and how far a signal must rise above its local noise floor"><option value="auto" selected>Auto</option><option value="weak">Weak signals</option><option value="balanced">Balanced</option><option value="conservative">Strong signals only</option><option value="manual">Manual threshold</option></select></label>
               <label>HackRF amp<select id="mapper-amp-mode" title="Auto enables the roughly 11 dB HackRF RF amp for weak input and disables it first when overload is detected"><option value="auto" selected>Auto</option><option value="off">Off</option><option value="on">On · use with care</option></select></label>
-              <label class="advanced-only mapper-manual-gain">Receiver gain · dB<input id="mapper-gain" type="number" min="0" max="62" step="0.1" value="20"></label>
-              <label class="advanced-only mapper-manual-gain">HackRF LNA · dB<select id="mapper-lna"><option value="0">0</option><option value="8">8</option><option value="16" selected>16</option><option value="24">24</option><option value="32">32</option><option value="40">40</option></select></label>
-              <label class="advanced-only mapper-manual-gain">HackRF VGA · dB<input id="mapper-vga" type="number" min="0" max="62" step="2" value="16"></label>
-              <label class="advanced-only mapper-manual-margin">Signal above noise · dB<input id="mapper-noise-margin" type="number" min="1" max="40" step="0.5" value="6"></label>
+              <label class="mapper-manual-gain">Receiver gain · dB<input id="mapper-gain" type="number" min="0" max="62" step="0.1" value="20"></label>
+              <label class="mapper-manual-gain">HackRF LNA · dB<select id="mapper-lna"><option value="0">0</option><option value="8">8</option><option value="16" selected>16</option><option value="24">24</option><option value="32">32</option><option value="40">40</option></select></label>
+              <label class="mapper-manual-gain">HackRF VGA · dB<input id="mapper-vga" type="number" min="0" max="62" step="2" value="16"></label>
+              <label class="mapper-manual-margin">Signal above noise · dB<input id="mapper-noise-margin" type="number" min="1" max="40" step="0.5" value="6"></label>
               <div class="mapper-identify-settings"><span>Identify filters</span><div class="mapper-identify-grid">
             <label id="mapper-listen-wrap" class="hidden">Listen per channel<div class="mapper-duration-input"><input id="mapper-listen-value" type="number" min="1" step="1" value="1"><select id="mapper-listen-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
             <label class="mapper-identify-control hidden">Minimum hits<select id="mapper-identify-min-hits" title="Skip one-off frequencies by requiring repeated activity before Identify"><option value="1">1 · include every hit</option><option value="2" selected>2 · skip one-offs</option><option value="3">3</option><option value="5">5</option><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
@@ -268,12 +292,21 @@
             <label class="mapper-identify-control hidden">Successful checks<select id="mapper-identify-occupancy" title="Only Identify frequencies active on at least this percentage of checks"><option value="0">Any percentage</option><option value="0.1" selected>10% or more</option><option value="0.2">20% or more</option><option value="0.3">30% or more</option><option value="0.4">40% or more</option><option value="0.5">50% or more</option><option value="0.6">60% or more</option><option value="0.7">70% or more</option><option value="0.8">80% or more</option><option value="0.9">90% or more</option><option value="1">100% only</option></select></label>
             <label class="mapper-identify-control hidden">Last active<select id="mapper-identify-age"><option value="0">Any time</option><option value="1">Past hour</option><option value="6">Past 6 hours</option><option value="24">Past day</option><option value="168" selected>Past week</option><option value="720">Past 30 days</option></select></label>
             <label class="mapper-identify-control hidden">Maximum channels<select id="mapper-identify-limit"><option value="0">All matching</option><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="250">250</option></select></label>
+            <label class="mapper-identify-control hidden">Rejected IQ<select id="mapper-rejected-iq" title="Applied only after analysis completes successfully and finds no useful evidence"><option value="delete" selected>Delete after analysis</option><option value="quarantine">Keep briefly in quarantine</option></select></label>
             <label class="mapper-identify-control hidden">Channel order<select id="mapper-identify-order"><option value="hits" selected>Most hits first</option><option value="recent">Most recent first</option><option value="occupancy">Highest success rate</option><option value="oldest">Least recently heard</option><option value="frequency">Frequency</option></select></label>
               </div></div></div></details>
+			<details class="mapper-tuning-panel mapper-compute-panel"><summary>Compute &amp; schedule <small>Optional capture now · analyze later · timed phases</small></summary><div class="mapper-tuning-grid">
+			  <label>Analysis timing<select id="mapper-analysis-policy" title="Defer decoder, transcription, and local AI work without delaying RF collection"><option value="live" selected>Live · analyze while scanning</option><option value="after-job">After job stops</option><option value="manual">Manual · compute later</option></select></label>
+			  <label class="check-line"><input id="mapper-schedule-enabled" type="checkbox"> Timed Discovery → Identify</label>
+			  <label class="mapper-schedule-control hidden">Discovery duration<div class="mapper-duration-input"><input id="mapper-schedule-discovery-value" type="number" min="5" step="1" value="30"><select id="mapper-schedule-discovery-unit"><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
+			  <label class="mapper-schedule-control hidden">Identify duration<div class="mapper-duration-input"><input id="mapper-schedule-identify-value" type="number" min="5" step="1" value="30"><select id="mapper-schedule-identify-unit"><option value="60" selected>minutes</option><option value="3600">hours</option><option value="86400">days</option></select></div></label>
+			  <label class="check-line mapper-schedule-control hidden"><input id="mapper-schedule-repeat" type="checkbox"> Repeat phases until stopped</label>
+			  <div class="mapper-analysis-actions"><span id="mapper-analysis-status">No deferred compute queued</span><button id="mapper-analysis-run" type="button">Analyze stored captures</button><button id="mapper-analysis-stop" type="button">Stop analysis</button><small>Runs decoders, transcription, and the enabled local model without opening an SDR.</small></div>
+			</div></details>
 			<label>Modulation<select id="mapper-mode" title="Automatic classifies each detected signal; choose a fixed mode for a known channel bank"><option value="auto">Automatic</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></select></label>
 			<label>Decoder<select id="mapper-decoder" title="Auto routes digital-looking captures to installed decoders; choose one to force that decoder for every hit"><option value="auto">Auto · all available</option><option value="dmr">DMR · DSD-FME</option><option value="dsd-fme">Digital voice · DSD-FME</option><option value="nxdn">NXDN · DSD-FME</option><option value="d-star">D-STAR · DSD-FME</option><option value="ysf">YSF · DSD-FME</option><option value="m17">M17 · DSD-FME</option><option value="rtl-433">rtl_433 sensors</option><option value="dump1090">ADS-B / Mode S</option><option value="multimon-ng">POCSAG / FLEX</option><option value="acarsdec">ACARS</option><option value="ais">AIS</option></select></label>
             <label id="mapper-transcribe-wrap" class="check-line hidden"><input id="mapper-transcribe" type="checkbox"> Dictate voice</label>
-            <details class="mapper-tuning-panel mapper-location-panel"><summary>Location <small>Optional tagging</small></summary><div class="mapper-tuning-grid">            <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
+            <details class="mapper-tuning-panel mapper-location-panel" open><summary>Location <small>Optional tagging</small></summary><div class="mapper-tuning-grid">            <label class="check-line"><input id="mapper-location" type="checkbox"> Include location</label>
             <label>Precision<select id="mapper-location-precision"><option value="approximate">Approximate</option><option value="exact">Exact</option><option value="city">City / region</option></select></label>
             <label>Location name<input id="mapper-location-label" placeholder="Home, field site…"></label>
             <label>Latitude<input id="mapper-latitude" type="number" min="-90" max="90" step="0.000001" placeholder="37.000000"></label>
@@ -284,7 +317,7 @@
           </form>
           <p id="mapper-workflow-detail" class="mapper-workflow-detail"><strong>Map</strong> repeatedly sweeps the range, identifies activity, runs available local decoders and transcription, then retains only useful IQ evidence.</p>
         </article>
-        <div class="mapper-monitor"><article class="panel mapper-monitor-status"><div class="panel-head"><h2>Receiver monitor</h2><span class="legend">Continuous · loops until stopped</span></div>          <div class="mapper-live" aria-live="polite">
+        <div class="mapper-monitor"><article class="panel mapper-monitor-status"><div class="panel-head"><div><h2>Receiver monitor</h2><span class="legend">Continuous · loops until stopped</span></div><button id="mapper-full-auto" class="primary" type="button" title="Create an automatic collection workflow on every connected receiver">Full auto</button></div>          <div class="mapper-live" aria-live="polite">
             <div class="mapper-live-frequency"><span>Current frequency</span><strong id="mapper-current-frequency">—</strong><small id="mapper-current-detail">Waiting to start</small></div>
             <div><span>Active jobs</span><strong id="mapper-pass-progress">0</strong><small id="mapper-pass-count">0 receivers assigned</small></div>
             <div><span>Total checks</span><strong id="mapper-checks">0</strong><small id="mapper-passes">0 completed passes</small></div>
@@ -307,13 +340,31 @@
           </div>
         </article>
 <div id="mapper-job-grid" class="mapper-job-grid"></div></div></div>
+        <article id="mapper-analysis-workspace" class="panel mapper-analysis-workspace">
+          <div class="panel-head"><div><h2>Stored capture analysis</h2><span>Decoder, transcription, local model, and retention processing without an SDR</span></div><div class="mapper-analysis-toolbar"><label>Parallel frequencies<select id="analysis-concurrency" title="Frequency/location groups processed at the same time. Auto uses available CPU, capped at 8."><option value="0" selected>Auto</option><option value="1">1 · light</option><option value="2">2</option><option value="4">4 · balanced</option><option value="6">6</option><option value="8">8 · fast</option><option value="12">12 · heavy</option><option value="16">16 · maximum</option></select></label><span id="analysis-state" class="chip">Idle</span><button id="analysis-run" class="primary" type="button">Start analysis</button><button id="analysis-stop" type="button">Stop</button></div></div>
+          <div class="analysis-metrics">
+            <div><span>Files queued</span><strong id="analysis-pending">0</strong><small id="analysis-file-progress">No work queued</small></div>
+            <div><span>Frequency groups</span><strong id="analysis-groups">0</strong><small id="analysis-group-progress">Grouped by receive area</small></div>
+            <div><span>Completed</span><strong id="analysis-completed">0</strong><small id="analysis-failed">0 failed</small></div>
+            <div><span>Elapsed</span><strong id="analysis-elapsed">—</strong><small id="analysis-eta">ETA —</small></div>
+          </div>
+          <div class="analysis-progress"><i id="analysis-progress-bar"></i></div>
+          <div class="analysis-current">
+            <div><span>Current frequency</span><strong id="analysis-frequency">—</strong><small id="analysis-location">Waiting for work</small></div>
+            <div><span>Stage</span><strong id="analysis-stage">Idle</strong><small id="analysis-current-file">—</small></div>
+          </div>
+          <div id="analysis-active-list" class="analysis-active-list"><div class="analysis-empty">No frequency groups are active.</div></div>
+          <div class="analysis-console-head"><div><h3>Live analysis log</h3><small>Newest entries appear at the bottom</small></div><button id="analysis-clear-log" type="button">Clear view</button></div>
+          <div id="analysis-console" class="analysis-console" role="log" aria-live="polite"><div class="analysis-empty">Start analysis to process stored captures.</div></div>
+          <p class="analysis-note">All recordings at the same frequency and nearby location are evaluated together. Captures from distinct receive areas remain separate. Rejected IQ is deleted only after analysis completes successfully under the selected retention policy.</p>
+        </article>
         <article id="mapper-results-panel" class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-actions"><label class="check-line mapper-repeat-toggle" title="Hide frequencies recorded only once"><input id="mapper-filter-repeated" type="checkbox"> Repeated only</label><button id="mapper-results-toggle" type="button" aria-expanded="true" title="Collapse or expand Mapper results">Collapse</button></div></div><div id="mapper-results-content"><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver"><option value="">All receivers</option></select><select id="mapper-filter-type" title="Filter by modulation or decoded protocol"><option value="">All types</option></select><select id="mapper-filter-state" title="Filter by identification or activity"><option value="">All results</option><option value="verified">Successfully identified</option><option value="identified">Any identity</option><option value="unidentified">Unidentified</option><option value="decoded">Decoder evidence</option><option value="transcribed">Has transcript</option><option value="callsign">Has callsign</option><option value="recent">Seen in 1 hour</option><option value="frequent">10+ hits</option><option value="repeat">2+ hits</option><option value="oneoff">One-off only</option></select><select id="mapper-sort" title="Choose result order"><option value="recent">Most recent</option><option value="hits">Most received</option><option value="checks">Most checked</option><option value="occupancy">Highest successful checks</option><option value="strongest">Strongest signal</option><option value="snr">Best signal over noise</option><option value="confidence">Highest confidence</option><option value="receivers">Most receivers</option><option value="first-seen">First discovered</option><option value="identity">Identity A–Z</option><option value="frequency">Frequency low–high</option><option value="frequency-desc">Frequency high–low</option></select><input id="mapper-filter-search" type="search" placeholder="Search frequency, name, protocol, callsign…" aria-label="Search Mapper results"><button id="mapper-filter-reset" type="button">Reset filters</button><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></div></article>
         <details class="panel mapper-sheet-panel"><summary><span><strong>Google Sheet</strong><small>Optional Additions Queue upload</small></span><span id="mapper-upload-state" class="chip">Off</span></summary><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue automatically</label><label class="check-line" title="Require a nearby authoritative reference match or valid decoder frames"><input id="mapper-upload-verified" type="checkbox" checked> Identified only</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Setup script</button><button id="mapper-upload-now" type="button">Send eligible now</button></form><p id="mapper-upload-detail" class="range-sync-detail">Fully identified requires nearby reference data or valid decoded frames.</p></details>
       </section>
 
       <section id="view-profiles" class="view">
         <div class="section-actions">
-          <div><h2>Scan profiles</h2><p>Portable ranges, channels, and receiver roles.</p></div>
+          <div><h2>Channels &amp; profiles</h2><p>Portable channel banks, scan ranges, and receiver roles.</p></div>
           <div>
             <input id="import-profile" type="file" accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values" multiple hidden>
             <button id="reference-button" title="Find RadioReference channels and systems near a ZIP code">Location import</button>
@@ -344,11 +395,11 @@
             <label>Test points<select id="characterization-points"><option value="24">24 · quick</option><option value="48">48</option><option value="96" selected>96 · balanced</option><option value="192">192 · detailed</option><option value="384">384 · deep</option></select></label>
             <label>Dwell per point<select id="characterization-dwell"><option value="100">0.1 s</option><option value="180" selected>0.18 s</option><option value="400">0.4 s</option><option value="1000">1 s</option></select></label>
             <label>Capture width<select id="characterization-rate"><option value="0">Auto per receiver</option><option value="2000000">2 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option></select></label>
-            <label class="check-line"><input id="characterization-use-calibration" type="checkbox" checked> Apply saved calibration</label>
-            <label class="advanced-only">Receiver gain · dB<input id="characterization-gain" type="number" min="0" max="62" step="0.1" value="20" title="Manual generic gain for RTL-SDR, remote, and Soapy receivers"></label>
-            <label class="advanced-only">HackRF LNA · dB<select id="characterization-lna"><option value="0">0</option><option value="8">8</option><option value="16" selected>16</option><option value="24">24</option><option value="32">32</option><option value="40">40</option></select></label>
-            <label class="advanced-only">HackRF VGA · dB<input id="characterization-vga" type="number" min="0" max="62" step="2" value="16"></label>
-            <label class="check-line advanced-only"><input id="characterization-amp" type="checkbox"> HackRF RF amp</label>
+            <label class="check-line"><input id="characterization-use-calibration" type="checkbox" checked> Auto: saved calibration</label>
+            <label>Receiver gain · dB<input id="characterization-gain" type="number" min="0" max="62" step="0.1" value="20" title="Manual generic gain for RTL-SDR, remote, and Soapy receivers"></label>
+            <label>HackRF LNA · dB<select id="characterization-lna"><option value="0">0</option><option value="8">8</option><option value="16" selected>16</option><option value="24">24</option><option value="32">32</option><option value="40">40</option></select></label>
+            <label>HackRF VGA · dB<input id="characterization-vga" type="number" min="0" max="62" step="2" value="16"></label>
+            <label class="check-line"><input id="characterization-amp" type="checkbox"> HackRF RF amp</label>
             <button id="characterization-start-button" class="primary" type="submit">Start comparison</button>
           </form>
           <div class="characterization-progress"><i id="characterization-progress-bar"></i></div>
@@ -362,6 +413,9 @@
         </article>
         <div class="section-actions lower"><div><h2>Decoders</h2><p>Optional tools appear only when actually available.</p></div></div>
         <div id="decoder-grid" class="card-grid hardware-grid"></div>
+        <div class="section-actions lower"><div><h2>Integrations</h2><p>Optional receiver, decoding, transcription, and reference components.</p></div></div>
+        <div id="integration-grid" class="card-grid hardware-grid"></div>
+        <article class="panel radio-reference-links"><div class="panel-head"><div><h2>Hardware references</h2><span>Bench documentation included with GP-SDR</span></div><div class="settings-links"><a href="/reference/GMRS_Repeater_Rev3_Accurate_Schematic.svg" target="_blank" rel="noreferrer">Repeater schematic ↗</a><a href="/reference/GMRS_Repeater_Rev3_Exact_Solder_Map_v2.svg" target="_blank" rel="noreferrer">Solder map ↗</a></div></div></article>
       </section>
 
       <section id="view-decoders" class="view">
@@ -373,6 +427,7 @@
 
       <section id="view-settings" class="view">
         <div class="settings-grid">
+          <header class="settings-section-title"><div><h2>Data &amp; reference sources</h2><p>Channel databases and automatic range updates.</p></div></header>
           <article class="panel settings-card range-sync-card">
             <div class="settings-card-head"><div><h2>Range updates</h2><p>Sync built-in scan ranges from Google Sheets.</p></div><span id="range-sync-state" class="chip">Not configured</span></div>
             <form id="range-sync-form" class="range-sync-form">
@@ -404,10 +459,26 @@
 		    <div id="rr-detail" class="range-sync-detail">Premium account and approved app key required.</div>
 		    <a class="setup-link" href="https://www.radioreference.com/account/api/apply" target="_blank" rel="noreferrer">Request application key ↗</a>
 		  </article>
-		  <article class="panel settings-card"><h2>Displays</h2><div class="display-settings">
-		    <label>Waterfall rate<select id="display-fps"><option value="5">5 FPS</option><option value="8" selected>8 FPS</option><option value="12">12 FPS</option><option value="20">20 FPS</option></select></label>
-		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option></select></label>
-		    <label>Spectrum detail<select id="display-detail"><option value="256">Fast</option><option value="512" selected>Detailed</option><option value="1024">Maximum</option></select></label>
+		  <header class="settings-section-title"><div><h2>Local intelligence</h2><p>On-device signal correlation and confirmed learning.</p></div></header>
+		  <article class="panel settings-card local-ai-card">
+		    <div class="settings-card-head"><div><h2>Local signal intelligence</h2><p>Correlate DSP, decoder, transcript, frequency, location, and history evidence on this computer.</p></div><span id="local-ai-state" class="chip">Off</span></div>
+		    <form id="local-ai-form" class="display-settings">
+		      <label class="check-line"><input id="local-ai-enabled" type="checkbox"> Analyze Mapper evidence locally</label>
+		      <label>Performance<select id="local-ai-profile"><option value="lightweight">Lightweight</option><option value="balanced">Balanced</option><option value="deep">Deep analysis</option></select></label>
+		      <label>Model<input id="local-ai-model" autocomplete="off" value="qwen2.5:1.5b" placeholder="qwen2.5:1.5b"></label>
+		      <label>Local service<input id="local-ai-endpoint" type="url" autocomplete="off" value="http://127.0.0.1:11434"></label>
+		      <label>Minimum confidence<select id="local-ai-confidence"><option value="40">40%</option><option value="50">50%</option><option value="55">55%</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option></select></label>
+		      <button class="primary" type="submit">Save</button>
+		    </form>
+		    <div class="range-sync-actions"><a id="local-ai-export" class="setup-link" href="/api/local-ai/learning/export" title="Export user-confirmed examples as JSON Lines for classifier or model training">Export confirmed training set ↗</a></div>
+		    <p id="local-ai-detail" class="range-sync-detail">The model receives metadata only; raw IQ and audio remain in GP-SDR.</p>
+		    <details class="range-sync-format"><summary>How it works</summary><p>GP-SDR first detects and classifies the waveform, runs the selected protocol decoder, and optionally transcribes decoded voice. The local model then summarizes that evidence. Decoder frames remain authoritative and uncertain signals remain Unknown.</p></details>
+		  </article>
+          <header class="settings-section-title"><div><h2>Display</h2><p>Spectrum, waterfall, and rendering controls.</p></div></header>
+          <article class="panel settings-card display-card"><h2>Display</h2><div class="display-settings">
+		    <label>Waterfall rate<select id="display-fps"><option value="5">5 FPS</option><option value="8" selected>8 FPS</option><option value="12">12 FPS</option><option value="20">20 FPS</option><option value="30">30 FPS · high</option><option value="40">40 FPS · performance</option></select></label>
+		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option><option value="3">3× · performance</option></select></label>
+		    <label>Spectrum detail<select id="display-detail"><option value="256">Fast</option><option value="512" selected>Detailed</option><option value="1024">High</option><option value="2048">Very high</option><option value="4096">4096 bins · performance</option></select></label>
 		    <label>Trace smoothing<input id="display-smoothing" type="range" min="0" max="90" step="5" value="20"><output id="display-smoothing-value">20%</output></label>
 		    <label class="check-line"><input id="display-peak-hold" type="checkbox"> Spectrum peak hold</label>
 		    <label class="check-line"><input id="display-markers" type="checkbox" checked> Channel markers</label>
@@ -415,16 +486,10 @@
 		    <label>Display ceiling<select id="display-ceiling"><option value="-10">−10 dBFS</option><option value="-20" selected>−20 dBFS</option><option value="-30">−30 dBFS</option><option value="-40">−40 dBFS</option></select></label>
 		    <button id="display-peak-reset" type="button">Reset peak hold</button>
 		  </div><p class="range-sync-detail">Changes apply immediately and are saved on this device.</p></article>
-          <article class="panel settings-card"><h2>Controls</h2><div class="display-settings"><label>Interface mode<select id="interface-mode"><option value="beginner">Beginner</option><option value="advanced">Advanced</option></select></label></div><p class="range-sync-detail">Beginner uses saved calibration and automatic receiver settings. Advanced exposes manual RF and I/Q controls.</p></article>
-          <article class="panel settings-card"><h2>Web console</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd></dl></article>
-          <article class="panel settings-card storage-card"><h2>Data</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd></dl><form id="storage-policy-form" class="display-settings"><label class="check-line"><input id="storage-auto-cleanup" type="checkbox"> Automatic cleanup</label><label class="check-line"><input id="storage-auto-remove-rejected" type="checkbox" checked> Remove rejected IQ</label><label>Rejected IQ recovery<select id="storage-rejected-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="48">2 days</option><option value="72">3 days</option><option value="168">7 days</option></select></label><label>Keep captures<select id="storage-max-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">No age limit</option></select></label><label>Recording cap · GB<input id="storage-recording-cap" type="number" min="0" max="2048" step="1" value="15" title="Zero disables this cap"></label><label>IQ cap · GB<input id="storage-iq-cap" type="number" min="0" max="2048" step="1" value="10" title="Zero disables this cap"></label><button class="primary" type="submit">Save limits</button><button id="storage-clean-now" type="button">Clean now</button></form><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p><p class="range-sync-detail">Mapper keeps IQ pending until local decoding and transcription finish. Useful evidence is retained; rejected IQ stays recoverable for the selected period, then is removed. Profiles, results, calibration, and channel data are preserved.</p></article>
-          <article class="panel settings-card"><h2>Managed IQ</h2><dl><dt>Analyzing</dt><dd id="storage-iq-pending">—</dd><dt>Retained</dt><dd id="storage-iq-retained">—</dd><dt>Rejected</dt><dd id="storage-iq-quarantine">—</dd></dl><p class="range-sync-detail">Only rejected evidence uses the short recovery timer.</p></article>
-          <article class="panel settings-card"><h2>Build</h2><dl><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl></article>
-          <article class="panel settings-card"><h2>Privacy</h2><p>Core scanning and logs remain on this Mac. The companion web app is available to devices on the same network through its private access link.</p></article>
-          <article class="panel settings-card"><h2>Radio references</h2><div class="settings-links"><a href="/reference/GMRS_Repeater_Rev3_Accurate_Schematic.svg" target="_blank" rel="noreferrer">Repeater schematic ↗</a><a href="/reference/GMRS_Repeater_Rev3_Exact_Solder_Map_v2.svg" target="_blank" rel="noreferrer">Solder map ↗</a></div></article>
+          <header class="settings-section-title"><div><h2>System</h2><p>Web access, application information, and storage limits.</p></div></header>
+          <article class="panel settings-card system-card"><h2>App &amp; web access</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl><p class="range-sync-detail">Core scanning and logs stay on this computer. The web app uses the private network link above.</p></article>
+          <article class="panel settings-card storage-card"><h2>Storage</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd><dt>IQ analyzing</dt><dd id="storage-iq-pending">—</dd><dt>IQ retained</dt><dd id="storage-iq-retained">—</dd><dt>IQ rejected</dt><dd id="storage-iq-quarantine">—</dd></dl><form id="storage-policy-form" class="display-settings"><label class="check-line"><input id="storage-auto-cleanup" type="checkbox"> Automatic cleanup</label><label class="check-line"><input id="storage-auto-remove-rejected" type="checkbox" checked> Remove rejected IQ</label><label>Rejected IQ recovery<select id="storage-rejected-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="48">2 days</option><option value="72">3 days</option><option value="168">7 days</option></select></label><label>Keep captures<select id="storage-max-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">No age limit</option></select></label><label>Recording cap · GB<input id="storage-recording-cap" type="number" min="0" max="2048" step="1" value="15" title="Zero disables this cap"></label><label>IQ cap · GB<input id="storage-iq-cap" type="number" min="0" max="2048" step="1" value="10" title="Zero disables this cap"></label><button class="primary" type="submit">Save limits</button><button id="storage-clean-now" type="button">Clean now</button></form><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p><p class="range-sync-detail">Mapper keeps IQ pending until analysis finishes. Only rejected evidence uses the short recovery timer. Profiles, results, calibration, and channel data are preserved.</p></article>
         </div>
-        <div class="section-actions lower"><div><h2>Integrations</h2><p>Optional components never block the interface.</p></div></div>
-        <div id="integration-grid" class="card-grid hardware-grid"></div>
         <article class="panel acknowledgements">
           <h2>Acknowledgements</h2>
           <p>GP-SDR includes SDRTrunk and JMBE Creator, and integrates with SoapySDR, whisper.cpp, HackRF, and RTL-SDR. Each remains under its own license. Complete credits and source details are in <code>THIRD_PARTY.md</code>.</p>
@@ -522,7 +587,22 @@
     </form>
   </dialog>
 
+  <dialog id="learning-dialog" class="confirm-dialog" aria-labelledby="learning-dialog-title">
+    <form id="learning-form" method="dialog">
+      <header><div><h2 id="learning-dialog-title">Confirm signal example</h2><p>Only add labels you have verified.</p></div><button value="cancel" class="dialog-close" title="Cancel">×</button></header>
+      <div class="dialog-body display-settings">
+        <input id="learning-event-id" type="hidden">
+        <label>Confirmed modulation<input id="learning-modulation" required placeholder="NFM, AM, WFM, P25, DMR…"></label>
+        <label>Confirmed protocol or type<input id="learning-protocol" required placeholder="Analog voice, P25 Phase 1…"></label>
+        <label>Evidence note<input id="learning-notes" placeholder="Clear decoded frames, known station audio…"></label>
+        <label class="check-line"><input id="learning-retain" type="checkbox"> Keep references to this event’s IQ/audio</label>
+        <p class="range-sync-detail">Unconfirmed Mapper guesses and simulated events are never learned automatically.</p>
+      </div>
+      <footer><button value="cancel">Cancel</button><button class="primary" value="confirm">Add confirmed sample</button></footer>
+    </form>
+  </dialog>
+
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=1.5.0-rc8b"></script>
 </body>
 </html>

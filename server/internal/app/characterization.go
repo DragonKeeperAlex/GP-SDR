@@ -298,7 +298,7 @@ func characterizeFrequency(device SDRDevice, frequency float64, request Characte
 	rate := request.SampleRateHz
 	if rate == 0 {
 		if device.Kind == "HackRF" {
-			rate = 8_000_000
+			rate = 10_000_000
 		} else {
 			rate = 2_400_000
 		}

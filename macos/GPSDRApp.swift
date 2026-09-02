@@ -3,7 +3,7 @@ import CoreLocation
 import Darwin
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler, CLLocationManagerDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, CLLocationManagerDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var serverProcess: Process?
@@ -93,17 +93,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         configuration.allowsAirPlayForMediaPlayback = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1240, height: 820),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "GP-SDR"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .visible
         window.backgroundColor = NSColor(red: 0.043, green: 0.051, blue: 0.063, alpha: 1)
         window.minSize = NSSize(width: 880, height: 620)
         window.contentView = webView
@@ -244,6 +245,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         guard panel.runModal() == .OK, let path = panel.url?.path,
               let encoded = try? JSONEncoder().encode(path), let json = String(data: encoded, encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.setLocalDatabaseFolder(\(json))")
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
     }
 
     private func requestCurrentLocation() {

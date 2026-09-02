@@ -144,6 +144,9 @@ type IQStream struct {
 }
 
 func StartIQStream(device SDRDevice, spec CaptureSpec) (*IQStream, error) {
+	if device.Driver == "Android USB" {
+		return openPlatformReceiver(device, spec)
+	}
 	if device.Kind == "RTL-TCP" {
 		return startRTLTCPStream(device, spec)
 	}

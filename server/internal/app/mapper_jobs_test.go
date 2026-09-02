@@ -214,6 +214,34 @@ func TestMapperGroupsNearbyTargetsWithinConfiguredLimit(t *testing.T) {
 	}
 }
 
+func TestMapperPerformanceBatchUsesMoreThanThirtyTwoChannels(t *testing.T) {
+	limit := 20e6
+	device := SDRDevice{ID: "hackrf-test", Kind: "HackRF", Connected: true, Available: true, SampleRateLimit: &limit}
+	targets := make([]surveyTarget, 64)
+	for index := range targets {
+		targets[index] = surveyTarget{FrequencyHz: 450_000_000 + float64(index)*12_500, BandwidthHz: 12_500, Mode: "nfm"}
+	}
+	job := MapperJob{Config: MapperConfig{Mode: "discovery", ConcurrentChannels: 64, SampleRateHz: 20_000_000}}
+	batches := mapperJobTargetBatches(job, device, targets)
+	if len(batches) != 1 || len(batches[0].Targets) != 64 {
+		t.Fatalf("expected one 64-channel performance batch, got %+v", batches)
+	}
+}
+
+func TestMapperHighPerformanceBatchUsesTwoHundredFiftySixChannels(t *testing.T) {
+	limit := 20e6
+	device := SDRDevice{ID: "hackrf-test", Kind: "HackRF", Connected: true, Available: true, SampleRateLimit: &limit}
+	targets := make([]surveyTarget, 256)
+	for index := range targets {
+		targets[index] = surveyTarget{FrequencyHz: 450_000_000 + float64(index)*12_500, BandwidthHz: 12_500, Mode: "nfm"}
+	}
+	job := MapperJob{Config: MapperConfig{Mode: "discovery", ConcurrentChannels: 256, SampleRateHz: 20_000_000}}
+	batches := mapperJobTargetBatches(job, device, targets)
+	if len(batches) != 1 || len(batches[0].Targets) != 256 {
+		t.Fatalf("expected one 256-channel high-performance batch, got %d batches", len(batches))
+	}
+}
+
 func TestMapperSplitsTargetsOutsideInstantaneousBandwidth(t *testing.T) {
 	limit := 3.2e6
 	device := SDRDevice{ID: "rtl-test", Kind: "RTL-SDR", Connected: true, Available: true, SampleRateLimit: &limit}

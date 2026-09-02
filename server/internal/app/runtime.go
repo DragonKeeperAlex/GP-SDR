@@ -12,46 +12,62 @@ import (
 )
 
 type Runtime struct {
-	mu                sync.RWMutex
-	Profiles          *ProfileStore
-	Events            *EventStore
-	devices           []SDRDevice
-	decoders          []DecoderDescriptor
-	mixer             []MixerChannel
-	plan              []ReceiverPlanItem
-	running           bool
-	startedAt         *time.Time
-	active            *ScanProfile
-	stop              chan struct{}
-	demo              bool
-	webAddress        string
-	dataDirectory     string
-	transcriber       *Transcriber
-	lastError         *string
-	droppedSamples    uint64
-	op25              *OP25Manager
-	radioReference    *radioReferenceClient
-	audioHub          *AudioHub
-	installer         *Installer
-	rangeSync         *RangeSyncManager
-	calibrations      *CalibrationStore
-	characterization  *CharacterizationManager
-	mapper            *MapperManager
-	mapperJobs        map[string]*mapperJobRuntime
-	remoteReceivers   *RemoteReceiverStore
-	localDatabase     *LocalDatabaseManager
-	spectrum          SpectrumSnapshot
-	tuning            bool
-	tunerUpdates      chan TunerRequest
-	tunerHardware     *TunerRequest
-	lastAnalysis      *SignalIntelligence
-	receiverTelemetry *ReceiverTelemetry
-	storage           StorageStatus
-	storageRefreshing bool
-	storagePolicy     StoragePolicy
-	storageCleanup    StorageCleanupResult
-	storagePruning    bool
-	transmit          *transmitState
+	mu                  sync.RWMutex
+	Profiles            *ProfileStore
+	Events              *EventStore
+	devices             []SDRDevice
+	decoders            []DecoderDescriptor
+	mixer               []MixerChannel
+	plan                []ReceiverPlanItem
+	running             bool
+	startedAt           *time.Time
+	active              *ScanProfile
+	stop                chan struct{}
+	demo                bool
+	webAddress          string
+	dataDirectory       string
+	transcriber         *Transcriber
+	localAI             *LocalAIAnalyzer
+	learning            *SignalLearningLibrary
+	lastError           *string
+	droppedSamples      uint64
+	op25                *OP25Manager
+	radioReference      *radioReferenceClient
+	audioHub            *AudioHub
+	installer           *Installer
+	rangeSync           *RangeSyncManager
+	calibrations        *CalibrationStore
+	characterization    *CharacterizationManager
+	mapper              *MapperManager
+	mapperJobs          map[string]*mapperJobRuntime
+	remoteReceivers     *RemoteReceiverStore
+	localDatabase       *LocalDatabaseManager
+	spectrum            SpectrumSnapshot
+	tuning              bool
+	tunerUpdates        chan TunerRequest
+	tunerHardware       *TunerRequest
+	lastAnalysis        *SignalIntelligence
+	receiverTelemetry   *ReceiverTelemetry
+	storage             StorageStatus
+	storageRefreshing   bool
+	storagePolicy       StoragePolicy
+	storageCleanup      StorageCleanupResult
+	storagePruning      bool
+	transmit            *transmitState
+	analysisMu          sync.RWMutex
+	analysisRunning     bool
+	analysisStop        chan struct{}
+	analysisStartedAt   *time.Time
+	analysisCompleted   int
+	analysisFailed      int
+	analysisLastError   string
+	analysisTotal       int
+	analysisGroups      int
+	analysisGroupsDone  int
+	analysisCurrent     *DeferredAnalysisCurrent
+	analysisActive      map[string]DeferredAnalysisCurrent
+	analysisConcurrency int
+	analysisLog         []DeferredAnalysisLogEntry
 }
 
 type mapperJobRuntime struct {
@@ -77,8 +93,9 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	learning := NewSignalLearningLibrary(dataDirectory)
 	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
-		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
+		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: NewLocalAIAnalyzer(dataDirectory, learning), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory)}
 	runtimeState.transmit = newTransmitState()
@@ -94,6 +111,20 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	}
 	return runtimeState, nil
 }
+
+func (r *Runtime) LocalAIStatus() LocalAIStatus { return r.localAI.Status() }
+func (r *Runtime) UpdateLocalAI(config LocalAIConfig) (LocalAIStatus, error) {
+	return r.localAI.Update(config)
+}
+func (r *Runtime) LearningStatus() LearningLibraryStatus { return r.learning.Status() }
+func (r *Runtime) ConfirmLearningSample(eventID, modulation, protocol, notes string, retainCaptures bool) (ConfirmedSignalSample, error) {
+	event, ok := r.Events.Get(eventID)
+	if !ok {
+		return ConfirmedSignalSample{}, ErrNotFound
+	}
+	return r.learning.Confirm(event, modulation, protocol, notes, retainCaptures)
+}
+func (r *Runtime) LearningJSONL() []byte { return r.learning.ExportJSONL() }
 
 func (r *Runtime) RangeSyncStatus() RangeSyncStatus               { return r.rangeSync.Status() }
 func (r *Runtime) CharacterizationStatus() CharacterizationStatus { return r.characterization.Status() }
@@ -459,6 +490,40 @@ func (r *Runtime) Start(profileID string) error {
 	profile, ok := r.Profiles.Get(profileID)
 	if !ok {
 		return ErrNotFound
+	}
+	return r.startProfile(profile, nil)
+}
+
+// StartOnDevice runs a saved profile on a specifically selected receiver
+// without mutating or duplicating the profile. This is used by compact
+// workspaces such as Band Monitor where receiver choice must be immediate.
+func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiverSettings) error {
+	profile, ok := r.Profiles.Get(profileID)
+	if !ok {
+		return ErrNotFound
+	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return r.Start(profileID)
+	}
+	assignments := append([]DeviceAssignment(nil), profile.DeviceAssignments...)
+	if len(assignments) == 0 {
+		assignments = []DeviceAssignment{{ID: NewID(), Role: "channelBank"}}
+	}
+	for index := range assignments {
+		selected := deviceID
+		assignments[index].DeviceID = &selected
+	}
+	profile.DeviceAssignments = assignments
+	if controls != nil {
+		profile.Settings.SampleRateHz = controls.SampleRateHz
+		profile.Settings.GainDB = controls.GainDB
+		profile.Settings.LNAGainDB = ptr(controls.LNAGainDB)
+		profile.Settings.VGAGainDB = ptr(controls.VGAGainDB)
+		profile.Settings.AmpEnabled = ptr(controls.AmpEnabled)
+		profile.Settings.AutoGain = controls.AutoGain
+		profile.Settings.DCRemoval = ptr(controls.DCRemoval)
+		profile.Settings.NoiseMarginDB = controls.SquelchDB
 	}
 	return r.startProfile(profile, nil)
 }

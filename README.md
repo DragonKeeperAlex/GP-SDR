@@ -28,13 +28,15 @@ browser and is designed for phones and tablets.
 - Unattended activity logging, signal grouping, recordings, and later review
 - Indexed Timeline search across transcripts, callsigns, protocols, labels,
   systems, and frequencies; configurable recording/IQ retention
-- Independent Mapper jobs per receiver: the default Map workflow combines
-  discovery, local classification, available decoders, and transcription in a
-	  repeating range pass; Map, Discovery, and Identify remain directly available
-	  in both interface modes. Each job has live frequency/progress/ETA, 0.1-second-to-7-day
-  per-channel observation, and
+- Independent Mapper jobs per receiver: Map combines discovery, local
+  classification, available decoders, and transcription in a repeating range
+  pass. Discovery prioritizes collection and defaults to deferred/off-air
+  analysis; Identify revisits one channel at a time by default for maximum
+  accuracy. Each job has live frequency/progress/ETA, 0.1-second-to-7-day per-channel observation, and
   receiver/job provenance in the combined result table and CSV export. Nearby
-  targets share one IQ capture with a configurable 1–32 software-VFO limit
+  targets share one IQ capture with a configurable 1–1,024 software-VFO limit.
+  Auto uses 512 for Discovery, 64 for Map, and one for Identify; usable receiver
+  bandwidth and channel spacing can reduce the actual number in each capture
 - Mapper shows the current workflow, receiver, batch, every software VFO being
   checked, and the latest receiver spectrum/waterfall; results can be collapsed,
   searched across decoded evidence, filtered to repeated activity, and sorted.
@@ -46,9 +48,11 @@ browser and is designed for phones and tablets.
   controller for LNA, VGA, and the roughly 11 dB RF amplifier.
   Current gain, clipping, threshold, and overload decisions remain visible;
   manual and saved-calibration controls are available in Advanced mode
-- Mapper channelizes wide captures before archiving IQ, waits for local
-  classification, decoding, and enabled transcription, then retains useful
-  evidence or places rejected IQ in a short-lived recoverable quarantine
+- Mapper measures every software VFO through one shared spectrum pass before
+  doing per-hit DSP. Manual analysis queues compact evidence for the
+  **Analyze stored captures** action, which runs decoders, transcription, and
+  local-model correlation later without opening an SDR. Useful IQ is retained;
+  rejected IQ enters a short-lived recoverable quarantine
 - DMR and conventional digital voice can be selected directly in Tuner, Live,
   custom channel/range profiles, decoder workspaces, and Mapper. DSD-FME output
   is normalized into protocol, slot, color code, talkgroup, source, encryption,
@@ -78,6 +82,8 @@ browser and is designed for phones and tablets.
 - RadioReference ZIP/location import with 5/10/25/50/100-mile and custom
   1–100-mile ranges
 - Optional local whisper.cpp transcription
+- Optional localhost-only signal intelligence with a lightweight Ollama model,
+  conservative confidence gating, user-confirmed examples, and JSONL training export
 - Included Universal macOS SoapySDR bridge for other installed SDRs and remote sources
 - Authenticated, responsive web console for headless and mobile use
 
@@ -208,6 +214,14 @@ model without an API key. Source builds can still override either path with:
 export GPSDR_WHISPER_EXECUTABLE=/path/to/whisper-cli
 export GPSDR_WHISPER_MODEL=/path/to/ggml-small.en.bin
 ```
+
+For local signal intelligence, install or open Ollama, download the default
+small model once with `ollama pull qwen2.5:1.5b`, then enable **Settings → Local
+intelligence**. GP-SDR sends only bounded DSP/decoder/transcript metadata to
+the localhost service. It does not send IQ or audio to a remote server. Use the
+checkmark beside a real Activity event to add a verified example; simulated and
+unconfirmed detections are never learned automatically. Confirmed examples are
+used immediately for retrieval and can be exported as JSONL for later training.
 
 For authorized RadioReference import:
 

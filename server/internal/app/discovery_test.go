@@ -63,7 +63,7 @@ Mixer: RFFC5072, ID: 4544, Rev: 2, Locks: 111 (PASS)
 		t.Fatalf("self-test result was not kept with the correct radio: %#v", probes)
 	}
 	device := hackRFDevice(probes[1], 1, "hackrf_info", 20e6)
-	if !device.Connected || !device.Available || device.HealthWarning == "" {
-		t.Fatalf("diagnostic warning must remain visible without disabling receive: %+v", device)
+	if !device.Connected || !device.Available || device.HealthWarning != "" || !device.FirmwareSelfTestWarning {
+		t.Fatalf("firmware diagnostic should be hidden from receive status but retained internally: %+v", device)
 	}
 }

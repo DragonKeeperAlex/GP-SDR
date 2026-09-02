@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,6 +66,24 @@ func TestFinalizeIQEvidenceRetainsUsefulAndQuarantinesJunk(t *testing.T) {
 	quarantined, metadata, err := finalizeIQEvidence(junkPath, TransmissionEvent{ID: "junk", SignalDBFS: -70, NoiseDBFS: -72})
 	if err != nil || metadata.Valuable || !strings.Contains(filepath.ToSlash(quarantined), "/IQ/Quarantine/") {
 		t.Fatalf("junk evidence was not quarantined: path=%s metadata=%+v err=%v", quarantined, metadata, err)
+	}
+}
+
+func TestFinalizeIQEvidenceDeletesRejectedWhenRequested(t *testing.T) {
+	root := t.TempDir()
+	path, err := writeIQEvidence(root, 456e6, CaptureSpec{CenterFrequencyHz: 456e6, SampleRateHz: 250_000}, ComplexUnsigned8, []byte{1, 2, 3, 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, metadata, err := finalizeIQEvidence(path, TransmissionEvent{ID: "delete", SignalDBFS: -70, NoiseDBFS: -72, IQRetentionPolicy: "delete"})
+	if err != nil || deleted != "" || metadata.LifecycleStatus != "deleted-low-value" {
+		t.Fatalf("expected rejected IQ deletion, got path=%q metadata=%+v error=%v", deleted, metadata, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("IQ file still exists: %v", err)
+	}
+	if _, err := os.Stat(iqMetadataPath(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("metadata file still exists: %v", err)
 	}
 }
 

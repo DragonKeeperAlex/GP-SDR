@@ -130,12 +130,13 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-identified"`, `id="mapper-identified-detail"`, `id="mapper-eta"`, `id="mapper-eta-time"`,
 		`id="mapper-workflow"`, `name="mapper-workflow" value="discovery"`, `name="mapper-workflow" value="decipher"`, `>Identify</span>`,
 		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
-		`id="mapper-concurrent"`, `32 · highest CPU`,
+		`id="mapper-concurrent"`, `256 · fast collection`, `512 · maximum collection`, `1,024 · extreme collection`,
 		`id="mapper-operation"`, `id="mapper-channel-list"`, `id="mapper-spectrum"`, `id="mapper-waterfall"`,
 		`id="mapper-results-toggle"`, `id="mapper-results-content"`, `id="mapper-filter-type"`, `id="mapper-filter-state"`, `id="mapper-sort"`, `id="mapper-filter-reset"`,
 		`id="mapper-filter-repeated"`, `value="verified">Successfully identified`, `id="mapper-upload-verified"`, `Identified only`,
 		`id="mapper-identify-min-hits"`, `id="mapper-identify-hit-source"`, `id="mapper-identify-occupancy"`, `100% only`,
 		`class="mapper-tuning-panel"`, `id="mixer-search"`, `id="mixer-sort"`, `Active first`,
+		`40 FPS · performance`, `3× · performance`, `4096 bins · performance`,
 		`id="mapper-all-receivers"`, `Use all connected receivers`,
 		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
@@ -214,7 +215,7 @@ func TestNativeTunerSeparatesHardwareCenterAndSoftwareVFO(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	for _, required := range []string{`id="tuner-hardware-center"`, `id="tuner-frequency"`, `id="tuner-lock-center"`, `id="tuner-cursor"`, `id="display-peak-hold"`} {
+	for _, required := range []string{`id="tuner-hardware-center"`, `id="tuner-frequency"`, `id="tuner-lock-center"`, `id="tuner-cursor"`, `id="display-peak-hold"`, `class="radio-controls tuner-grouped-controls"`, `class="tuner-digit-readout"`} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("native tuner control %q is missing", required)
 		}
@@ -224,7 +225,7 @@ func TestNativeTunerSeparatesHardwareCenterAndSoftwareVFO(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := string(appData)
-	for _, required := range []string{"hardwareCenterHz:", "lockCenter:", "setVFOFromPointer", "Software VFO", "spectrumPeaks", "dataset.pending='true'", "dataset.pending !== 'true'"} {
+	for _, required := range []string{"hardwareCenterHz:", "lockCenter:", "setVFOFromPointer", "setTunerListenFrequency", "renderTunerDigits", "preserveCenter:active", "hardware center held", "Software VFO", "spectrumPeaks", "dataset.pending='true'", "dataset.pending !== 'true'"} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("native tuner behavior %q is missing", required)
 		}
@@ -320,6 +321,37 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("P25 mixer status or activity-order behavior %q is missing", required)
+		}
+	}
+}
+
+func TestUnifiedInterfaceKeepsControlsVisibleAndAutoContextual(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cssData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, app, css := string(indexData), string(appData), string(cssData)
+	for _, removed := range []string{`id="interface-mode"`, "gpsdr-interface-mode", "body:not(.advanced-mode)"} {
+		if strings.Contains(index+app+css, removed) {
+			t.Fatalf("legacy Beginner/Advanced interface behavior %q remains", removed)
+		}
+	}
+	for _, required := range []string{`class="nav-group-label">Operate`, `class="radio-controls`, `id="mapper-gain-mode"`, `id="mapper-rate"`, `id="live-use-calibration"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("unified interface control %q is missing", required)
+		}
+	}
+	for _, required := range []string{"setContextControls", "auto-controlled", "#mapper-gain-mode"} {
+		if !strings.Contains(app, required) && !strings.Contains(css, required) {
+			t.Fatalf("contextual Auto behavior %q is missing", required)
 		}
 	}
 }

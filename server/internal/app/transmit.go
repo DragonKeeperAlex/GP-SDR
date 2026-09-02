@@ -130,7 +130,7 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if device.ID == "" || !device.Connected || !device.Available || !strings.EqualFold(device.Kind, "HackRF") {
 		return r.TransmitStatus(), errors.New("select a connected, available HackRF; RTL-SDR cannot transmit")
 	}
-	if device.HealthWarning != "" && !request.DryRun {
+	if (device.HealthWarning != "" || device.FirmwareSelfTestWarning) && !request.DryRun {
 		return r.TransmitStatus(), errors.New("resolve the HackRF diagnostic warning before RF transmission; receive and transmit dry runs remain available")
 	}
 	if busy {
