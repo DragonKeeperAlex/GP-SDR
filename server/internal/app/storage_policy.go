@@ -149,6 +149,9 @@ func pruneFilesOlderThan(root string, cutoff, now time.Time) (int, error) {
 		if walkErr != nil {
 			return walkErr
 		}
+		if entry.IsDir() && (entry.Name() == "Archive" || entry.Name() == "Pending") {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || strings.HasSuffix(entry.Name(), ".part") {
 			return nil
 		}
@@ -184,6 +187,9 @@ func pruneCaptureRootToCap(root string, capBytes int64, now time.Time) (int, err
 		}
 		if walkErr != nil {
 			return walkErr
+		}
+		if entry.IsDir() && (entry.Name() == "Archive" || entry.Name() == "Pending") {
+			return filepath.SkipDir
 		}
 		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || strings.HasSuffix(entry.Name(), ".part") {
 			return nil

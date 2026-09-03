@@ -207,3 +207,7 @@ Combined results renders a limited visible set (up to 250 filtered/sorted rows i
 1.4.1 baseline source: [index.html](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/index.html), [mapper.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/mapper.go).
 
 Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).
+
+## Capture quality in rc11
+
+Choose **Capture quality** in **Compute & schedule**. Original IQ archive preserves the shared receiver buffer, including quiet targets; Filtered channel IQ keeps full detected intervals. See [archive settings, storage requirements, timing gaps and recovery](Activity-Recordings-and-Storage#original-iq-archive-and-recovery-150-rc11). Quiet checks are now retained before a first hit; older aggregate history cannot be retroactively filled in. Hit/check ratios remain sampled activity statistics, not continuous occupancy.

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,7 +31,20 @@ func main() {
 	demo := flag.Bool("demo", false, "enable clearly marked simulated receiver activity")
 	token := flag.String("token", "", "access token required by non-local clients")
 	openBrowser := flag.Bool("open", false, "open the web console in the default browser")
+	repairMedia := flag.Bool("repair-media", false, "reconcile saved recording references without starting receivers; stop the app first")
 	flag.Parse()
+	if *repairMedia {
+		store, err := app.NewEventStore(filepath.Join(*data, "Data"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		report, err := store.ReconcileMedia(*data)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(report)
+		return
+	}
 	if *port < 1 || *port > 65535 {
 		log.Fatal("port must be between 1 and 65535")
 	}

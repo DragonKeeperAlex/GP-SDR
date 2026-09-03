@@ -12,6 +12,8 @@ import (
 )
 
 type IQCaptureMetadata struct {
+	CaptureID         string       `json:"captureID,omitempty"`
+	SHA256            string       `json:"sha256,omitempty"`
 	FrequencyHz       float64      `json:"frequencyHz"`
 	CenterFrequencyHz int64        `json:"centerFrequencyHz"`
 	SampleRateHz      int          `json:"sampleRateHz"`
@@ -28,6 +30,8 @@ type IQCaptureMetadata struct {
 }
 
 func writeIQEvidence(dataDirectory string, frequencyHz float64, spec CaptureSpec, format SampleFormat, data []byte) (string, error) {
+	archiveMu.Lock()
+	defer archiveMu.Unlock()
 	if len(data) == 0 {
 		return "", errors.New("IQ evidence is empty")
 	}
@@ -36,13 +40,13 @@ func writeIQEvidence(dataDirectory string, frequencyHz float64, spec CaptureSpec
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return "", err
 	}
-	base := fmt.Sprintf("%s-%.0f", now.Format("20060102T150405.000Z"), frequencyHz)
+	base := fmt.Sprintf("%s-%.0f-%s", now.Format("20060102T150405.000Z"), frequencyHz, NewID())
 	extension := ".cs8"
 	if format == ComplexUnsigned8 {
 		extension = ".cu8"
 	}
 	path := filepath.Join(directory, base+extension)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeDurableFile(path, data); err != nil {
 		return "", err
 	}
 	metadata := IQCaptureMetadata{FrequencyHz: frequencyHz, CenterFrequencyHz: spec.CenterFrequencyHz, SampleRateHz: spec.SampleRateHz,
@@ -52,9 +56,12 @@ func writeIQEvidence(dataDirectory string, frequencyHz float64, spec CaptureSpec
 		_ = os.Remove(path)
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(directory, base+".json"), encoded, 0o644); err != nil {
+	if err := writeDurableFile(filepath.Join(directory, base+".json"), encoded); err != nil {
 		_ = os.Remove(path)
 		return "", err
+	}
+	if _, ok := archiveSizes[filepath.Join(dataDirectory, "IQ")]; ok {
+		archiveSizes[filepath.Join(dataDirectory, "IQ")] += int64(len(data)) + 4096
 	}
 	return path, nil
 }
@@ -81,33 +88,54 @@ func compactIQEvidence(data []byte, format SampleFormat, spec CaptureSpec, frequ
 	if outputSamples < 1 {
 		return data, spec, format
 	}
+	// Windowed-sinc FIR before decimation. A box average has weak rejection
+	// and folds adjacent signals into the retained channel. Filter at the
+	// output instants (polyphase decimation), retaining the full duration.
 	output := make([]byte, outputSamples*2)
-	offsetHz := frequencyHz - float64(spec.CenterFrequencyHz)
-	phaseStep := -2 * math.Pi * offsetHz / float64(spec.SampleRateHz)
-	oscillatorI, oscillatorQ := 1.0, 0.0
-	stepI, stepQ := math.Cos(phaseStep), math.Sin(phaseStep)
-	accumulatorI, accumulatorQ, count, outputIndex := 0.0, 0.0, 0, 0
-	for sampleIndex := 0; sampleIndex < inputSamples && outputIndex < outputSamples; sampleIndex++ {
-		iValue, qValue := decoderIQPair(data, sampleIndex, format)
-		accumulatorI += iValue*oscillatorI - qValue*oscillatorQ
-		accumulatorQ += iValue*oscillatorQ + qValue*oscillatorI
-		nextI := oscillatorI*stepI - oscillatorQ*stepQ
-		oscillatorQ = oscillatorI*stepQ + oscillatorQ*stepI
-		oscillatorI = nextI
-		if sampleIndex&4095 == 0 {
-			norm := math.Hypot(oscillatorI, oscillatorQ)
+	half := 16 * decimation
+	taps := 2*half + 1
+	coefficients := make([]complex128, taps)
+	weights := make([]float64, taps)
+	cutoff := .4 / float64(decimation)
+	offset := frequencyHz - float64(spec.CenterFrequencyHz)
+	sum := 0.0
+	for k := range weights {
+		x := float64(k - half)
+		h := 2 * cutoff
+		if x != 0 {
+			h = math.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
+		}
+		w := .42 - .5*math.Cos(2*math.Pi*float64(k)/float64(taps-1)) + .08*math.Cos(4*math.Pi*float64(k)/float64(taps-1))
+		weights[k] = h * w
+		sum += weights[k]
+	}
+	for k, weight := range weights {
+		phase := -2 * math.Pi * offset * float64(k-half) / float64(spec.SampleRateHz)
+		coefficients[k] = complex(math.Cos(phase), math.Sin(phase)) * complex(weight/sum, 0)
+	}
+	stepPhase := -2 * math.Pi * offset * float64(decimation) / float64(spec.SampleRateHz)
+	rotation, step := complex(1.0, 0), complex(math.Cos(stepPhase), math.Sin(stepPhase))
+	for n := 0; n < outputSamples; n++ {
+		center := n * decimation
+		value := complex(0.0, 0)
+		for k, coefficient := range coefficients {
+			index := center + k - half
+			if index < 0 || index >= inputSamples {
+				continue
+			}
+			i, q := decoderIQPair(data, index, format)
+			value += complex(i, q) * coefficient
+		}
+		value *= rotation
+		output[2*n] = byte(clampInt(int(math.Round(real(value)+127.5)), 0, 255))
+		output[2*n+1] = byte(clampInt(int(math.Round(imag(value)+127.5)), 0, 255))
+		rotation *= step
+		if n&4095 == 0 {
+			norm := math.Hypot(real(rotation), imag(rotation))
 			if norm > 0 {
-				oscillatorI, oscillatorQ = oscillatorI/norm, oscillatorQ/norm
+				rotation /= complex(norm, 0)
 			}
 		}
-		count++
-		if count < decimation {
-			continue
-		}
-		output[outputIndex*2] = byte(clampInt(int(math.Round(accumulatorI/float64(count)+127.5)), 0, 255))
-		output[outputIndex*2+1] = byte(clampInt(int(math.Round(accumulatorQ/float64(count)+127.5)), 0, 255))
-		outputIndex++
-		accumulatorI, accumulatorQ, count = 0, 0, 0
 	}
 	compacted := spec
 	compacted.CenterFrequencyHz = int64(math.Round(frequencyHz))
@@ -151,6 +179,9 @@ func finalizeIQEvidence(iqPath string, event TransmissionEvent) (string, IQCaptu
 	var metadata IQCaptureMetadata
 	if err := json.Unmarshal(encoded, &metadata); err != nil {
 		return iqPath, metadata, err
+	}
+	if metadata.LifecycleStatus == "archived-original" {
+		return iqPath, metadata, nil
 	}
 	reasons := make([]string, 0, 4)
 	if len(event.DecoderMessages) > 0 {
@@ -224,7 +255,7 @@ func pruneExpiredRecordings(dataDirectory string, maxDays int, now time.Time) (i
 	cutoff := now.AddDate(0, 0, -maxDays)
 	removed := 0
 	var joined error
-	for _, rootName := range []string{"Recordings", "IQ", filepath.Join("IQ", "Pending"), filepath.Join("IQ", "Retained"), filepath.Join("IQ", "Quarantine")} {
+	for _, rootName := range []string{"Recordings", "IQ", filepath.Join("IQ", "Retained"), filepath.Join("IQ", "Quarantine")} {
 		root := filepath.Join(dataDirectory, rootName)
 		entries, err := os.ReadDir(root)
 		if errors.Is(err, os.ErrNotExist) {

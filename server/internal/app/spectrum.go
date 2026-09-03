@@ -19,30 +19,33 @@ func MeasureChannelSpectrum(data []byte, format SampleFormat, sampleRate int, ce
 	if sampleRate <= 0 || sampleCount < fftSize {
 		return nil, errors.New("capture is too short for spectrum analysis")
 	}
-	windowCount := sampleCount / fftSize
-	if windowCount > 8 {
-		windowCount = 8
-	}
+	// Cover the entire buffer with 50%-overlapping Hann windows, including
+	// the final partial hop. Peak-hold both signal and noise bins so bursts
+	// are not diluted by long quiet portions of a capture.
 	accumulated := make([]float64, fftSize)
 	buffer := make([]complex128, fftSize)
-	for window := 0; window < windowCount; window++ {
-		startSample := 0
-		if windowCount > 1 {
-			startSample = (sampleCount - fftSize) * window / (windowCount - 1)
+	hann := make([]float64, fftSize)
+	for i := range hann {
+		hann[i] = .5 - .5*math.Cos(2*math.Pi*float64(i)/float64(fftSize-1))
+	}
+	for startSample := 0; ; startSample += fftSize / 2 {
+		if startSample+fftSize > sampleCount {
+			startSample = sampleCount - fftSize
 		}
 		for index := 0; index < fftSize; index++ {
 			i, q := iqSample(data[(startSample+index)*2], data[(startSample+index)*2+1], format)
-			hann := .5 - .5*math.Cos(2*math.Pi*float64(index)/float64(fftSize-1))
-			buffer[index] = complex(i*hann, q*hann)
+			buffer[index] = complex(i*hann[index], q*hann[index])
 		}
 		fftInPlace(buffer)
 		for index, value := range buffer {
-			power := cmplx.Abs(value)
-			accumulated[index] += power * power / (fftSize * fftSize)
+			power := (real(value)*real(value) + imag(value)*imag(value)) / (fftSize * fftSize)
+			if power > accumulated[index] {
+				accumulated[index] = power
+			}
 		}
-	}
-	for index := range accumulated {
-		accumulated[index] /= float64(windowCount)
+		if startSample+fftSize >= sampleCount {
+			break
+		}
 	}
 	binWidth := float64(sampleRate) / fftSize
 	levels := make(map[string]ChannelSpectrumLevel, len(channels))

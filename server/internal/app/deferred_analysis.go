@@ -49,7 +49,7 @@ type DeferredAnalysisStatus struct {
 }
 
 func (r *Runtime) DeferredAnalysisStatus() DeferredAnalysisStatus {
-	pending := len(r.Events.PendingAnalysis(100000, ""))
+	pending := len(r.Events.PendingAnalysis(0, ""))
 	r.analysisMu.RLock()
 	defer r.analysisMu.RUnlock()
 	active := make([]DeferredAnalysisCurrent, 0, len(r.analysisActive))
@@ -84,7 +84,7 @@ func (r *Runtime) StartDeferredAnalysis(jobID string, concurrency int) (Deferred
 		r.analysisMu.Unlock()
 		return r.DeferredAnalysisStatus(), errors.New("deferred analysis is already running")
 	}
-	events := r.Events.PendingAnalysis(100000, strings.TrimSpace(jobID))
+	events := r.Events.PendingAnalysis(0, strings.TrimSpace(jobID))
 	if len(events) == 0 {
 		r.analysisMu.Unlock()
 		return r.DeferredAnalysisStatus(), nil
@@ -341,8 +341,30 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 		case <-ctx.Done():
 		}
 	}()
+	if event.AudioPath == nil && event.IQPath != nil {
+		path, analysis, err := deriveStoredAudio(r.dataDirectory, event)
+		if err != nil {
+			return err
+		}
+		if err := r.Events.UpdateAudioPath(event.ID, path); err != nil {
+			return err
+		}
+		event.AudioPath = ptr(path)
+		if err := r.Events.UpdateAnalysis(event.ID, analysis); err != nil {
+			return err
+		}
+	}
 	var audio []int16
 	audioRate := 0
+	if event.IQPath != nil && !fileExists(*event.IQPath) {
+		return fmt.Errorf("IQ recording is missing: %s", *event.IQPath)
+	}
+	if event.AudioPath != nil && !fileExists(*event.AudioPath) {
+		return fmt.Errorf("audio recording is missing: %s", *event.AudioPath)
+	}
+	if event.AudioPath == nil && event.IQPath == nil {
+		return errors.New("no saved audio or IQ is available for analysis")
+	}
 	if event.AudioPath != nil {
 		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "reading audio")
 		if decoded, rate, err := readPCM16WAV(*event.AudioPath); err == nil {

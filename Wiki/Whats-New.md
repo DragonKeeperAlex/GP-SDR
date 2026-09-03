@@ -1,5 +1,16 @@
 # What’s new through GP-SDR 1.5.0-rc10
 
+## 1.5.0-rc11: capture preservation and recovery
+
+- Original receiver IQ archive with shared files, SHA-256, and capture timing log.
+- Full-duration filtered channel evidence with stronger filtering; removed recording cooldown.
+- Overlapping detection windows across the full buffer.
+- Event history beyond 25,000 with append-only updates; orphan-media recovery and visible missing-file warnings.
+- Interrupted analysis becomes retryable; archives and pending IQ are protected from automatic deletion.
+
+See [storage, capture quality and recovery](Activity-Recordings-and-Storage) for setup, disk requirements, and remaining capture gaps.
+
+
 ## 1.5.0-rc10 release candidate
 
 - **Explore:** recorded-activity heatmaps, daily timeline, offline collection map,

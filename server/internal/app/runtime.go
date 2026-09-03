@@ -12,6 +12,7 @@ import (
 )
 
 type Runtime struct {
+	mediaRecovery       MediaRecoveryReport
 	mu                  sync.RWMutex
 	Profiles            *ProfileStore
 	Events              *EventStore
@@ -85,6 +86,10 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	recovery, err := events.ReconcileMedia(dataDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("recording recovery: %w", err)
+	}
 	calibrations, err := NewCalibrationStore(filepath.Join(dataDirectory, "Data", "device-calibrations.json"))
 	if err != nil {
 		return nil, err
@@ -94,7 +99,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		return nil, err
 	}
 	learning := NewSignalLearningLibrary(dataDirectory)
-	runtimeState := &Runtime{Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
+	runtimeState := &Runtime{mediaRecovery: recovery, Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
 		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: NewLocalAIAnalyzer(dataDirectory, learning), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory)}
@@ -466,7 +471,13 @@ func (r *Runtime) Status() RuntimeStatus {
 }
 
 func (r *Runtime) healthNoticesLocked() []HealthNotice {
-	notices := make([]HealthNotice, 0, 3)
+	notices := make([]HealthNotice, 0, 5)
+	if report := r.mediaRecovery; report.Recovered > 0 || report.Relinked > 0 || report.Requeued > 0 {
+		notices = append(notices, HealthNotice{ID: "media-recovery", Level: "info", Message: fmt.Sprintf("Recording recovery: %d files restored to history, %d links repaired, %d interrupted analyses ready to retry.", report.Recovered, report.Relinked, report.Requeued)})
+	}
+	if report := r.mediaRecovery; report.Missing > 0 || report.Invalid > 0 {
+		notices = append(notices, HealthNotice{ID: "media-missing", Level: "warning", Message: fmt.Sprintf("Recording audit: %d missing media references and %d unrecognized or incomplete files. Existing evidence was preserved; missing samples cannot be recreated.", report.Missing, report.Invalid)})
+	}
 	if r.droppedSamples > 0 {
 		notices = append(notices, HealthNotice{ID: "dropped-samples", Level: "warning", Message: fmt.Sprintf("Receiver dropped %d sample blocks; lower the sample rate or use a direct USB connection.", r.droppedSamples)})
 	}

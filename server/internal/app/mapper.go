@@ -62,6 +62,7 @@ type MapperConfig struct {
 	// AnalysisPolicy controls when expensive decoder, transcription, and local
 	// model work runs: live, after-job, or manual. RF detection and bounded IQ
 	// evidence capture always remain real-time.
+	CapturePolicy            string `json:"capturePolicy,omitempty"`
 	AnalysisPolicy           string `json:"analysisPolicy,omitempty"`
 	RejectedIQPolicy         string `json:"rejectedIQPolicy,omitempty"`
 	ScheduleEnabled          bool   `json:"scheduleEnabled,omitempty"`
@@ -71,6 +72,8 @@ type MapperConfig struct {
 }
 
 type MapperFrequencyRecord struct {
+	FirstCheckedAt         time.Time            `json:"firstCheckedAt,omitempty"`
+	LastCheckedAt          time.Time            `json:"lastCheckedAt,omitempty"`
 	FrequencyHz            float64              `json:"frequencyHz"`
 	FirstSeen              time.Time            `json:"firstSeen"`
 	LastSeen               time.Time            `json:"lastSeen"`
@@ -325,6 +328,12 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	}
 	if config.AnalysisPolicy != "live" && config.AnalysisPolicy != "after-job" && config.AnalysisPolicy != "manual" {
 		return config, errors.New("analysis timing must be Live, after job, or manual")
+	}
+	if config.CapturePolicy == "" {
+		config.CapturePolicy = "channel"
+	}
+	if config.CapturePolicy != "channel" && config.CapturePolicy != "archive" {
+		return config, errors.New("capture policy must be channel or archive")
 	}
 	config.RejectedIQPolicy = strings.ToLower(strings.TrimSpace(config.RejectedIQPolicy))
 	if config.RejectedIQPolicy == "" {
@@ -763,6 +772,12 @@ func (m *MapperManager) Update(config MapperConfig) (MapperStatus, error) {
 	if config.AnalysisPolicy != "live" && config.AnalysisPolicy != "after-job" && config.AnalysisPolicy != "manual" {
 		return MapperStatus{}, errors.New("analysis timing must be Live, after job, or manual")
 	}
+	if config.CapturePolicy == "" {
+		config.CapturePolicy = "channel"
+	}
+	if config.CapturePolicy != "channel" && config.CapturePolicy != "archive" {
+		return MapperStatus{}, errors.New("capture policy must be channel or archive")
+	}
 	config.RejectedIQPolicy = strings.ToLower(strings.TrimSpace(config.RejectedIQPolicy))
 	if config.RejectedIQPolicy == "" {
 		config.RejectedIQPolicy = "delete"
@@ -847,13 +862,13 @@ func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, 
 		m.jobs[jobID] = job
 	}
 	record, exists := m.records[key]
-	if !exists && !active {
-		m.mu.Unlock()
-		return
-	}
 	if !exists {
-		record = MapperFrequencyRecord{FrequencyHz: frequencyHz, FirstSeen: now, StrongestDBFS: -200}
+		record = MapperFrequencyRecord{FrequencyHz: frequencyHz, FirstCheckedAt: now, StrongestDBFS: -200}
 	}
+	if record.FirstCheckedAt.IsZero() {
+		record.FirstCheckedAt = now
+	}
+	record.LastCheckedAt = now
 	record.Checks++
 	identifyObservation := strings.EqualFold(config.Mode, "decipher")
 	if identifyObservation {
@@ -862,6 +877,9 @@ func (m *MapperManager) ObserveJob(jobID, deviceID string, config MapperConfig, 
 		record.DiscoveryChecks++
 	}
 	if active {
+		if record.FirstSeen.IsZero() {
+			record.FirstSeen = now
+		}
 		record.Hits++
 		if identifyObservation {
 			record.IdentifyHits++

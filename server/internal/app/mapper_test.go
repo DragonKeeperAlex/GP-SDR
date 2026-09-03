@@ -102,11 +102,11 @@ func TestDiscoveryDefaultsToDeferredAnalysis(t *testing.T) {
 	}
 }
 
-func TestMapperIgnoresQuietFrequenciesUntilActivityIsSeen(t *testing.T) {
+func TestMapperRetainsQuietChecksBeforeFirstActivity(t *testing.T) {
 	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord)}
 	manager.Observe(123_450_000, false, -82, -84, "", "", "", "")
-	if len(manager.Status().Records) != 0 {
-		t.Fatal("quiet-only frequencies should not fill the activity map")
+	if records := manager.Status().Records; len(records) != 1 || records[0].Checks != 1 || records[0].Hits != 0 {
+		t.Fatal("quiet checks must be retained so first-hit ratios include observation history")
 	}
 }
 

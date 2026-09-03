@@ -63,6 +63,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	path := r.URL.Path
 	switch {
+	case r.Method == "GET" && path == "/api/storage/recovery":
+		writeJSON(w, 200, s.runtime.mediaRecovery)
 	case r.Method == "GET" && path == "/api/status":
 		writeJSON(w, 200, s.runtime.Status())
 	case r.Method == "GET" && path == "/api/explore":

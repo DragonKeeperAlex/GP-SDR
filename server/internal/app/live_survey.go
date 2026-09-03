@@ -28,6 +28,7 @@ type surveyTargetBatch struct {
 }
 
 type mapperRunContext struct {
+	Capture        CaptureInterval
 	JobID          string
 	SessionID      uint64
 	Config         MapperConfig
@@ -319,8 +320,8 @@ func captureWindow(device SDRDevice, spec CaptureSpec, duration time.Duration, s
 		return nil, stream.Format, fmt.Errorf("survey stopped")
 	case outcome := <-done:
 		_ = stream.Close()
-		if outcome.err != nil && outcome.err != io.ErrUnexpectedEOF {
-			return nil, stream.Format, outcome.err
+		if outcome.err != nil {
+			return nil, stream.Format, fmt.Errorf("incomplete capture: %d of %d bytes: %w", outcome.count, byteCount, outcome.err)
 		}
 		return data[:outcome.count], stream.Format, nil
 	case <-time.After(duration + 4*time.Second):
@@ -656,16 +657,38 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 			duration = target.Dwell
 		}
 	}
+	requestedAt := time.Now().UTC()
 	data, format, err := captureWindow(device, spec, duration, stop)
+	receivedAt := time.Now().UTC()
 	if err != nil {
 		select {
 		case <-stop:
 			return false
 		default:
 		}
+		if mapperRun != nil {
+			interval := CaptureInterval{ID: NewID(), JobID: mapperRun.JobID, DeviceID: device.ID, RequestedAt: requestedAt, ReceivedAt: receivedAt, Error: err.Error(), CenterFrequencyHz: spec.CenterFrequencyHz, SampleRateHz: spec.SampleRateHz}
+			for _, target := range batch.Targets {
+				interval.FrequenciesHz = append(interval.FrequenciesHz, target.FrequencyHz)
+			}
+			if writeErr := writeCaptureInterval(r.dataDirectory, &interval, spec, format, nil, false, 0); writeErr != nil {
+				return r.captureFailure(mapperRun, writeErr)
+			}
+		}
 		r.setRuntimeError(err.Error())
 		time.Sleep(350 * time.Millisecond)
 		return true
+	}
+	if mapperRun != nil {
+		interval := CaptureInterval{ID: NewID(), JobID: mapperRun.JobID, DeviceID: device.ID, RequestedAt: requestedAt, ReceivedAt: receivedAt,
+			SampleSeconds: float64(len(data)) / float64(2*spec.SampleRateHz), CenterFrequencyHz: spec.CenterFrequencyHz, SampleRateHz: spec.SampleRateHz, SampleBytes: len(data)}
+		for _, target := range batch.Targets {
+			interval.FrequenciesHz = append(interval.FrequenciesHz, target.FrequencyHz)
+		}
+		if err := writeCaptureInterval(r.dataDirectory, &interval, spec, format, data, mapperRun.Config.CapturePolicy == "archive", r.StorageStatus().Policy.IQCapBytes); err != nil {
+			return r.captureFailure(mapperRun, err)
+		}
+		mapperRun.Capture = interval
 	}
 	format = DetectSampleFormat(data, format)
 	if mapperRun != nil && mapperRun.Tuning != nil && r.mapper != nil {
@@ -747,7 +770,11 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		}
 		return true
 	}
-	analysis := AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
+	deferredArchive := mapperRun != nil && mapperRun.Config.CapturePolicy == "archive" && mapperRun.Config.AnalysisPolicy != "live" && mapperRun.Config.AnalysisPolicy != ""
+	analysis := SignalIntelligence{Modulation: "UNKNOWN", Engine: "deferred", Summary: "Original IQ saved; waveform analysis deferred"}
+	if !deferredArchive {
+		analysis = AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
+	}
 	if mapperRun != nil && target.Decoder == nil && analysis.Modulation == "DIGITAL" {
 		target.Decoder = ptr("dsd-fme")
 	}
@@ -758,10 +785,13 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 			demodulationMode = "nfm"
 		}
 	}
-	result, err := DemodulateIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationMode)
-	if err != nil {
-		r.setRuntimeError(err.Error())
-		return true
+	result := DemodulationResult{}
+	if !deferredArchive {
+		var err error
+		result, err = DemodulateIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationMode)
+		if err != nil {
+			return r.captureFailure(mapperRun, err)
+		}
 	}
 	margin := profile.Settings.NoiseMarginDB
 	if mapperRun != nil {
@@ -789,7 +819,7 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	mode := strings.ToUpper(target.Mode)
 	if mode == "" || mode == "AUTO" {
 		mode = analysis.Modulation
-		if mode == "UNKNOWN" || mode == "CARRIER" {
+		if (mode == "UNKNOWN" || mode == "CARRIER") && !deferredArchive {
 			mode = strings.ToUpper(demodulationMode)
 		}
 	}
@@ -842,15 +872,17 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	if channelID := r.mixerChannelID(target.FrequencyHz); channelID != "" && r.audioHub != nil {
 		r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: result.AudioRateHz, Samples: result.Audio})
 	}
-	if mapperRun != nil && r.mapper != nil && !r.mapper.ShouldArchive(target.FrequencyHz, 30*time.Second) {
-		return true
-	}
-	event := TransmissionEvent{ID: NewID(), StartedAt: time.Now().Add(-target.Dwell), DurationSeconds: target.Dwell.Seconds(),
+	event := TransmissionEvent{ID: NewID(), StartedAt: time.Now().Add(-time.Duration(float64(len(data)) / float64(2*rate) * float64(time.Second))), DurationSeconds: float64(len(data)) / float64(2*rate),
 		FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB,
 		NoiseDBFS: level.NoiseDB, Modulation: mode, ProtocolName: protocol, Label: &label,
 		DeviceID: device.ID, Confidence: math.Max(confidence, analysis.Confidence), Analysis: &analysis}
 	if mapperRun != nil {
 		event.MapperJobID = mapperRun.JobID
+		event.CaptureID = mapperRun.Capture.ID
+		event.CapturePolicy = mapperRun.Config.CapturePolicy
+		if !mapperRun.Capture.ReceivedAt.IsZero() {
+			event.StartedAt = mapperRun.Capture.ReceivedAt.Add(-time.Duration(event.DurationSeconds * float64(time.Second)))
+		}
 		event.RequestedDecoder = mapperRun.Config.PreferredDecoder
 		event.AnalysisPolicy = firstNonEmpty(mapperRun.Config.AnalysisPolicy, "live")
 		event.IQRetentionPolicy = firstNonEmpty(mapperRun.Config.RejectedIQPolicy, "quarantine")
@@ -867,16 +899,20 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		event.Location = observationLocation(mapperRun.Config)
 	}
 	if profile.Settings.RecordAudio && len(result.Audio) > 0 {
-		filename := fmt.Sprintf("%s-%.0f-%s.wav", time.Now().UTC().Format("20060102T150405.000Z"), target.FrequencyHz, strings.ToLower(mode))
+		filename := fmt.Sprintf("%s-%.0f-%s-%s.wav", time.Now().UTC().Format("20060102T150405.000Z"), target.FrequencyHz, strings.ToLower(mode), event.ID)
 		path := filepath.Join(r.dataDirectory, "Recordings", time.Now().UTC().Format("2006-01-02"), filename)
 		if err := WriteMonoWAV(path, result.Audio, result.AudioRateHz); err == nil {
 			event.AudioPath = &path
+		} else {
+			return r.captureFailure(mapperRun, fmt.Errorf("audio write: %w", err))
 		}
 	}
-	unknownProtocol := protocol == nil || strings.Contains(strings.ToLower(stringValue(protocol)), "candidate") || analysis.Modulation == "UNKNOWN"
+	unknownProtocol := mapperRun != nil || protocol == nil || strings.Contains(strings.ToLower(stringValue(protocol)), "candidate") || analysis.Modulation == "UNKNOWN"
 	evidenceSpec := spec
-	if profile.Settings.RecordIQForUnknown && unknownProtocol && len(data) > 0 {
-		maximumBytes := spec.SampleRateHz * 2 * 2 // at most two seconds of interleaved 8-bit IQ
+	if mapperRun != nil && mapperRun.Capture.IQPath != "" {
+		event.IQPath = ptr(mapperRun.Capture.IQPath)
+	} else if profile.Settings.RecordIQForUnknown && unknownProtocol && len(data) > 0 {
+		maximumBytes := len(data) // retain the complete observed interval
 		if maximumBytes > len(data) {
 			maximumBytes = len(data)
 		}
@@ -885,12 +921,15 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 		evidenceSpec = compactedSpec
 		if path, writeErr := writeIQEvidence(r.dataDirectory, target.FrequencyHz, compactedSpec, compactedFormat, compacted); writeErr == nil {
 			event.IQPath = &path
-			_ = setIQCaptureOrigin(path, originalRate, originalBytes)
+			if err := setIQCaptureOrigin(path, originalRate, originalBytes); err != nil {
+				return r.captureFailure(mapperRun, err)
+			}
+		} else {
+			return r.captureFailure(mapperRun, fmt.Errorf("IQ write: %w", writeErr))
 		}
 	}
 	if err := r.Events.Append(event); err != nil {
-		r.setRuntimeError(err.Error())
-		return true
+		return r.captureFailure(mapperRun, err)
 	}
 	deferAnalysis := mapperRun != nil && mapperRun.Config.AnalysisPolicy != "" && mapperRun.Config.AnalysisPolicy != "live"
 	if !deferAnalysis && mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {

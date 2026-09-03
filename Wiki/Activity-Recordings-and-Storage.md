@@ -57,3 +57,28 @@ Restore with the service stopped, preserve the existing directory as a recovery 
 1.4.1 baseline source: [app.js](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/app.js), [storage_policy.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/storage_policy.go).
 
 Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).
+
+## Original IQ archive and recovery (1.5.0-rc11)
+
+In **Mapping → job settings → Compute & schedule → Capture quality**, choose:
+
+- **Filtered channel IQ**: retains the full observed interval for each detected channel, with a windowed-sinc filter before sample-rate reduction. No two-second limit or 30-second recording cooldown. IQ remains 8-bit and channel-filtered; this is not original wideband data.
+- **Original IQ archive**: stores each receiver buffer once at its original sample rate and byte format, before IQ correction. Every detected channel in that buffer references the same immutable file. Quiet intervals are also archived. Original IQ is never moved or deleted by per-event analysis or automatic cleanup.
+
+For large jobs, choose **Manual** or **After job stops**. Archive capture defers per-channel waveform analysis and audio creation; Analyze creates filtered audio derivatives later without replacing original samples. An audio player can be absent until that conversion completes.
+
+A 20 MS/s 8-bit I/Q stream produces about **144 GB per captured hour**; 2.4 MS/s produces about **17.28 GB**. The IQ budget stops new archives instead of deleting older originals. Pending IQ is also protected from automatic age/cap cleanup. Budget accounting is conservative until restart after files are removed externally. Ordinary completed channel evidence and audio still follow their configured cleanup policies.
+
+The receiver captures finite intervals and may retune or process data between them. This is **not gap-free continuous monitoring**. `Data/capture-intervals.jsonl` records successful and failed capture requests, actual sample durations, receiver settings, channel targets, original paths and SHA-256 checksums. Host request/receive times are not hardware sample timestamps. Overlapping FFT windows examine the full completed buffer; this does not eliminate tuning/USB/processing gaps or prove successful decoding.
+
+The event archive no longer truncates at 25,000 records. Original events stay in `Data/events.jsonl`; modifications are appended to `Data/event-updates.jsonl`. Keep both files in backups. The entire history is currently indexed in memory, so RAM and startup time grow with history. UI result limits are separate from retention.
+
+On startup, GP-SDR reconciles recording links, recovers recognizable orphan WAV/IQ files with explicit **Recovered recording** labels, flags missing files, and requeues interrupted/canceled/timed-out analysis. Recovered files do not inherit guessed identities, locations, signal strengths, or transcripts. A final incomplete journal append is backed up as `.interrupted-*` before repair; malformed interior rows stop loading rather than being silently skipped.
+
+For an offline repair with the application stopped:
+
+```sh
+gpsdr-server -data /path/to/GP-SDR -repair-media
+```
+
+This performs the same reconciliation without starting receivers. `Data/media-recovery.json` and `GET /api/storage/recovery` summarize the most recent startup check; health notices and Explore capture details identify recovered or missing media. A missing payload cannot be recreated from its metadata. Existing application/profile settings are not automatically changed to archive mode during an ordinary upgrade.

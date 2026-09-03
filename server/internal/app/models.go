@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.5.0-rc10"
+var Version = "1.5.0-rc11"
 
 type SDRDevice struct {
 	ID                      string             `json:"id"`
@@ -175,6 +175,10 @@ type ProfileReferenceArea struct {
 }
 
 type TransmissionEvent struct {
+	CaptureID           string               `json:"captureID,omitempty"`
+	CapturePolicy       string               `json:"capturePolicy,omitempty"`
+	MediaIssues         []string             `json:"mediaIssues,omitempty"`
+	Recovered           bool                 `json:"recovered,omitempty"`
 	ID                  string               `json:"id"`
 	StartedAt           time.Time            `json:"startedAt"`
 	DurationSeconds     float64              `json:"durationSeconds"`
@@ -308,6 +312,7 @@ type StorageStatus struct {
 	JournalBytes      int64                `json:"journalBytes"`
 	RecordingBytes    int64                `json:"recordingBytes"`
 	IQBytes           int64                `json:"iqBytes"`
+	IQArchiveBytes    int64                `json:"iqArchiveBytes"`
 	IQPendingBytes    int64                `json:"iqPendingBytes"`
 	IQRetainedBytes   int64                `json:"iqRetainedBytes"`
 	IQQuarantineBytes int64                `json:"iqQuarantineBytes"`

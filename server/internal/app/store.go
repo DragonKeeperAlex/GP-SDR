@@ -239,6 +239,8 @@ type EventStore struct {
 	events      []TransmissionEvent
 	signals     map[string]SignalSummary
 	searchIndex map[string]map[string]struct{}
+	positions   map[string]int
+	eventTokens map[string][]string
 }
 
 func NewEventStore(dir string) (*EventStore, error) {
@@ -246,11 +248,15 @@ func NewEventStore(dir string) (*EventStore, error) {
 		return nil, err
 	}
 	store := &EventStore{path: filepath.Join(dir, "events.jsonl"), signals: make(map[string]SignalSummary), searchIndex: make(map[string]map[string]struct{})}
+	if err := repairTornEventTail(store.path); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(store.path)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = os.WriteFile(store.path, nil, 0o644); err != nil {
 			return nil, err
 		}
+		store.positions = make(map[string]int)
 		return store, nil
 	}
 	if err != nil {
@@ -261,7 +267,10 @@ func NewEventStore(dir string) (*EventStore, error) {
 	removedLegacyEvents := 0
 	for scanner.Scan() {
 		var event TransmissionEvent
-		if json.Unmarshal(scanner.Bytes(), &event) == nil {
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("invalid event history row (original preserved): %w", err)
+		} else {
 			if isLegacyMapperFalsePositive(event) {
 				removedLegacyEvents++
 				continue
@@ -278,15 +287,22 @@ func NewEventStore(dir string) (*EventStore, error) {
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if len(store.events) > 25_000 {
-		store.events = store.events[len(store.events)-25_000:]
-	}
 	store.rebuildSearchIndexLocked()
 	if removedLegacyEvents > 0 {
 		if err := writeEventFile(store.path, store.events); err != nil {
 			return nil, err
 		}
 	}
+	if err := store.loadUpdates(); err != nil {
+		return nil, err
+	}
+	store.positions = make(map[string]int, len(store.events))
+	store.signals = make(map[string]SignalSummary)
+	for index, event := range store.events {
+		store.positions[event.ID] = index
+		store.aggregate(event)
+	}
+	store.rebuildSearchIndexLocked()
 	return store, nil
 }
 
@@ -327,6 +343,9 @@ func (s *EventStore) Append(event TransmissionEvent) error {
 		return err
 	}
 	_, writeErr := file.Write(append(data, '\n'))
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if writeErr != nil {
 		return writeErr
@@ -334,13 +353,12 @@ func (s *EventStore) Append(event TransmissionEvent) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	s.events = append(s.events, event)
-	if len(s.events) > 25_000 {
-		s.events = s.events[len(s.events)-25_000:]
-		s.rebuildSearchIndexLocked()
-	} else {
-		s.indexEventLocked(event)
+	if s.positions == nil {
+		s.positions = make(map[string]int)
 	}
+	s.positions[event.ID] = len(s.events)
+	s.events = append(s.events, event)
+	s.indexEventLocked(event)
 	s.aggregate(event)
 	return nil
 }
@@ -424,14 +442,18 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	found := false
-	for index := range s.events {
+	updatedIndex := -1
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID == id {
 			s.events[index].Transcript = ptr(transcript)
 			callsigns := ExtractCallsigns(transcript)
 			s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, callsigns)
 			if s.events[index].Analysis != nil {
+				copy := *s.events[index].Analysis
+				s.events[index].Analysis = &copy
 				s.events[index].Analysis.Callsigns = mergeUniqueStrings(s.events[index].Analysis.Callsigns, callsigns)
 			}
+			updatedIndex = index
 			found = true
 			break
 		}
@@ -439,14 +461,14 @@ func (s *EventStore) UpdateTranscript(id, transcript string) error {
 	if !found {
 		return ErrNotFound
 	}
-	s.rebuildSearchIndexLocked()
-	return writeEventFile(s.path, s.events)
+	s.indexEventLocked(s.events[updatedIndex])
+	return s.persistUpdateLocked(updatedIndex)
 }
 
 func (s *EventStore) UpdateAnalysis(id string, analysis SignalIntelligence) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index := range s.events {
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID != id {
 			continue
 		}
@@ -459,8 +481,8 @@ func (s *EventStore) UpdateAnalysis(id string, analysis SignalIntelligence) erro
 		}
 		s.events[index].Analysis = &analysis
 		s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, analysis.Callsigns)
-		s.rebuildSearchIndexLocked()
-		return writeEventFile(s.path, s.events)
+		s.indexEventLocked(s.events[index])
+		return s.persistUpdateLocked(index)
 	}
 	return ErrNotFound
 }
@@ -471,7 +493,7 @@ func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index := range s.events {
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID != id {
 			continue
 		}
@@ -481,8 +503,8 @@ func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage)
 		for _, message := range messages {
 			s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, message.Callsigns)
 		}
-		s.rebuildSearchIndexLocked()
-		return writeEventFile(s.path, s.events)
+		s.indexEventLocked(s.events[index])
+		return s.persistUpdateLocked(index)
 	}
 	return ErrNotFound
 }
@@ -490,10 +512,10 @@ func (s *EventStore) UpdateDecoderMessages(id string, messages []DecoderMessage)
 func (s *EventStore) UpdateAudioPath(id, path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index := range s.events {
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID == id {
 			s.events[index].AudioPath = ptr(path)
-			return writeEventFile(s.path, s.events)
+			return s.persistUpdateLocked(index)
 		}
 	}
 	return ErrNotFound
@@ -502,14 +524,14 @@ func (s *EventStore) UpdateAudioPath(id, path string) error {
 func (s *EventStore) UpdateIQPath(id, path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index := range s.events {
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID == id {
 			if strings.TrimSpace(path) == "" {
 				s.events[index].IQPath = nil
 			} else {
 				s.events[index].IQPath = ptr(path)
 			}
-			return writeEventFile(s.path, s.events)
+			return s.persistUpdateLocked(index)
 		}
 	}
 	return ErrNotFound
@@ -518,7 +540,7 @@ func (s *EventStore) UpdateIQPath(id, path string) error {
 func (s *EventStore) UpdateAnalysisStatus(id, status, message string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index := range s.events {
+	for _, index := range s.eventIndicesLocked(id) {
 		if s.events[index].ID != id {
 			continue
 		}
@@ -530,7 +552,7 @@ func (s *EventStore) UpdateAnalysisStatus(id, status, message string) error {
 		} else {
 			s.events[index].AnalysisCompletedAt = nil
 		}
-		return writeEventFile(s.path, s.events)
+		return s.persistUpdateLocked(index)
 	}
 	return ErrNotFound
 }
@@ -538,8 +560,8 @@ func (s *EventStore) UpdateAnalysisStatus(id, status, message string) error {
 func (s *EventStore) PendingAnalysis(limit int, jobID string) []TransmissionEvent {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if limit < 1 || limit > 25_000 {
-		limit = 25_000
+	if limit < 1 {
+		limit = len(s.events)
 	}
 	items := make([]TransmissionEvent, 0, minInt(limit, len(s.events)))
 	for index := len(s.events) - 1; index >= 0 && len(items) < limit; index-- {
@@ -573,12 +595,23 @@ func (s *EventStore) Count() int { s.mu.RLock(); defer s.mu.RUnlock(); return le
 
 func (s *EventStore) rebuildSearchIndexLocked() {
 	s.searchIndex = make(map[string]map[string]struct{})
+	s.eventTokens = make(map[string][]string)
 	for _, event := range s.events {
 		s.indexEventLocked(event)
 	}
 }
 
 func (s *EventStore) indexEventLocked(event TransmissionEvent) {
+	if s.eventTokens == nil {
+		s.eventTokens = make(map[string][]string)
+	}
+	for _, token := range s.eventTokens[event.ID] {
+		delete(s.searchIndex[token], event.ID)
+		if len(s.searchIndex[token]) == 0 {
+			delete(s.searchIndex, token)
+		}
+	}
+	s.eventTokens[event.ID] = nil
 	parts := []string{event.ID, fmt.Sprintf("%.0f %.6f", event.FrequencyHz, event.FrequencyHz/1e6), event.Modulation,
 		stringValue(event.ProtocolName), stringValue(event.Label), event.DeviceID, stringValue(event.SystemName), stringValue(event.Transcript), strings.Join(event.Callsigns, " ")}
 	for _, message := range event.DecoderMessages {
@@ -591,6 +624,7 @@ func (s *EventStore) indexEventLocked(event TransmissionEvent) {
 			s.searchIndex[token] = ids
 		}
 		ids[event.ID] = struct{}{}
+		s.eventTokens[event.ID] = append(s.eventTokens[event.ID], token)
 	}
 }
 

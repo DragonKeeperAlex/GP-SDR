@@ -48,3 +48,7 @@ Identify’s **Rejected IQ** offers **Delete after analysis** (default) or **Kee
 Read [Activity and Storage](Activity-Recordings-and-Storage) and [Local Intelligence](Local-Intelligence) before a large unattended run.
 
 Source: [deferred analysis](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/internal/app/deferred_analysis.go), [job phases](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/internal/app/live_survey.go), [controls](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).
+
+## Archive analysis and retry in rc11
+
+Original-IQ jobs can defer waveform work and audio creation until analysis. Pending work is no longer limited to 25,000 events. Startup resets interrupted/canceled/timed-out work to Pending. Missing referenced files fail explicitly instead of being marked complete. Original shared IQ is immutable through analysis and retention. See [storage and recovery](Activity-Recordings-and-Storage).

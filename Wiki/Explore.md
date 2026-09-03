@@ -19,7 +19,7 @@ Star groups to bookmark them, add a short tag in the detail panel, or save the c
 
 ## Interpret the evidence carefully
 
-Explore covers the loaded journal window (up to 25,000 events), excludes simulated events, and does not scan old files independently. Recorded duration is the sum of capture durations and can include overlap; it is not monitoring time. Audio/IQ counts count journal links, not verified existing files. Missing or removed recordings can therefore appear in history without being playable.
+Explore covers retained indexed history without a 25,000-event retention cap and excludes simulated events. Startup recovery adds recognizable orphan media with explicit recovery labels. Recorded duration is the sum of capture durations and can include overlap; it is not monitoring time. Audio/IQ counts count journal links, not verified existing files. Missing or removed recordings can therefore appear in history without being playable.
 
 Nearby reference candidates require an exact frequency match plus a recorded position inside the imported reference area's radius. A frequency/area match alone does not confirm who transmitted. Records lacking coordinates cannot receive geographic matches. No new RadioReference download or account is required to explore existing data.
 
@@ -28,3 +28,5 @@ True occupancy, timestamped quiet checks, street basemaps, map time playback, an
 ## Transcription hardening
 
 New transcription attempts skip essentially digital silence and conservative stationary broadband-static cases. Standalone non-speech captions such as bracketed water or engine noises are removed. Quiet speech is not rejected merely for low volume. This is a heuristic safeguard, not a guarantee against model hallucinations; old transcripts are not rewritten. Inspect original audio and decoder evidence before treating a transcript as confirmed.
+
+In rc11, capture details show missing-media warnings, recovered-file provenance, and whether a record uses a shared original IQ archive. A recovered file is not verified RF identity evidence. Archive audio appears after deferred analysis creates it.

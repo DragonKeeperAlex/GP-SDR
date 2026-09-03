@@ -99,6 +99,7 @@ func calculateStorageStatus(dataDirectory string) StorageStatus {
 	status.JournalBytes = directoryBytes(filepath.Join(dataDirectory, "Data"))
 	status.RecordingBytes = directoryBytes(filepath.Join(dataDirectory, "Recordings"))
 	status.IQBytes = directoryBytes(filepath.Join(dataDirectory, "IQ"))
+	status.IQArchiveBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Archive"))
 	status.IQPendingBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Pending"))
 	status.IQRetainedBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Retained"))
 	status.IQQuarantineBytes = directoryBytes(filepath.Join(dataDirectory, "IQ", "Quarantine"))

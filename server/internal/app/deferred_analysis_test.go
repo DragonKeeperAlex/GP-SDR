@@ -48,7 +48,7 @@ func TestGroupDeferredEventsCombinesFrequencyWithinReceiveArea(t *testing.T) {
 	}
 }
 
-func TestDeferredAnalysisRunsConfiguredParallelGroups(t *testing.T) {
+func TestDeferredAnalysisReportsMissingEvidenceAcrossParallelGroups(t *testing.T) {
 	store, err := NewEventStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestDeferredAnalysisRunsConfiguredParallelGroups(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	status = runtime.DeferredAnalysisStatus()
-	if status.Running || status.Completed != 6 || status.Failed != 0 || status.GroupsDone != 6 {
+	if status.Running || status.Completed != 0 || status.Failed != 6 || status.GroupsDone != 6 {
 		t.Fatalf("unexpected completed status: %#v", status)
 	}
 }
