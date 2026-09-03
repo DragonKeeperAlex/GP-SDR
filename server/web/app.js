@@ -145,6 +145,7 @@ function setView(view) {
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
     transmit: ['Transmit', 'Guarded HackRF audio playback'],
     activity: ['Activity', 'Signals and transmission history'],
+    explore: ['Explore', 'Activity patterns, collection locations, and reference evidence'],
     mapper: ({overview:['Mapper overview','Live jobs, receivers, spectrum, and throughput'],discovery:['Discovery','High-throughput RF activity collection'],identify:['Identify','Focused decoding and signal identification'],analysis:['Analyze','Process stored captures and inspect live results'],schedule:['Mapper schedule','Timed collection, identification, and offline compute'],results:['Mapper results','Search, verify, export, and sync collected activity']}[state.mapperPage]||['Mapper','Wide-range activity survey']),
     profiles: ['Channels', 'Channel banks, scan ranges, and receiver roles'],
     decoders: ['Decoders', 'Dedicated decoder workspaces'],

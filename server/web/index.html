@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css?v=1.5.0-rc8a">
   <link rel="stylesheet" href="/console.css?v=1.5.0-rc8a">
+  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc10">
 </head>
 <body>
   <div class="shell">
@@ -37,6 +38,7 @@
         <button class="nav-item" data-view="mapper" data-mapper-page="schedule" title="Schedule collection, identification, and offline analysis"><span class="nav-icon">◷</span><span>Schedule</span></button>
         <button class="nav-item" data-view="mapper" data-mapper-page="results" title="Search, review, and export Mapper results"><span class="nav-icon">≡</span><span>Results</span></button>
         <span class="nav-group-label">Review</span>
+        <button class="nav-item" data-view="explore" title="Explore activity heatmaps, timelines, and collection locations"><span class="nav-icon">▦</span><span>Explore</span></button>
         <button class="nav-item" data-view="activity" title="Recorded activity and discovered signals">
           <span class="nav-icon">≋</span><span>Activity</span>
         </button>
@@ -227,6 +229,25 @@
           </form>
           <p id="transmit-detail" class="transmit-detail">Choose a PCM WAV file. Dry run is selected by default.</p>
         </article>
+      </section>
+
+      <section id="view-explore" class="view">
+        <form id="explore-filters" class="panel explore-filters">
+          <label>Search<input id="explore-query" type="search" placeholder="Frequency, callsign, transcript…"></label>
+          <label>From · UTC<input id="explore-from" type="date"></label><label>Through · UTC<input id="explore-to" type="date"></label>
+          <label>Min · MHz<input id="explore-min" type="number" min="0" step="any"></label><label>Max · MHz<input id="explore-max" type="number" min="0" step="any"></label>
+          <label>Receive area<select id="explore-location"><option value="">All locations</option></select></label><label>Modulation<select id="explore-mode"><option value="">All modes</option></select></label>
+          <button type="submit">Refresh</button><button id="explore-reset" type="button">Reset</button><button id="explore-save-view" type="button">Save view</button><label>Saved views<select id="explore-saved"><option value="">Choose…</option></select></label><button id="explore-delete-view" type="button">Delete view</button>
+        </form>
+        <p id="explore-status" role="status" class="explore-note">Open Explore to load local observations.</p>
+        <div id="explore-stats" class="explore-stats"></div>
+        <article class="panel"><div class="panel-head"><div><h2>Frequency × hour</h2><span>Recorded events by hour of day · UTC · top 60 groups · click a cell to inspect</span></div></div><div class="explore-scroll"><canvas id="explore-heatmap" width="1000" height="220" aria-label="Frequency by hour recorded activity heatmap"></canvas></div><p class="explore-note">Dark cells mean no recorded events, not proven silence. Quiet-check history and total monitoring time are unavailable. Counts favor longer-observed frequencies.</p></article>
+        <div class="explore-columns">
+          <article class="panel"><div class="panel-head"><div><h2>Activity timeline</h2><span>Recorded events per day · UTC</span></div></div><canvas id="explore-timeline" width="700" height="220" aria-label="Recorded events per day"></canvas></article>
+          <article class="panel"><div class="panel-head"><div><h2>Collection map</h2><span>Offline coordinate map · circles: receiver observations · diamonds: reference area centers</span></div></div><svg id="explore-map" viewBox="0 0 700 280" role="img" aria-label="Collection and reference area coordinate map"></svg><p class="explore-note">No map tiles or coordinates are sent to a third party. Reference areas are not transmitter sites. Click a circle to inspect its data.</p></article>
+        </div>
+        <article class="panel"><div class="panel-head"><div><h2>Frequency groups</h2><span>Same frequency, separate receive areas</span></div><div class="explore-actions"><label><input id="explore-bookmarks-only" type="checkbox"> Bookmarked</label><select id="explore-sort" aria-label="Sort frequency groups"><option value="count">Most events</option><option value="frequency">Frequency</option><option value="recent">Most recent</option><option value="decoded">Decoded events</option></select><button id="explore-prev" type="button">Previous</button><span id="explore-page"></span><button id="explore-next" type="button">Next</button></div></div><div class="table-scroll"><table><thead><tr><th>Save</th><th>Frequency</th><th>Area</th><th>Events</th><th>Recorded time</th><th>Mode</th><th>Decoded / transcript</th></tr></thead><tbody id="explore-rows"></tbody></table></div></article>
+        <article id="explore-detail" class="panel explore-detail"><h2>Select a frequency or map point</h2><p>Review recorded evidence and geographically applicable reference candidates here.</p></article>
       </section>
 
       <section id="view-activity" class="view">
@@ -603,6 +624,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc8b"></script>
+  <script src="/app.js?v=1.5.0-rc10"></script>
+  <script src="/explore.js?v=1.5.0-rc10"></script>
 </body>
 </html>

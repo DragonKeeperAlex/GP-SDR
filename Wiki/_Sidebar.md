@@ -1,4 +1,4 @@
-**GP-SDR manual · through 1.5.0-rc9**
+**GP-SDR manual · through 1.5.0-rc10**
 
 - [Home](Home)
 - [What’s New](Whats-New)
@@ -7,6 +7,7 @@
 - [Tuner and Live](Tuner-and-Live)
 - [Band Monitor](Band-Monitor)
 - [Profiles and Mixer](Profiles-and-Mixer)
+- [Explore recorded data](Explore)
 - [P25 and Decoders](P25-and-Decoders)
 - [Mapper](Mapper-Discovery-and-Identify)
 - [Analyze and Schedule](Analyze-and-Schedule)

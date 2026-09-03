@@ -65,6 +65,16 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == "GET" && path == "/api/status":
 		writeJSON(w, 200, s.runtime.Status())
+	case r.Method == "GET" && path == "/api/explore":
+		writeJSON(w, 200, buildExploreData(s.runtime.Events.exploreSnapshot(), s.runtime.Profiles.All(), r))
+	case r.Method == "GET" && path == "/api/explore/captures":
+		items := []TransmissionEvent{}
+		for _, event := range s.runtime.Events.exploreSnapshot() {
+			if !event.Simulated && exploreKey(event) == r.URL.Query().Get("key") && len(items) < 50 {
+				items = append(items, event)
+			}
+		}
+		writeJSON(w, 200, items)
 	case r.Method == "GET" && path == "/api/devices":
 		writeJSON(w, 200, s.runtime.Devices())
 	case r.Method == "GET" && path == "/api/calibrations":

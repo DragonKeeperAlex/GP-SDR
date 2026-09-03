@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +73,13 @@ func (t *Transcriber) Status() TranscriptionStatus {
 }
 
 func (t *Transcriber) Transcribe(parent context.Context, wavPath string) (string, error) {
+	samples, rate, err := readPCM16WAV(wavPath)
+	if err != nil {
+		return "", err
+	}
+	if transcriptionNoSpeech(samples, rate) {
+		return "", nil
+	}
 	if t.Status().State != "ready" {
 		return "", errors.New("offline transcription is not configured")
 	}
@@ -103,5 +111,66 @@ func (t *Transcriber) Transcribe(parent context.Context, wavPath string) (string
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(text)), nil
+	return cleanRadioTranscript(string(text)), nil
+}
+
+// Conservative cheap gate, not a speech classifier. Reject only digital silence
+// and long, stationary broadband noise; never reject merely quiet speech.
+func transcriptionNoSpeech(samples []int16, rate int) bool {
+	if len(samples) == 0 || rate <= 0 {
+		return true
+	}
+	var mean, energy float64
+	for _, sample := range samples {
+		mean += float64(sample)
+	}
+	mean /= float64(len(samples))
+	crossings := 0
+	frames := []float64{}
+	frameSize := maxInt(1, rate/50)
+	var frameEnergy float64
+	for index, sample := range samples {
+		x := float64(sample) - mean
+		energy += x * x
+		frameEnergy += x * x
+		if index > 0 && (x >= 0) != (float64(samples[index-1])-mean >= 0) {
+			crossings++
+		}
+		if (index+1)%frameSize == 0 {
+			frames = append(frames, math.Sqrt(frameEnergy/float64(frameSize)))
+			frameEnergy = 0
+		}
+	}
+	if math.Sqrt(energy/float64(len(samples))) < 1 {
+		return true
+	}
+	if len(frames) < 25 {
+		return false
+	}
+	var rmsMean, variance float64
+	for _, rms := range frames {
+		rmsMean += rms
+	}
+	rmsMean /= float64(len(frames))
+	for _, rms := range frames {
+		variance += (rms - rmsMean) * (rms - rmsMean)
+	}
+	cv := math.Sqrt(variance/float64(len(frames))) / rmsMean
+	return cv < .07 && float64(crossings)/float64(len(samples)-1) > .40
+}
+
+// Remove standalone sound-effect captions, not spoken sentences about those
+// sounds. Unknown annotations are retained rather than guessing they are junk.
+func cleanRadioTranscript(raw string) string {
+	lines := []string{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		key := strings.ToLower(strings.Trim(line, "[]() .*\t"))
+		switch key {
+		case "", "blank_audio", "no speech", "silence", "static", "noise", "music", "water sounds", "sounds of water", "water flowing", "engine noises", "engine noise", "engine sounds", "wind blowing", "wind noise", "applause", "inaudible":
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }

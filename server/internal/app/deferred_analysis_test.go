@@ -6,6 +6,22 @@ import (
 	"time"
 )
 
+func TestInvalidAnalysisConcurrencyDoesNotStartRun(t *testing.T) {
+	store, err := NewEventStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{Events: store}
+	for _, concurrency := range []int{-1, 17} {
+		if _, err := runtime.StartDeferredAnalysis("", concurrency); err == nil {
+			t.Fatal("invalid concurrency accepted")
+		}
+		if runtime.DeferredAnalysisStatus().Running {
+			t.Fatal("invalid request left analysis running")
+		}
+	}
+}
+
 func TestGroupDeferredEventsCombinesFrequencyWithinReceiveArea(t *testing.T) {
 	now := time.Now()
 	events := []TransmissionEvent{

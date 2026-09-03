@@ -41,6 +41,7 @@ jobs:
       - name: Check web console and attribution
         run: |
           node --check server/web/app.js
+          node --check server/web/explore.js
           test -s LICENSE
           test -s NOTICE
           test -s THIRD_PARTY.md

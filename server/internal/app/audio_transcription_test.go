@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,6 +51,13 @@ printf 'decoded locally' > "${output}.txt"
 			t.Fatal(err)
 		}
 	}
+	samples := make([]int16, 16000)
+	for i := range samples {
+		samples[i] = int16(100 * math.Sin(float64(i)*.1))
+	}
+	if err := WriteMonoWAV(wav, samples, 16000); err != nil {
+		t.Fatal(err)
+	}
 	transcriber := &Transcriber{executable: executable, model: model, semaphore: make(chan struct{}, 1)}
 	if status := transcriber.Status(); status.State != "ready" {
 		t.Fatalf("transcriber is not ready: %#v", status)
@@ -60,4 +69,44 @@ printf 'decoded locally' > "${output}.txt"
 	if text != "decoded locally" {
 		t.Fatalf("unexpected transcript %q", text)
 	}
+}
+
+func TestTranscriptionNoSpeechGate(t *testing.T) {
+	if !transcriptionNoSpeech(make([]int16, 16000), 16000) {
+		t.Fatal("silence passed gate")
+	}
+	rng := rand.New(rand.NewSource(4))
+	noise, weakVoice := make([]int16, 32000), make([]int16, 32000)
+	for i := range noise {
+		noise[i] = int16(rng.NormFloat64() * 1000)
+		weakVoice[i] = int16((4 + 4*math.Sin(float64(i)/2400)) * math.Sin(float64(i)*.1))
+	}
+	if !transcriptionNoSpeech(noise, 16000) {
+		t.Fatal("stationary broadband noise passed gate")
+	}
+	if transcriptionNoSpeech(weakVoice, 16000) {
+		t.Fatal("quiet modulated waveform incorrectly gated")
+	}
+	if got := cleanRadioTranscript("[sounds of water]\nK6ABC, check the engine.\n(engine noises)"); got != "K6ABC, check the engine." {
+		t.Fatalf("unexpected cleaned transcript: %q", got)
+	}
+}
+
+// Opt-in integration check against an installed model and a speech WAV fixture.
+func TestInstalledWhisperSpeech(t *testing.T) {
+	wav, model, executable := os.Getenv("GPSDR_TEST_SPEECH_WAV"), os.Getenv("GPSDR_TEST_WHISPER_MODEL"), os.Getenv("GPSDR_TEST_WHISPER_BIN")
+	if wav == "" || model == "" || executable == "" {
+		t.Skip("installed Whisper speech fixture not configured")
+	}
+	transcriber := &Transcriber{executable: executable, model: model, semaphore: make(chan struct{}, 1)}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	text, err := transcriber.Transcribe(ctx, wav)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(text) < 10 {
+		t.Fatalf("speech not transcribed: %q", text)
+	}
+	t.Logf("installed model transcript: %s", text)
 }

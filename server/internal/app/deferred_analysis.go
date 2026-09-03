@@ -76,6 +76,9 @@ func (r *Runtime) DeferredAnalysisStatus() DeferredAnalysisStatus {
 // intentionally useful after a mobile/field collection run when the computer
 // is back on AC power. The queue is bounded by normal EventStore and IQ caps.
 func (r *Runtime) StartDeferredAnalysis(jobID string, concurrency int) (DeferredAnalysisStatus, error) {
+	if concurrency < 0 || concurrency > 16 {
+		return r.DeferredAnalysisStatus(), errors.New("parallel frequency groups must be Auto or between 1 and 16")
+	}
 	r.analysisMu.Lock()
 	if r.analysisRunning {
 		r.analysisMu.Unlock()
@@ -123,6 +126,8 @@ func (r *Runtime) runDeferredAnalysis(groups [][]TransmissionEvent, stop <-chan 
 	defer func() {
 		r.analysisMu.Lock()
 		r.analysisRunning, r.analysisStop = false, nil
+		r.analysisCurrent = nil
+		r.analysisActive = nil
 		r.analysisMu.Unlock()
 	}()
 	work := make(chan []TransmissionEvent)
@@ -172,6 +177,11 @@ func (r *Runtime) processDeferredGroup(events []TransmissionEvent, stop <-chan s
 		r.setAnalysisCurrent(event, location, index+1, len(events), "loading")
 		_ = r.Events.UpdateAnalysisStatus(event.ID, "running", "")
 		if err := r.analyzeStoredEvent(event, stop); err != nil {
+			r.clearAnalysisCurrent(event.ID)
+			if errors.Is(err, context.Canceled) {
+				_ = r.Events.UpdateAnalysisStatus(event.ID, "pending", "")
+				return
+			}
 			_ = r.Events.UpdateAnalysisStatus(event.ID, "error", err.Error())
 			r.analysisMu.Lock()
 			r.analysisFailed++

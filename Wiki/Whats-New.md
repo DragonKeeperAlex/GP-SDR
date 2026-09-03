@@ -1,4 +1,17 @@
-# What’s new through GP-SDR 1.5.0-rc9
+# What’s new through GP-SDR 1.5.0-rc10
+
+## 1.5.0-rc10 release candidate
+
+- **Explore:** recorded-activity heatmaps, daily timeline, offline collection map,
+  frequency/area groups, filters, bookmarks, tags, saved views, and capture details.
+  Nearby reference areas are candidates, not confirmed transmitter locations.
+  [Instructions and limitations](Explore).
+- **Transcription:** conservative silence/static checks and standalone non-speech
+  caption cleanup. Existing transcripts are preserved; hallucinations remain possible.
+- **Analyze:** invalid worker counts cannot leave a run marked active; stopped runs
+  clear active-stage indicators and canceled captures remain pending for retry.
+
+Software and UI checks are not new live-RF acceptance evidence.
 
 ## 1.5.0-rc9 release candidate
 
