@@ -163,6 +163,34 @@ func TestMediaRecoveryIsIdempotentAndFlagsMissingFiles(t *testing.T) {
 	}
 }
 
+func TestRuntimeCleanupReconcilesRemovedMedia(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(filepath.Join(root, "Data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	iq := filepath.Join(root, "IQ", "Pending", "old.cu8")
+	if err := os.MkdirAll(filepath.Dir(iq), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(iq, []byte("iq"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(TransmissionEvent{ID: "cleanup", IQPath: &iq, AnalysisStatus: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(iq); err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := store.ReconcileRemovedMedia(); err != nil || updated != 1 {
+		t.Fatalf("runtime reconciliation failed: updated=%d err=%v", updated, err)
+	}
+	event, _ := store.Get("cleanup")
+	if event.IQPath != nil || event.AnalysisStatus != "unavailable" || len(event.MediaIssues) != 1 || len(store.PendingAnalysis(0, "")) != 0 {
+		t.Fatalf("removed media remained queued: %+v", event)
+	}
+}
+
 func TestInterruptedJournalTailPreservesCommittedHistory(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewEventStore(root)

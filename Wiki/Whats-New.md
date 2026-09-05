@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc14
+# What’s new through GP-SDR 1.5.0-rc15
+
+## 1.5.0-rc15: live cleanup reconciliation
+
+Automatic and manual storage cleanup now update the event journal immediately. Removed payloads no longer remain in the Analyze queue until GP-SDR is restarted.
 
 ## 1.5.0-rc14: bounded IQ storage
 

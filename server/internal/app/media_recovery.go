@@ -259,6 +259,43 @@ func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
+
+// ReconcileRemovedMedia is the lightweight runtime counterpart to startup
+// recovery. Storage cleanup can remove capped files while GP-SDR remains open;
+// clear those paths immediately so a later Analyze run does not retry them as
+// missing-file failures.
+func (s *EventStore) ReconcileRemovedMedia() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	updated := 0
+	for index := range s.events {
+		event := s.events[index]
+		removed := make([]string, 0, 2)
+		if event.AudioPath != nil && !fileExists(*event.AudioPath) {
+			removed = append(removed, "Missing recording: "+*event.AudioPath)
+			event.AudioPath = nil
+		}
+		if event.IQPath != nil && !fileExists(*event.IQPath) {
+			removed = append(removed, "Missing recording: "+*event.IQPath)
+			event.IQPath = nil
+		}
+		if len(removed) == 0 {
+			continue
+		}
+		event.MediaIssues = mergeUniqueStrings(event.MediaIssues, removed)
+		if event.AudioPath == nil && event.IQPath == nil && (event.AnalysisStatus == "pending" || event.AnalysisStatus == "running") {
+			event.AnalysisStatus = "unavailable"
+			event.AnalysisError = "source recording was removed by retention cleanup"
+			event.AnalysisCompletedAt = nil
+		}
+		if err := appendDurableJSON(s.updatesPath(), event); err != nil {
+			return updated, err
+		}
+		s.events[index] = event
+		updated++
+	}
+	return updated, nil
+}
 func recoveredEvent(root, path string) TransmissionEvent {
 	relative, _ := filepath.Rel(root, path)
 	hash := sha256.Sum256([]byte(relative))

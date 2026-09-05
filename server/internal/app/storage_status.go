@@ -29,6 +29,12 @@ func (r *Runtime) refreshStorageStatus() {
 			} else {
 				lastCleanup = enforceQuarantinePolicy(directory, policy, time.Now())
 			}
+			if _, err := r.Events.ReconcileRemovedMedia(); err != nil {
+				if lastCleanup.LastError != "" {
+					lastCleanup.LastError += " · "
+				}
+				lastCleanup.LastError += "event media reconciliation: " + err.Error()
+			}
 			r.mu.Lock()
 			r.storageCleanup = lastCleanup
 			r.storagePruning = false
@@ -80,6 +86,12 @@ func (r *Runtime) CleanStorageNow() (StorageStatus, error) {
 	policy, directory := r.storagePolicy, r.dataDirectory
 	r.mu.Unlock()
 	result := enforceStoragePolicy(directory, policy, time.Now())
+	if _, err := r.Events.ReconcileRemovedMedia(); err != nil {
+		if result.LastError != "" {
+			result.LastError += " · "
+		}
+		result.LastError += "event media reconciliation: " + err.Error()
+	}
 	status := calculateStorageStatus(directory)
 	r.mu.Lock()
 	r.storageCleanup = result
