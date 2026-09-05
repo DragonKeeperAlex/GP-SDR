@@ -84,3 +84,29 @@ func TestRejectedIQExpiresBeforeRetainedEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestIQCapIncludesArchiveAndPending(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now()
+	archive := filepath.Join(root, "IQ", "Archive", "2026-09-01", "wideband.cu8")
+	pending := filepath.Join(root, "IQ", "Pending", "2026-09-01", "channel.cu8")
+	for _, path := range []string{archive, pending} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, make([]byte, 64), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		old := now.Add(-48 * time.Hour)
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := enforceStoragePolicy(root, StoragePolicy{IQCapBytes: 64}, now)
+	if result.FilesRemoved == 0 || fileExists(archive) {
+		t.Fatalf("archive was excluded from the IQ cap: %+v", result)
+	}
+	if !fileExists(pending) {
+		t.Fatal("older archive should be removed before pending analysis evidence")
+	}
+}

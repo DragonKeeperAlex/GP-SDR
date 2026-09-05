@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc13
+# What’s new through GP-SDR 1.5.0-rc14
+
+## 1.5.0-rc14: bounded IQ storage
+
+The configured IQ cap now includes wideband Archive and Pending captures. This closes the cap bypass that allowed long Mapper collection runs to consume hundreds of gigabytes. Low-value per-channel IQ is deleted after analysis when **delete junk** is selected; useful evidence remains compacted and retained.
 
 ## 1.5.0-rc13: decoder evidence precedence
 

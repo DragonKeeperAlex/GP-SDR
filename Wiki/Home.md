@@ -1,8 +1,8 @@
 # GP-SDR user guide
 
-**Current coverage: 1.5.0-rc13 release candidate, including the earlier baseline.** Use [What’s New](Whats-New) to compare versions. The release candidate is not a final 1.5 release.
+**Current coverage: 1.5.0-rc14 release candidate, including the earlier baseline.** Use [What’s New](Whats-New) to compare versions. The release candidate is not a final 1.5 release.
 
-This wiki was checked against the source through **1.5.0-rc13** on September 4, 2026. GP-SDR brings tuning, scanning, P25 trunk following, optional digital decoders, multi-receiver mapping, recordings, and offline transcription into one console. It also includes a guarded, local-only HackRF WAV transmit workspace; receive workflows do not transmit.
+This wiki was checked against the source through **1.5.0-rc14** on September 5, 2026. GP-SDR brings tuning, scanning, P25 trunk following, optional digital decoders, multi-receiver mapping, recordings, and offline transcription into one console. It also includes a guarded, local-only HackRF WAV transmit workspace; receive workflows do not transmit.
 
 [Download GP-SDR and release candidates](https://github.com/DragonKeeperAlex/GP-SDR/releases) · [What changed and how to use it](Whats-New) · [Troubleshooting](Troubleshooting-and-Limits)
 
