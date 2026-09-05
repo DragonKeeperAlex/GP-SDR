@@ -231,6 +231,9 @@ func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	if pruneInvalidMapperDecoderBanners(m.records) > 0 {
 		m.persistRecords()
 	}
+	if reconcileMapperDecoderFrames(m.records, events) > 0 {
+		m.persistRecords()
+	}
 	if m.config.Mode == "" {
 		m.config.Mode = "discovery"
 	}
@@ -239,6 +242,50 @@ func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	}
 	go m.loop()
 	return m
+}
+
+// Decoder frames are authoritative evidence. Reapply them after loading the
+// append-only event history so older model candidate updates cannot leave a
+// genuinely decoded frequency downgraded in mapper-records.json.
+func reconcileMapperDecoderFrames(records map[string]MapperFrequencyRecord, events *EventStore) int {
+	if events == nil {
+		return 0
+	}
+	updated := 0
+	for _, event := range events.exploreSnapshot() {
+		messages := validDecoderMessages(event.DecoderMessages)
+		if len(messages) == 0 {
+			continue
+		}
+		key := fmt.Sprintf("%.0f", event.FrequencyHz)
+		record, exists := records[key]
+		if !exists {
+			continue
+		}
+		decoderID := canonicalDecoderID(event.RequestedDecoder)
+		if decoderID == "" {
+			decoderID = canonicalDecoderID(record.CandidateDecoder)
+		}
+		record.CandidateDecoder = decoderID
+		record.DetectionStatus = "confirmed"
+		record.DecoderReady = true
+		record.ProtocolName = messages[0].Protocol
+		if strings.TrimSpace(record.Name) == "" || strings.Contains(strings.ToLower(record.Name), "candidate") {
+			record.Name = firstNonEmpty(messages[0].Protocol, decoderID)
+		}
+		record.Confidence = math.Max(record.Confidence, messages[0].Confidence)
+		evidence := make([]string, 0, len(messages))
+		for _, message := range messages {
+			evidence = append(evidence, message.Summary)
+			record.Callsigns = mergeUniqueStrings(record.Callsigns, message.Callsigns)
+		}
+		record.DetectionEvidence = strings.Join(evidence, " · ")
+		record.IdentificationVerified = true
+		record.VerificationReason = "Valid " + firstNonEmpty(messages[0].Protocol, decoderID) + " decoder output"
+		records[key] = record
+		updated++
+	}
+	return updated
 }
 
 func pruneInvalidMapperDecoderBanners(records map[string]MapperFrequencyRecord) int {
@@ -995,9 +1042,14 @@ func (m *MapperManager) SetDecoderEvidence(frequencyHz float64, decoderID, statu
 	m.mu.Lock()
 	record, exists := m.records[key]
 	if exists {
-		record.CandidateDecoder = canonicalDecoderID(decoderID)
-		record.DetectionStatus = strings.TrimSpace(status)
-		record.DetectionEvidence = strings.TrimSpace(evidence)
+		// A model or band heuristic may nominate a decoder, but it must never
+		// overwrite a decoder-confirmed frame that arrived earlier.
+		incomingStatus := strings.TrimSpace(status)
+		if record.DetectionStatus != "confirmed" || incomingStatus == "confirmed" {
+			record.CandidateDecoder = canonicalDecoderID(decoderID)
+			record.DetectionStatus = incomingStatus
+			record.DetectionEvidence = strings.TrimSpace(evidence)
+		}
 		record.DecoderReady = ready
 		m.records[key] = record
 	}

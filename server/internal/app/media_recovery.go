@@ -18,12 +18,13 @@ import (
 )
 
 type MediaRecoveryReport struct {
-	CheckedAt time.Time `json:"checkedAt"`
-	Recovered int       `json:"recovered"`
-	Relinked  int       `json:"relinked"`
-	Missing   int       `json:"missing"`
-	Invalid   int       `json:"invalid"`
-	Requeued  int       `json:"requeued"`
+	CheckedAt   time.Time `json:"checkedAt"`
+	Recovered   int       `json:"recovered"`
+	Relinked    int       `json:"relinked"`
+	Missing     int       `json:"missing"`
+	Unavailable int       `json:"unavailable"`
+	Invalid     int       `json:"invalid"`
+	Requeued    int       `json:"requeued"`
 }
 
 // ReconcileMedia runs before receiver/analysis workers start. It never deletes
@@ -83,7 +84,10 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 	for index := range s.events {
 		before := s.events[index]
 		event := before
-		event.MediaIssues = nil
+		if event.AnalysisStatus != "unavailable" {
+			event.MediaIssues = nil
+		}
+		hadMediaReference := event.AudioPath != nil || event.IQPath != nil
 		filteredMessages := validDecoderMessages(event.DecoderMessages)
 		if len(filteredMessages) != len(event.DecoderMessages) {
 			event.DecoderMessages = filteredMessages
@@ -117,6 +121,7 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 					report.Relinked++
 				} else {
 					event.MediaIssues = append(event.MediaIssues, "Missing recording: "+path)
+					*field = nil
 					report.Missing++
 				}
 			}
@@ -129,6 +134,15 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 		if !reflect.DeepEqual(before.Analysis, event.Analysis) && (event.AudioPath != nil || event.IQPath != nil) {
 			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "pending", "", nil
 			report.Requeued++
+		}
+		// Retention may legitimately remove old payloads. Once every referenced
+		// payload is gone, keep the journal row for history but remove it from
+		// the analysis queue so every future run does not fail it again.
+		if hadMediaReference && event.AudioPath == nil && event.IQPath == nil {
+			event.AnalysisStatus = "unavailable"
+			event.AnalysisError = "source recording was removed by retention cleanup"
+			event.AnalysisCompletedAt = nil
+			report.Unavailable++
 		}
 		if !reflect.DeepEqual(before, event) {
 			if err := appendDurableJSON(s.updatesPath(), event); err != nil {

@@ -214,6 +214,31 @@ func TestMapperValidDecoderFramesAreFullyIdentified(t *testing.T) {
 	}
 }
 
+func TestMapperCandidateEvidenceCannotDowngradeDecoderFrame(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	manager.Observe(433_920_000, true, -25, -70, "DIGITAL", "", "", "")
+	manager.SetDecodedMessages(433_920_000, "rtl-433", []DecoderMessage{{Protocol: "LaCrosse-TX141Bv3", Summary: "valid sensor frame", Confidence: .99}})
+	manager.SetDecoderEvidence(433_920_000, "rtl-433", "candidate", "ISM activity candidate", true)
+	record := manager.Status().Records[0]
+	if !mapperRecordFullyIdentified(record) || record.DetectionStatus != "confirmed" || record.ProtocolName != "LaCrosse-TX141Bv3" {
+		t.Fatalf("candidate evidence downgraded a valid decoder frame: %+v", record)
+	}
+}
+
+func TestReconcileMapperDecoderFramesRestoresHistoricalConfirmation(t *testing.T) {
+	protocol := "ISM sensor candidate"
+	events := &EventStore{events: []TransmissionEvent{{FrequencyHz: 433_920_000, RequestedDecoder: "rtl-433", ProtocolName: &protocol,
+		DecoderMessages: []DecoderMessage{{Protocol: "LaCrosse-TX141Bv3", Summary: "valid sensor frame", Confidence: .99}}}}}
+	records := map[string]MapperFrequencyRecord{"433920000": {FrequencyHz: 433_920_000, ProtocolName: "ISM sensor candidate", DetectionStatus: "candidate"}}
+	if reconcileMapperDecoderFrames(records, events) != 1 {
+		t.Fatal("expected a historical decoder frame to be restored")
+	}
+	record := records["433920000"]
+	if !mapperRecordFullyIdentified(record) || record.DetectionStatus != "confirmed" || record.ProtocolName != "LaCrosse-TX141Bv3" {
+		t.Fatalf("historical decoder frame was not restored: %+v", record)
+	}
+}
+
 func TestMapperCSVIncludesCompleteRecordsAndEscapesFormulas(t *testing.T) {
 	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord)}
 	manager.Observe(155_250_000, true, -31.25, -76.5, "NFM", "Analog FM", "=unsafe", "+transcript")

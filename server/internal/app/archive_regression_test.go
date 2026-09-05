@@ -154,7 +154,7 @@ func TestMediaRecoveryIsIdempotentAndFlagsMissingFiles(t *testing.T) {
 		t.Fatalf("recovery duplicated data: %+v %v", again, err)
 	}
 	e, _ := reopened.Get("missing")
-	if len(e.MediaIssues) != 1 || e.AnalysisStatus != "pending" {
+	if len(e.MediaIssues) != 1 || e.AnalysisStatus != "unavailable" || e.IQPath != nil {
 		t.Fatal("missing media hidden")
 	}
 	encoded, _ := os.ReadFile(filepath.Join(root, "Data", "media-recovery.json"))

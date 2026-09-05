@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc12
+# What’s new through GP-SDR 1.5.0-rc13
+
+## 1.5.0-rc13: decoder evidence precedence
+
+Confirmed decoder frames can no longer be downgraded by a later heuristic or local-model candidate. Startup reconciliation restores valid historical frames from the event journal before Mapper counts are shown, and retired source files no longer remain in the analysis retry queue.
 
 ## 1.5.0-rc12: identification integrity
 
