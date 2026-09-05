@@ -195,6 +195,31 @@ func TestInterruptedJournalTailPreservesCommittedHistory(t *testing.T) {
 	}
 }
 
+func TestRecoveryRemovesBannerEvidenceAndNoiseCaption(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(filepath.Join(root, "Data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	audio := filepath.Join(root, "Recordings", "test.wav")
+	if err := WriteMonoWAV(audio, make([]int16, 8000), 8000); err != nil {
+		t.Fatal(err)
+	}
+	transcript := "[sound of engine]"
+	protocol := "P25"
+	event := TransmissionEvent{ID: "bad-banner", AudioPath: &audio, Transcript: &transcript, ProtocolName: &protocol, AnalysisStatus: "complete", Analysis: &SignalIntelligence{SignalFamily: "P25", Confidence: .96}, DecoderMessages: []DecoderMessage{{DecoderID: "dsd-fme", Protocol: "P25", Summary: "Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR", RawText: "Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR"}}}
+	if err := store.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReconcileMedia(root); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(event.ID)
+	if got.Transcript != nil || got.ProtocolName != nil || got.Analysis != nil || len(got.DecoderMessages) != 0 || got.AnalysisStatus != "pending" {
+		t.Fatalf("invalid historical evidence survived: %+v", got)
+	}
+}
+
 func TestOriginalArchiveProducesCorrectOfflineAudioWithoutChangingIQ(t *testing.T) {
 	root := t.TempDir()
 	const rate = 2_000_000

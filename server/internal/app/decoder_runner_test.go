@@ -27,6 +27,13 @@ func TestParseDMRMetadata(t *testing.T) {
 	}
 }
 
+func TestDSDStatusBannerIsNotAReceivedFrame(t *testing.T) {
+	messages := parseTextDecoderOutput("dsd-fme", "Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR\n")
+	if len(messages) != 0 {
+		t.Fatalf("status banner was accepted as RF evidence: %#v", messages)
+	}
+}
+
 func TestDSDModeFlags(t *testing.T) {
 	for mode, expected := range map[string]string{"dmr": "-fs", "p25": "-ft", "p25 phase 1": "-f1", "nxdn48": "-fi", "nxdn": "-fn", "d-star": "-fd", "ysf": "-fy", "m17": "-fz", "digital": "-fa"} {
 		if actual := dsdModeFlag(mode); actual != expected {
@@ -58,10 +65,13 @@ func TestInstalledOptionalDecoderBridgesSmoke(t *testing.T) {
 	}
 	audio := make([]int16, 24_000)
 	for _, decoderID := range []string{"dmr", "rtl-433", "dump1090", "multimon-ng", "acarsdec", "ais"} {
-		_, err := runCandidateDecoder(context.Background(), decoderID, audio, 48_000, iqPath, 1090e6,
+		messages, err := runCandidateDecoder(context.Background(), decoderID, audio, 48_000, iqPath, 1090e6,
 			CaptureSpec{CenterFrequencyHz: 1090125000, SampleRateHz: 1_000_000})
 		if err != nil && (strings.Contains(strings.ToLower(err.Error()), "not installed") || strings.Contains(strings.ToLower(err.Error()), "not implemented")) {
 			t.Fatalf("%s bridge unavailable: %v", decoderID, err)
+		}
+		if decoderID == "dmr" && len(messages) != 0 {
+			t.Fatalf("DSD-FME treated silence/status output as received frames: %#v", messages)
 		}
 	}
 }

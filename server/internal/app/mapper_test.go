@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -171,6 +172,35 @@ func TestMapperVerifiedStatusRequiresAuthoritativeEvidence(t *testing.T) {
 	status := manager.Status()
 	if status.VerifiedRecords != 1 || !mapperRecordFullyIdentified(status.Records[0]) {
 		t.Fatalf("authoritative match should count as fully identified: %+v", status)
+	}
+}
+
+func TestMapperStatusDoesNotHideVerifiedLowerFrequencyAfterCap(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	for index := 0; index < 5100; index++ {
+		frequency := float64(100_000_000 + index*12_500)
+		manager.records[fmt.Sprintf("%.0f", frequency)] = MapperFrequencyRecord{FrequencyHz: frequency, LastSeen: time.Unix(int64(index), 0)}
+	}
+	manager.records["100000000"] = MapperFrequencyRecord{FrequencyHz: 100_000_000, Name: "Verified station", ProtocolName: "Analog FM", IdentificationVerified: true}
+	status := manager.Status()
+	if status.VerifiedRecords != 1 || len(status.Records) != 5000 {
+		t.Fatalf("unexpected bounded status: %+v", status)
+	}
+	found := false
+	for _, record := range status.Records {
+		if record.FrequencyHz == 100_000_000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("verified lower-frequency result was omitted from bounded UI response")
+	}
+}
+
+func TestPruneInvalidMapperDecoderBanner(t *testing.T) {
+	records := map[string]MapperFrequencyRecord{"1": {CandidateDecoder: "dsd-fme", DetectionStatus: "confirmed", DetectionEvidence: "Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR", IdentificationVerified: true, VerificationReason: "Valid P25 decoder output"}}
+	if pruneInvalidMapperDecoderBanners(records) != 1 || records["1"].IdentificationVerified || records["1"].DetectionStatus != "candidate" {
+		t.Fatalf("banner evidence not cleared: %+v", records["1"])
 	}
 }
 

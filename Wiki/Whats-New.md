@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc10
+# What’s new through GP-SDR 1.5.0-rc12
+
+## 1.5.0-rc12: identification integrity
+
+Mapper counts now cover the complete stored frequency set and distinguish analyzed candidates from strictly verified identities. False DSD-FME startup-banner “decodes,” shared analysis queue timeouts, contradictory local-model summaries, and additional standalone noise captions are corrected. Known affected evidence is safely requeued at startup; source recordings are not deleted. See the [rc12 release notes](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/RELEASE_NOTES_1.5.0-rc12.md).
 
 ## 1.5.0-rc11: capture preservation and recovery
 

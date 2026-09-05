@@ -167,7 +167,7 @@ func cleanRadioTranscript(raw string) string {
 		line = strings.TrimSpace(line)
 		key := strings.ToLower(strings.Trim(line, "[]() .*\t"))
 		switch key {
-		case "", "blank_audio", "no speech", "silence", "static", "noise", "music", "water sounds", "sounds of water", "water flowing", "engine noises", "engine noise", "engine sounds", "wind blowing", "wind noise", "applause", "inaudible":
+		case "", "blank_audio", "no speech", "silence", "static", "noise", "music", "music playing", "water sounds", "sounds of water", "water flowing", "engine noises", "engine noise", "engine sounds", "sound of engine", "sound of a machine running", "sound of a radio", "sound of a radio traffic", "wind blowing", "wind noise", "applause", "inaudible", "explosion", "gunshots", "crickets chirping", "phone ringing":
 			continue
 		}
 		lines = append(lines, line)

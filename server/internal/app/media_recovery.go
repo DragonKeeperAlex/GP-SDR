@@ -84,6 +84,26 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 		before := s.events[index]
 		event := before
 		event.MediaIssues = nil
+		filteredMessages := validDecoderMessages(event.DecoderMessages)
+		if len(filteredMessages) != len(event.DecoderMessages) {
+			event.DecoderMessages = filteredMessages
+			event.Analysis = nil
+			if len(filteredMessages) == 0 {
+				event.ProtocolName = nil
+				event.Confidence = minFloat(event.Confidence, .72)
+			}
+		}
+		if event.Transcript != nil {
+			cleaned := cleanRadioTranscript(*event.Transcript)
+			if cleaned != *event.Transcript {
+				if cleaned == "" {
+					event.Transcript = nil
+				} else {
+					event.Transcript = ptr(cleaned)
+				}
+				event.Analysis = nil
+			}
+		}
 		for _, field := range []**string{&event.AudioPath, &event.IQPath} {
 			if *field == nil || **field == "" {
 				continue
@@ -103,6 +123,10 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 			referenced[path] = true
 		}
 		if event.AnalysisStatus == "running" || (event.AnalysisStatus == "error" && (event.AnalysisError == "context canceled" || event.AnalysisError == "context deadline exceeded")) {
+			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "pending", "", nil
+			report.Requeued++
+		}
+		if !reflect.DeepEqual(before.Analysis, event.Analysis) && (event.AudioPath != nil || event.IQPath != nil) {
 			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "pending", "", nil
 			report.Requeued++
 		}

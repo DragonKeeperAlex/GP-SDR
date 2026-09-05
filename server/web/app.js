@@ -342,7 +342,7 @@ function renderMapperProgress(){
   $('#mapper-passes').textContent=`${passes} completed ${passes===1?'pass':'passes'}`;
   const hits=records.reduce((sum,item)=>sum+(Number(item.hits)||0),0);
   $('#mapper-hits').textContent=hits.toLocaleString();
-  const identified=records.filter(mapperFullyIdentified).length;$('#mapper-identified').textContent=identified.toLocaleString();$('#mapper-identified-detail').textContent=`${records.length?Math.round(identified/records.length*100):0}% of active frequencies`;
+  const identified=Number(m.verifiedRecords)||0,analyzed=Number(m.analyzedRecords)||0;$('#mapper-identified').textContent=identified.toLocaleString();$('#mapper-identified-detail').textContent='Authoritative matches or valid decoded frames';$('#mapper-analyzed').textContent=analyzed.toLocaleString();$('#mapper-analyzed-detail').textContent=`${(Number(m.candidateRecords)||0).toLocaleString()} candidates · not verified`;
   const activityAge=p.lastActivityAt?timeAgo(p.lastActivityAt):'';$('#mapper-last-activity').textContent=activityAge?(activityAge==='now'?'Activity now':`Last activity ${activityAge} ago`):'No activity yet';
   $('#mapper-elapsed').textContent=durationBetween(p.startedAt,running?null:p.stoppedAt);
 	const eta=p.estimatedPassEndAt?new Date(p.estimatedPassEndAt):null,remaining=eta?Math.max(0,(eta.getTime()-Date.now())/1000):0;

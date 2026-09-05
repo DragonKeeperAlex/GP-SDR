@@ -309,7 +309,7 @@ func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan s
 		text := strings.Join(transcripts, "\n--- next recording ---\n")
 		combined.Transcript = &text
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
 		select {
@@ -332,7 +332,10 @@ func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan s
 }
 
 func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct{}) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// Each decoder, transcriber, and local-model call owns a bounded timeout.
+	// Do not start a shared deadline while work is waiting behind their
+	// semaphores: a parallel run otherwise fails healthy queued work at 90 s.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
 		select {

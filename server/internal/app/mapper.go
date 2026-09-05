@@ -122,13 +122,15 @@ type MapperJob struct {
 }
 
 type MapperStatus struct {
-	Config          MapperConfig            `json:"config"`
-	LastUpload      *time.Time              `json:"lastUpload,omitempty"`
-	LastError       string                  `json:"lastError,omitempty"`
-	UploadedRows    int                     `json:"uploadedRows"`
-	VerifiedRecords int                     `json:"verifiedRecords"`
-	Records         []MapperFrequencyRecord `json:"records"`
-	Jobs            []MapperJob             `json:"jobs"`
+	Config           MapperConfig            `json:"config"`
+	LastUpload       *time.Time              `json:"lastUpload,omitempty"`
+	LastError        string                  `json:"lastError,omitempty"`
+	UploadedRows     int                     `json:"uploadedRows"`
+	VerifiedRecords  int                     `json:"verifiedRecords"`
+	AnalyzedRecords  int                     `json:"analyzedRecords"`
+	CandidateRecords int                     `json:"candidateRecords"`
+	Records          []MapperFrequencyRecord `json:"records"`
+	Jobs             []MapperJob             `json:"jobs"`
 }
 
 type MapperProgress struct {
@@ -226,6 +228,9 @@ func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	if pruneLegacyMapperFalsePositives(m.records) > 0 {
 		m.persistRecords()
 	}
+	if pruneInvalidMapperDecoderBanners(m.records) > 0 {
+		m.persistRecords()
+	}
 	if m.config.Mode == "" {
 		m.config.Mode = "discovery"
 	}
@@ -234,6 +239,24 @@ func NewMapperManager(dataDirectory string, events *EventStore) *MapperManager {
 	}
 	go m.loop()
 	return m
+}
+
+func pruneInvalidMapperDecoderBanners(records map[string]MapperFrequencyRecord) int {
+	updated := 0
+	for key, record := range records {
+		if canonicalDecoderID(record.CandidateDecoder) != "dsd-fme" || decoderLineIsEvidence("dsd-fme", record.DetectionEvidence) {
+			continue
+		}
+		if record.DetectionStatus != "confirmed" && !record.IdentificationVerified {
+			continue
+		}
+		record.DetectionStatus, record.DetectionEvidence = "candidate", ""
+		if strings.HasPrefix(record.VerificationReason, "Valid ") {
+			record.IdentificationVerified, record.VerificationReason, record.ReferenceDistanceMiles = false, "", nil
+		}
+		records[key], updated = record, updated+1
+	}
+	return updated
 }
 
 // Older builds could create a hit before a per-frequency noise baseline was
@@ -258,10 +281,40 @@ func (m *MapperManager) Status() MapperStatus {
 	for _, record := range m.records {
 		records = append(records, record)
 	}
-	sort.Slice(records, func(i, j int) bool { return records[i].FrequencyHz < records[j].FrequencyHz })
-	if len(records) > 5000 {
-		records = records[len(records)-5000:]
+	verifiedRecords, analyzedRecords, candidateRecords := 0, 0, 0
+	for _, record := range records {
+		if mapperRecordFullyIdentified(record) {
+			verifiedRecords++
+		}
+		if strings.TrimSpace(record.AnalysisSummary) != "" {
+			analyzedRecords++
+		}
+		if strings.TrimSpace(record.Name) != "" || strings.TrimSpace(record.ProtocolName) != "" || strings.TrimSpace(record.CandidateDecoder) != "" {
+			candidateRecords++
+		}
 	}
+	// Keep the bounded UI response useful on very large sweeps. Previously the
+	// highest 5,000 frequencies won, silently hiding every verified lower-band
+	// result and making the counter read zero.
+	sort.Slice(records, func(i, j int) bool {
+		iv, jv := mapperRecordFullyIdentified(records[i]), mapperRecordFullyIdentified(records[j])
+		if iv != jv {
+			return iv
+		}
+		ih, jh := records[i].Hits > 0, records[j].Hits > 0
+		if ih != jh {
+			return ih
+		}
+		ia, ja := strings.TrimSpace(records[i].AnalysisSummary) != "", strings.TrimSpace(records[j].AnalysisSummary) != ""
+		if ia != ja {
+			return ia
+		}
+		return records[i].LastSeen.After(records[j].LastSeen)
+	})
+	if len(records) > 5000 {
+		records = records[:5000]
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].FrequencyHz < records[j].FrequencyHz })
 	jobs := make([]MapperJob, 0, len(m.jobs))
 	for _, job := range m.jobs {
 		jobs = append(jobs, job)
@@ -272,13 +325,7 @@ func (m *MapperManager) Status() MapperStatus {
 		}
 		return jobs[i].CreatedAt.Before(jobs[j].CreatedAt)
 	})
-	verifiedRecords := 0
-	for _, record := range records {
-		if mapperRecordFullyIdentified(record) {
-			verifiedRecords++
-		}
-	}
-	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, VerifiedRecords: verifiedRecords, Records: records, Jobs: jobs}
+	return MapperStatus{Config: m.config, LastUpload: m.lastUpload, LastError: m.lastError, UploadedRows: m.uploadedRows, VerifiedRecords: verifiedRecords, AnalyzedRecords: analyzedRecords, CandidateRecords: candidateRecords, Records: records, Jobs: jobs}
 }
 
 func (m *MapperManager) Progress() MapperProgress {
@@ -980,6 +1027,7 @@ func (m *MapperManager) SetSignalIntelligence(frequencyHz float64, analysis Sign
 }
 
 func (m *MapperManager) SetDecodedMessages(frequencyHz float64, decoderID string, messages []DecoderMessage) {
+	messages = validDecoderMessages(messages)
 	if len(messages) == 0 {
 		return
 	}

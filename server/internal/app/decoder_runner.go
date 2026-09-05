@@ -380,7 +380,7 @@ func parseTextDecoderOutput(decoderID, output string) []DecoderMessage {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		match := decoderProtocolPattern.FindString(line)
-		if line == "" || match == "" {
+		if line == "" || match == "" || !decoderLineIsEvidence(decoderID, line) {
 			continue
 		}
 		if len(line) > 1000 {
@@ -400,6 +400,30 @@ func parseTextDecoderOutput(decoderID, output string) []DecoderMessage {
 		}
 	}
 	return result
+}
+
+func decoderLineIsEvidence(decoderID, line string) bool {
+	if canonicalDecoderID(decoderID) != "dsd-fme" {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(line))
+	for _, marker := range []string{"decoding auto", "decoder options", "enabled protocols", "p25, ysf", "p25 dmr"} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	// DSD-FME status banners name protocols but contain no received frame.
+	return decoderSlotPattern.MatchString(line) || decoderColorCodePattern.MatchString(line) || decoderTalkgroupPattern.MatchString(line) || decoderSourcePattern.MatchString(line) || strings.Contains(lower, "voice") || strings.Contains(lower, "data") || strings.Contains(lower, "sync") || strings.Contains(lower, "nac:") || strings.Contains(lower, "wacn")
+}
+
+func validDecoderMessages(messages []DecoderMessage) []DecoderMessage {
+	valid := make([]DecoderMessage, 0, len(messages))
+	for _, message := range messages {
+		if decoderLineIsEvidence(message.DecoderID, firstNonEmpty(message.RawText, message.Summary)) {
+			valid = append(valid, message)
+		}
+	}
+	return valid
 }
 
 func decoderInteger(pattern *regexp.Regexp, value string) int {

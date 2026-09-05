@@ -227,9 +227,15 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	if output.Confidence*100 < float64(config.MinimumConfidence) {
 		output.SignalFamily, output.Modulation = "Unknown", "UNKNOWN"
 	}
-	return SignalIntelligence{Engine: "GP-SDR local model · " + config.Model, SignalFamily: firstNonEmpty(strings.TrimSpace(output.SignalFamily), "Unknown"),
-		Modulation: firstNonEmpty(strings.ToUpper(strings.TrimSpace(output.Modulation)), "UNKNOWN"), Confidence: output.Confidence,
-		Summary: strings.TrimSpace(output.Summary), Evidence: output.Evidence, Callsigns: mergeUniqueStrings(output.Callsigns, ExtractCallsigns(stringValue(event.Transcript)))}, nil
+	family := firstNonEmpty(strings.TrimSpace(output.SignalFamily), "Unknown")
+	modulation := firstNonEmpty(strings.ToUpper(strings.TrimSpace(output.Modulation)), "UNKNOWN")
+	// Free-form model prose routinely contradicted the structured result (for
+	// example a P25 family paired with an "analog" summary). Store a concise
+	// structured candidate instead; decoded frames remain the verification gate.
+	summary := fmt.Sprintf("Local evidence candidate: %s · %s · %.0f%%", family, modulation, output.Confidence*100)
+	return SignalIntelligence{Engine: "GP-SDR local model · " + config.Model, SignalFamily: family,
+		Modulation: modulation, Confidence: output.Confidence,
+		Summary: summary, Evidence: output.Evidence, Callsigns: mergeUniqueStrings(output.Callsigns, ExtractCallsigns(stringValue(event.Transcript)))}, nil
 }
 
 func localAIContext(profile string) int {

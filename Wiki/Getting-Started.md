@@ -33,9 +33,9 @@ token, private-network firewall access, updates, logs, and backups.
 Install the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.5.0-rc11_amd64.deb
+sudo apt install ./gp-sdr_1.5.0-rc12_amd64.deb
 # 64-bit ARM:
-sudo apt install ./gp-sdr_1.5.0-rc11_arm64.deb
+sudo apt install ./gp-sdr_1.5.0-rc12_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -90,7 +90,7 @@ squelch, and audio before attempting P25.
 
 ## Confirm the version and choose the next task
 
-Download packages from [GitHub Releases](https://github.com/DragonKeeperAlex/GP-SDR/releases) and check **Settings → Build → Version** after installation. Package examples target 1.5.0-rc11. Keep the previous application and a stopped-service backup of your data when updating.
+Download packages from [GitHub Releases](https://github.com/DragonKeeperAlex/GP-SDR/releases) and check **Settings → Build → Version** after installation. Package examples target 1.5.0-rc12. Keep the previous application and a stopped-service backup of your data when updating.
 
 Once one known signal works, stop the Tuner before giving that same radio to a profile, Mapper, or P25. Continue with [Profiles](Profiles-and-Mixer), [Mapper](Mapper-Discovery-and-Identify), or [P25](P25-and-Decoders). On a phone, scroll the bottom navigation to reach all workspaces.
 

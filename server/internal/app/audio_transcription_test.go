@@ -87,7 +87,7 @@ func TestTranscriptionNoSpeechGate(t *testing.T) {
 	if transcriptionNoSpeech(weakVoice, 16000) {
 		t.Fatal("quiet modulated waveform incorrectly gated")
 	}
-	if got := cleanRadioTranscript("[sounds of water]\nK6ABC, check the engine.\n(engine noises)"); got != "K6ABC, check the engine." {
+	if got := cleanRadioTranscript("[sounds of water]\nK6ABC, check the engine.\n(engine noises)\n[MUSIC PLAYING]\n[explosion]\n(crickets chirping)"); got != "K6ABC, check the engine." {
 		t.Fatalf("unexpected cleaned transcript: %q", got)
 	}
 }
