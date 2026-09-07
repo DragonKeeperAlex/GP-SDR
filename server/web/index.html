@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css?v=1.5.0-rc8a">
   <link rel="stylesheet" href="/console.css?v=1.5.0-rc8a">
-  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc15">
+  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc16">
 </head>
 <body>
   <div class="shell">
@@ -484,14 +484,14 @@
 		  </article>
 		  <header class="settings-section-title"><div><h2>Local intelligence</h2><p>On-device signal correlation and confirmed learning.</p></div></header>
 		  <article class="panel settings-card local-ai-card">
-		    <div class="settings-card-head"><div><h2>Local signal intelligence</h2><p>Correlate DSP, decoder, transcript, frequency, location, and history evidence on this computer.</p></div><span id="local-ai-state" class="chip">Off</span></div>
+		    <div class="settings-card-head"><div><h2>Local signal intelligence</h2><p>Use Ollama on this Mac or a private-network computer. IQ and audio never leave GP-SDR.</p></div><span id="local-ai-state" class="chip">Off</span></div>
 		    <form id="local-ai-form" class="display-settings">
 		      <label class="check-line"><input id="local-ai-enabled" type="checkbox"> Analyze Mapper evidence locally</label>
 		      <label>Performance<select id="local-ai-profile"><option value="lightweight">Lightweight</option><option value="balanced">Balanced</option><option value="deep">Deep analysis</option></select></label>
-		      <label>Model<input id="local-ai-model" autocomplete="off" value="qwen2.5:1.5b" placeholder="qwen2.5:1.5b"></label>
-		      <label>Local service<input id="local-ai-endpoint" type="url" autocomplete="off" value="http://127.0.0.1:11434"></label>
+		      <label>Model<input id="local-ai-model" list="local-ai-models" autocomplete="off" value="qwen2.5:1.5b" placeholder="Choose an available model"><datalist id="local-ai-models"></datalist><small id="local-ai-model-hint">Choose speed or depth; availability comes from the selected Ollama server.</small></label>
+		      <label>Ollama server<input id="local-ai-endpoint" type="url" autocomplete="off" value="http://127.0.0.1:11434" placeholder="http://192.168.1.54:11434" title="Use localhost or a private-network IP address running Ollama."></label>
 		      <label>Minimum confidence<select id="local-ai-confidence"><option value="40">40%</option><option value="50">50%</option><option value="55">55%</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option></select></label>
-		      <button class="primary" type="submit">Save</button>
+		      <button class="primary" type="submit">Save &amp; test</button>
 		    </form>
 		    <div class="range-sync-actions"><a id="local-ai-export" class="setup-link" href="/api/local-ai/learning/export" title="Export user-confirmed examples as JSON Lines for classifier or model training">Export confirmed training set ↗</a></div>
 		    <p id="local-ai-detail" class="range-sync-detail">The model receives metadata only; raw IQ and audio remain in GP-SDR.</p>
@@ -626,7 +626,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc15"></script>
-  <script src="/explore.js?v=1.5.0-rc15"></script>
+  <script src="/app.js?v=1.5.0-rc16"></script>
+  <script src="/explore.js?v=1.5.0-rc16"></script>
 </body>
 </html>

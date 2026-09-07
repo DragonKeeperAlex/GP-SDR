@@ -32,7 +32,15 @@ type LocalAIStatus struct {
 	Note      string                `json:"note"`
 	Config    LocalAIConfig         `json:"config"`
 	CanManage bool                  `json:"canManage"`
+	Models    []LocalAIModelOption  `json:"models,omitempty"`
 	Learning  LearningLibraryStatus `json:"learning"`
+}
+
+type LocalAIModelOption struct {
+	Name          string `json:"name"`
+	SizeBytes     int64  `json:"sizeBytes,omitempty"`
+	ParameterSize string `json:"parameterSize,omitempty"`
+	Quantization  string `json:"quantization,omitempty"`
 }
 
 type LocalAIAnalyzer struct {
@@ -84,16 +92,16 @@ func normalizeLocalAIConfig(config LocalAIConfig) LocalAIConfig {
 
 func validateLocalAIEndpoint(raw string) error {
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "http" || parsed.Hostname() == "" {
-		return errors.New("enter a local HTTP model address")
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return errors.New("enter an Ollama HTTP address without a path, query, or credentials")
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if host == "localhost" {
 		return nil
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return errors.New("the model address must be localhost; GP-SDR does not send radio evidence to remote services")
+	if ip == nil || (!ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast()) {
+		return errors.New("the Ollama server must use localhost or a private-network IP address")
 	}
 	return nil
 }
@@ -114,7 +122,7 @@ func (a *LocalAIAnalyzer) Status() LocalAIStatus {
 		status.State, status.Note = "error", err.Error()
 		return status
 	}
-	probeContext, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	probeContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	request, _ := http.NewRequestWithContext(probeContext, http.MethodGet, config.Endpoint+"/api/tags", nil)
 	response, err := a.client.Do(request)
@@ -127,7 +135,31 @@ func (a *LocalAIAnalyzer) Status() LocalAIStatus {
 		status.State, status.Note = "error", "The local model service did not answer correctly."
 		return status
 	}
-	status.State, status.Note = "ready", "Local evidence synthesis is ready. IQ and audio stay on this computer."
+	var tags struct {
+		Models []struct {
+			Name    string `json:"name"`
+			Size    int64  `json:"size"`
+			Details struct {
+				ParameterSize     string `json:"parameter_size"`
+				QuantizationLevel string `json:"quantization_level"`
+			} `json:"details"`
+		} `json:"models"`
+	}
+	if json.NewDecoder(response.Body).Decode(&tags) == nil {
+		configuredModelFound := false
+		for _, model := range tags.Models {
+			if strings.Contains(strings.ToLower(model.Name), "embed") {
+				continue
+			}
+			status.Models = append(status.Models, LocalAIModelOption{Name: model.Name, SizeBytes: model.Size, ParameterSize: model.Details.ParameterSize, Quantization: model.Details.QuantizationLevel})
+			configuredModelFound = configuredModelFound || model.Name == config.Model
+		}
+		if !configuredModelFound {
+			status.State, status.Note = "setup", "The selected model is not installed on this Ollama server. Choose one of the available models."
+			return status
+		}
+	}
+	status.State, status.Note = "ready", "Evidence synthesis is ready. Only bounded text metadata is sent to the configured Ollama server; IQ and audio stay in GP-SDR."
 	return status
 }
 
@@ -176,7 +208,7 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	}
 	metadata := map[string]any{"frequencyHz": event.FrequencyHz, "bandwidthHz": event.BandwidthHz, "observedModulation": event.Modulation,
 		"signalDBFS": event.SignalDBFS, "noiseDBFS": event.NoiseDBFS, "transcript": stringValue(event.Transcript), "callsigns": event.Callsigns,
-		"decoderMessages": event.DecoderMessages, "waveformAnalysis": event.Analysis, "location": event.Location}
+		"decoderMessages": event.DecoderMessages, "waveformAnalysis": event.Analysis, "frequencyBand": radioFrequencyBand(event.FrequencyHz), "location": event.Location}
 	encoded, _ := json.Marshal(metadata)
 	examples := []ConfirmedSignalSample{}
 	if a.learning != nil {
@@ -191,7 +223,10 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 		"signalFamily": map[string]any{"type": "string"}, "modulation": map[string]any{"type": "string"}, "summary": map[string]any{"type": "string"},
 		"confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1}, "evidence": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		"callsigns": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}}
-	requestBody, _ := json.Marshal(map[string]any{"model": config.Model, "prompt": prompt, "stream": false, "format": format, "options": map[string]any{"temperature": 0.1, "num_ctx": localAIContext(config.Profile)}})
+	// Radio analysis needs the schema-constrained answer, not a model's hidden
+	// reasoning stream. Qwen 3.5 can otherwise return only `thinking` and leave
+	// Ollama's `response` empty.
+	requestBody, _ := json.Marshal(map[string]any{"model": config.Model, "prompt": prompt, "stream": false, "think": false, "format": format, "options": map[string]any{"temperature": 0.1, "num_ctx": localAIContext(config.Profile)}})
 	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, config.Endpoint+"/api/generate", bytes.NewReader(requestBody))
@@ -215,6 +250,14 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 		return SignalIntelligence{}, errors.New("local model returned invalid identification JSON")
 	}
 	output.Confidence = clamp(output.Confidence, 0, 1)
+	expectedBand := radioFrequencyBand(event.FrequencyHz)
+	reportedBand := reportedRadioBand(output.SignalFamily)
+	if expectedBand != "" && reportedBand != "" && reportedBand != expectedBand {
+		output.Evidence = append(output.Evidence, "Model frequency band corrected from "+reportedBand+" to "+expectedBand)
+		output.SignalFamily = strings.Replace(output.SignalFamily, reportedBand, expectedBand, 1)
+		output.SignalFamily = strings.Replace(output.SignalFamily, strings.ToLower(reportedBand), expectedBand, 1)
+		output.Confidence = minFloat(output.Confidence, .69)
+	}
 	measuredModulation := strings.ToUpper(strings.TrimSpace(event.Modulation))
 	if event.Analysis != nil && event.Analysis.Confidence >= .55 && event.Analysis.Modulation != "" && event.Analysis.Modulation != "UNKNOWN" {
 		measuredModulation = strings.ToUpper(event.Analysis.Modulation)
@@ -235,7 +278,34 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	summary := fmt.Sprintf("Local evidence candidate: %s · %s · %.0f%%", family, modulation, output.Confidence*100)
 	return SignalIntelligence{Engine: "GP-SDR local model · " + config.Model, SignalFamily: family,
 		Modulation: modulation, Confidence: output.Confidence,
-		Summary: summary, Evidence: output.Evidence, Callsigns: mergeUniqueStrings(output.Callsigns, ExtractCallsigns(stringValue(event.Transcript)))}, nil
+		Summary: summary, Evidence: output.Evidence, Callsigns: mergeUniqueStrings(
+			ExtractCallsigns(strings.Join(output.Callsigns, " ")),
+			ExtractCallsigns(stringValue(event.Transcript)))}, nil
+}
+
+func radioFrequencyBand(frequencyHz float64) string {
+	switch {
+	case frequencyHz >= 3e6 && frequencyHz < 30e6:
+		return "HF"
+	case frequencyHz >= 30e6 && frequencyHz < 300e6:
+		return "VHF"
+	case frequencyHz >= 300e6 && frequencyHz < 1e9:
+		return "UHF"
+	case frequencyHz >= 1e9 && frequencyHz < 30e9:
+		return "SHF"
+	default:
+		return ""
+	}
+}
+
+func reportedRadioBand(family string) string {
+	upper := strings.ToUpper(family)
+	for _, band := range []string{"SHF", "UHF", "VHF", "HF"} {
+		if strings.Contains(upper, band) {
+			return band
+		}
+	}
+	return ""
 }
 
 func localAIContext(profile string) int {

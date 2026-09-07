@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -159,18 +160,41 @@ func transcriptionNoSpeech(samples []int16, rate int) bool {
 	return cv < .07 && float64(crossings)/float64(len(samples)-1) > .40
 }
 
-// Remove standalone sound-effect captions, not spoken sentences about those
-// sounds. Unknown annotations are retained rather than guessing they are junk.
+var transcriptAnnotationPattern = regexp.MustCompile(`\[[^\[\]\n]{1,160}\]|\([^()\n]{1,160}\)`)
+
+func noiseCaption(value string) bool {
+	key := strings.ToLower(strings.Trim(value, "[]() .,*_\t"))
+	if key == "" || key == "blank_audio" || key == "no speech" || key == "inaudible" || key == "unintelligible" || key == "sound" || key == "silence" {
+		return true
+	}
+	for _, marker := range []string{"static", "noise", "music", "water", "engine", "tire", "screech", "gunfire", "gunshot", "explosion", "helicopter", "airplane", "plane flying", "machine", "machinery", "traffic", "train", "vacuum", "clipper", "buzz", "click", "beep", "bang", "cricket", "phone ringing", "applause", "clap", "wind", "fart"} {
+		if strings.Contains(key, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// Remove model-generated stage directions while preserving actual speech on
+// the same line. Repeated annotations such as "(static) (static)" previously
+// bypassed the exact-string filter and polluted thousands of results.
 func cleanRadioTranscript(raw string) string {
 	lines := []string{}
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
-		key := strings.ToLower(strings.Trim(line, "[]() .*\t"))
-		switch key {
-		case "", "blank_audio", "no speech", "silence", "static", "noise", "music", "music playing", "water sounds", "sounds of water", "water flowing", "engine noises", "engine noise", "engine sounds", "sound of engine", "sound of a machine running", "sound of a radio", "sound of a radio traffic", "wind blowing", "wind noise", "applause", "inaudible", "explosion", "gunshots", "crickets chirping", "phone ringing":
-			continue
+		line = transcriptAnnotationPattern.ReplaceAllStringFunc(line, func(annotation string) string {
+			if noiseCaption(annotation) {
+				return " "
+			}
+			return annotation
+		})
+		line = strings.TrimSpace(strings.Join(strings.Fields(line), " "))
+		if noiseCaption(line) && len(strings.Fields(line)) <= 6 && len(ExtractCallsigns(line)) == 0 {
+			line = ""
 		}
-		lines = append(lines, line)
+		if line != "" {
+			lines = append(lines, line)
+		}
 	}
 	return strings.Join(lines, "\n")
 }

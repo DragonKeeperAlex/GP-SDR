@@ -31,6 +31,30 @@ func appendDurableJSON(path string, value any) error {
 	return errors.Join(err, file.Close())
 }
 
+func appendDurableJSONBatch(path string, values []TransmissionEvent) error {
+	if len(values) == 0 {
+		return nil
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	writer := bufio.NewWriterSize(file, 256*1024)
+	encoder := json.NewEncoder(writer)
+	for _, value := range values {
+		if err = encoder.Encode(value); err != nil {
+			break
+		}
+	}
+	if err == nil {
+		err = writer.Flush()
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	return errors.Join(err, file.Close())
+}
+
 func (s *EventStore) persistUpdateLocked(index int) error {
 	return appendDurableJSON(s.updatesPath(), s.events[index])
 }

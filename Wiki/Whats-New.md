@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc15
+# What’s new through GP-SDR 1.5.0-rc16
+
+## 1.5.0-rc16: cleaner transcripts and private Ollama servers
+
+Repeated non-speech captions are removed without discarding real speech on the same line. GP-SDR can now use Ollama on a private-network computer, and Qwen 3.5 structured responses work by disabling reasoning-only output for radio classification.
 
 ## 1.5.0-rc15: live cleanup reconciliation
 

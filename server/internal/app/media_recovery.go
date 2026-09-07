@@ -18,13 +18,17 @@ import (
 )
 
 type MediaRecoveryReport struct {
-	CheckedAt   time.Time `json:"checkedAt"`
-	Recovered   int       `json:"recovered"`
-	Relinked    int       `json:"relinked"`
-	Missing     int       `json:"missing"`
-	Unavailable int       `json:"unavailable"`
-	Invalid     int       `json:"invalid"`
-	Requeued    int       `json:"requeued"`
+	CheckedAt               time.Time `json:"checkedAt"`
+	Recovered               int       `json:"recovered"`
+	Relinked                int       `json:"relinked"`
+	Missing                 int       `json:"missing"`
+	Unavailable             int       `json:"unavailable"`
+	Invalid                 int       `json:"invalid"`
+	Requeued                int       `json:"requeued"`
+	TranscriptsCleaned      int       `json:"transcriptsCleaned"`
+	DecoderEvidenceCleaned  int       `json:"decoderEvidenceCleaned"`
+	CallsignsCleaned        int       `json:"callsignsCleaned"`
+	AnalysisStatesRecovered int       `json:"analysisStatesRecovered"`
 }
 
 // ReconcileMedia runs before receiver/analysis workers start. It never deletes
@@ -81,31 +85,51 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 		report.Recovered++
 	}
 	referenced := map[string]bool{}
+	updatedEvents := make([]TransmissionEvent, 0)
 	for index := range s.events {
 		before := s.events[index]
 		event := before
+		requiresReanalysis := false
 		if event.AnalysisStatus != "unavailable" {
 			event.MediaIssues = nil
 		}
 		hadMediaReference := event.AudioPath != nil || event.IQPath != nil
 		filteredMessages := validDecoderMessages(event.DecoderMessages)
 		if len(filteredMessages) != len(event.DecoderMessages) {
+			report.DecoderEvidenceCleaned++
 			event.DecoderMessages = filteredMessages
 			event.Analysis = nil
+			requiresReanalysis = true
 			if len(filteredMessages) == 0 {
 				event.ProtocolName = nil
 				event.Confidence = minFloat(event.Confidence, .72)
 			}
 		}
+		validCallsigns := ExtractCallsigns(strings.Join(event.Callsigns, " "))
+		if len(event.Callsigns) > 0 && !reflect.DeepEqual(validCallsigns, event.Callsigns) {
+			event.Callsigns = validCallsigns
+			report.CallsignsCleaned++
+		}
+		if event.Analysis != nil {
+			validAnalysisCallsigns := ExtractCallsigns(strings.Join(event.Analysis.Callsigns, " "))
+			if len(event.Analysis.Callsigns) > 0 && !reflect.DeepEqual(validAnalysisCallsigns, event.Analysis.Callsigns) {
+				analysis := *event.Analysis
+				analysis.Callsigns = validAnalysisCallsigns
+				event.Analysis = &analysis
+				report.CallsignsCleaned++
+			}
+		}
 		if event.Transcript != nil {
 			cleaned := cleanRadioTranscript(*event.Transcript)
 			if cleaned != *event.Transcript {
+				report.TranscriptsCleaned++
 				if cleaned == "" {
 					event.Transcript = nil
 				} else {
 					event.Transcript = ptr(cleaned)
 				}
 				event.Analysis = nil
+				requiresReanalysis = true
 			}
 		}
 		for _, field := range []**string{&event.AudioPath, &event.IQPath} {
@@ -131,7 +155,12 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "pending", "", nil
 			report.Requeued++
 		}
-		if !reflect.DeepEqual(before.Analysis, event.Analysis) && (event.AudioPath != nil || event.IQPath != nil) {
+		if event.AnalysisStatus == "pending" && event.Analysis != nil && event.AnalysisCompletedAt == nil {
+			completedAt := report.CheckedAt
+			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "complete", "", &completedAt
+			report.AnalysisStatesRecovered++
+		}
+		if requiresReanalysis && (event.AudioPath != nil || event.IQPath != nil) {
 			event.AnalysisStatus, event.AnalysisError, event.AnalysisCompletedAt = "pending", "", nil
 			report.Requeued++
 		}
@@ -145,11 +174,12 @@ func (s *EventStore) ReconcileMedia(root string) (MediaRecoveryReport, error) {
 			report.Unavailable++
 		}
 		if !reflect.DeepEqual(before, event) {
-			if err := appendDurableJSON(s.updatesPath(), event); err != nil {
-				return report, err
-			}
 			s.events[index] = event
+			updatedEvents = append(updatedEvents, event)
 		}
+	}
+	if err := appendDurableJSONBatch(s.updatesPath(), updatedEvents); err != nil {
+		return report, err
 	}
 	for _, path := range iqFiles {
 		if referenced[path] {
@@ -268,6 +298,7 @@ func (s *EventStore) ReconcileRemovedMedia() (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	updated := 0
+	updates := make([]TransmissionEvent, 0)
 	for index := range s.events {
 		event := s.events[index]
 		removed := make([]string, 0, 2)
@@ -288,13 +319,11 @@ func (s *EventStore) ReconcileRemovedMedia() (int, error) {
 			event.AnalysisError = "source recording was removed by retention cleanup"
 			event.AnalysisCompletedAt = nil
 		}
-		if err := appendDurableJSON(s.updatesPath(), event); err != nil {
-			return updated, err
-		}
 		s.events[index] = event
+		updates = append(updates, event)
 		updated++
 	}
-	return updated, nil
+	return updated, appendDurableJSONBatch(s.updatesPath(), updates)
 }
 func recoveredEvent(root, path string) TransmissionEvent {
 	relative, _ := filepath.Rel(root, path)

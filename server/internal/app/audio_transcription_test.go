@@ -90,6 +90,12 @@ func TestTranscriptionNoSpeechGate(t *testing.T) {
 	if got := cleanRadioTranscript("[sounds of water]\nK6ABC, check the engine.\n(engine noises)\n[MUSIC PLAYING]\n[explosion]\n(crickets chirping)"); got != "K6ABC, check the engine." {
 		t.Fatalf("unexpected cleaned transcript: %q", got)
 	}
+	if got := cleanRadioTranscript("(tires screeching) (tires screeching)\n[gunfire]\n(helicopter whirring)\n(static) K6ABC radio check"); got != "K6ABC radio check" {
+		t.Fatalf("repeated sound captions survived: %q", got)
+	}
+	if got := cleanRadioTranscript("K6ABC reports engine revving near the road"); got != "K6ABC reports engine revving near the road" {
+		t.Fatalf("spoken sound report was removed: %q", got)
+	}
 }
 
 // Opt-in integration check against an installed model and a speech WAV fixture.
