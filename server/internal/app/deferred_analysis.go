@@ -108,7 +108,7 @@ func (r *Runtime) StartDeferredAnalysis(jobID string, concurrency int) (Deferred
 	r.analysisCurrent, r.analysisActive, r.analysisLog, r.analysisConcurrency = nil, make(map[string]DeferredAnalysisCurrent), nil, concurrency
 	r.appendAnalysisLogLocked("info", 0, "queue", fmt.Sprintf("Queued %d files in %d frequency/location groups · %d parallel", len(events), len(groups), concurrency))
 	r.analysisMu.Unlock()
-	go r.runDeferredAnalysis(groups, stop, concurrency)
+	go r.runDeferredAnalysis(groups, stop, concurrency, strings.TrimSpace(jobID))
 	return r.DeferredAnalysisStatus(), nil
 }
 
@@ -122,7 +122,7 @@ func (r *Runtime) StopDeferredAnalysis() DeferredAnalysisStatus {
 	return r.DeferredAnalysisStatus()
 }
 
-func (r *Runtime) runDeferredAnalysis(groups [][]TransmissionEvent, stop <-chan struct{}, concurrency int) {
+func (r *Runtime) runDeferredAnalysis(groups [][]TransmissionEvent, stop <-chan struct{}, concurrency int, jobID string) {
 	defer func() {
 		r.analysisMu.Lock()
 		r.analysisRunning, r.analysisStop = false, nil
@@ -130,6 +130,65 @@ func (r *Runtime) runDeferredAnalysis(groups [][]TransmissionEvent, stop <-chan 
 		r.analysisActive = nil
 		r.analysisMu.Unlock()
 	}()
+	// Keep accepting captures produced by a running Mapper job. Previously this
+	// worker consumed only the startup snapshot, so a long collection could
+	// finish analysis and immediately reveal another very large queue.
+	idleSince := time.Time{}
+	for {
+		if len(groups) == 0 {
+			r.mu.RLock()
+			mapperRunning := len(r.mapperJobs) > 0
+			r.mu.RUnlock()
+			if !mapperRunning {
+				return
+			}
+			if idleSince.IsZero() {
+				idleSince = time.Now()
+				r.analysisMu.Lock()
+				r.appendAnalysisLogLocked("info", 0, "queue", "Caught up; watching 30 seconds for new captures")
+				r.analysisMu.Unlock()
+			}
+			if time.Since(idleSince) >= 30*time.Second {
+				return
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(2 * time.Second):
+			}
+			groups = groupDeferredEvents(r.Events.PendingAnalysis(0, jobID))
+			if len(groups) > 0 {
+				r.registerDeferredGroups(groups)
+			}
+			continue
+		}
+		idleSince = time.Time{}
+		r.runDeferredWave(groups, stop, concurrency)
+		select {
+		case <-stop:
+			return
+		default:
+		}
+		groups = groupDeferredEvents(r.Events.PendingAnalysis(0, jobID))
+		if len(groups) > 0 {
+			r.registerDeferredGroups(groups)
+		}
+	}
+}
+
+func (r *Runtime) registerDeferredGroups(groups [][]TransmissionEvent) {
+	files := 0
+	for _, group := range groups {
+		files += len(group)
+	}
+	r.analysisMu.Lock()
+	r.analysisTotal += files
+	r.analysisGroups += len(groups)
+	r.appendAnalysisLogLocked("info", 0, "queue", fmt.Sprintf("Added %d new files in %d groups from live collection", files, len(groups)))
+	r.analysisMu.Unlock()
+}
+
+func (r *Runtime) runDeferredWave(groups [][]TransmissionEvent, stop <-chan struct{}, concurrency int) {
 	work := make(chan []TransmissionEvent)
 	var workers sync.WaitGroup
 	for worker := 0; worker < concurrency; worker++ {

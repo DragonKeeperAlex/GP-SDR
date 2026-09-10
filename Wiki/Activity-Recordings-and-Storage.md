@@ -32,7 +32,7 @@ Open **Settings → Data**:
 4. Press **Save limits**.
 5. Use **Clean now** only after reviewing the limits and confirming removal.
 
-Cleanup targets old files in GP-SDR’s Recordings and IQ directories and protects files modified in the last ten minutes. It does not remove profiles, Mapper result history, calibration, or imported channel databases. Saving limits is distinct from enabling automatic cleanup. Profile event retention and capture-file limits are separate controls.
+Cleanup targets old files in GP-SDR’s Recordings and IQ directories and protects files modified in the last ten minutes. Results and event history live separately under Data: removing IQ/audio clears the media link but preserves the frequency, hit history, identity, transcript, decoder metadata, and other recorded results. Those records are deleted only by an explicit results/history clear action. Saving limits is distinct from enabling automatic cleanup. Profile event retention and capture-file limits are separate controls.
 
 ## Understand managed Mapper IQ
 

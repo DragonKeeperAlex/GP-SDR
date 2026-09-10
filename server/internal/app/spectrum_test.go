@@ -63,3 +63,17 @@ func TestBuildSpectrumSnapshotFindsCarrierAndFrequencySpan(t *testing.T) {
 		t.Fatalf("expected peak near bin %d, got %d", expected, peak)
 	}
 }
+
+func TestRuntimeKeepsIndependentReceiverSpectra(t *testing.T) {
+	runtime := &Runtime{deviceSpectra: make(map[string]SpectrumSnapshot)}
+	data := make([]byte, 8192*2)
+	for index := range data {
+		data[index] = byte(index)
+	}
+	runtime.updateSpectrum("hackrf-1", CaptureSpec{CenterFrequencyHz: 100e6, SampleRateHz: 1e6}, data, ComplexSigned8)
+	runtime.updateSpectrum("rtlsdr-1", CaptureSpec{CenterFrequencyHz: 460e6, SampleRateHz: 1e6}, data, ComplexSigned8)
+	items := runtime.Spectra(256)
+	if len(items) != 2 || len(items[0].BinsDBFS) != 256 || items[0].DeviceID != "hackrf-1" || items[1].DeviceID != "rtlsdr-1" {
+		t.Fatalf("unexpected independent spectra: %#v", items)
+	}
+}

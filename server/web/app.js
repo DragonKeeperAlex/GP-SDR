@@ -1,7 +1,7 @@
 const state = {
   status: null, profiles: [], events: [], signals: [], devices: [], decoders: [], mixer: [],
-  integrations: null, setup: null, p25Status: null, spectrum: null, referenceResult: null,
-  rangeSync: null, localDatabase: null, localAI: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, analysisStatus: null, remoteReceivers: [], transmitStatus: null,
+  integrations: null, setup: null, p25Status: null, spectrum: null, spectra: [], referenceResult: null,
+  rangeSync: null, localDatabase: null, localAI: null, localAIBenchmark: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, analysisStatus: null, remoteReceivers: [], transmitStatus: null,
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live',
   p25ProfileID: null, p25DeviceID: '', p25Search: '', p25ActiveOnly: false,
   p25Order: localStorage.getItem('gpsdr-p25-order') || 'recent',
@@ -26,6 +26,7 @@ const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20
 const spectrumHistory = new WeakMap();
 const spectrumPeaks = new WeakMap();
 const spectrumCursors = new WeakMap();
+const receiverWaterfalls = new Map();
 let tunerHistory=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-tuner-history')||'[]')}catch(_){return []}})();
 let mapperResultsCollapsed=localStorage.getItem('gpsdr-mapper-results-collapsed')==='true';
 
@@ -142,6 +143,7 @@ function setView(view) {
   const copy = {
     live: ['Live', 'Receiver and channel mixer'],
     band: ['Band monitor', 'Whole-band channel audio and tone detection'],
+	rfmonitor: ['RF monitor', 'Live spectrum and waterfall for every active receiver'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
     transmit: ['Transmit', 'Guarded HackRF audio playback'],
     activity: ['Activity', 'Signals and transmission history'],
@@ -157,6 +159,7 @@ function setView(view) {
   $('#view-subtitle').textContent = copy[1];
   document.title = `${copy[0]} · GP-SDR`;
   if (view === 'tuner' || view === 'mapper') { drawSpectrum(); drawWaterfall(); if(view==='mapper')renderMapperRF(); }
+	if(view==='rfmonitor')renderRFMonitor();
 }
 
 function setMapperPage(page){
@@ -168,12 +171,12 @@ function setMapperPage(page){
 
 async function refreshAll() {
   try {
-    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, rangeSync, localDatabase, localAI, calibrations, characterization, mapper, mapperProgress, analysisStatus, remoteReceivers, transmitStatus] = await Promise.all([
+    const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, spectra, rangeSync, localDatabase, localAI, localAIBenchmark, calibrations, characterization, mapper, mapperProgress, analysisStatus, remoteReceivers, transmitStatus] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
-      api('/api/p25/status'), api('/api/spectrum'), api('/api/range-sync'), api('/api/local-database'), api('/api/local-ai'), api('/api/calibrations'), api('/api/calibrations/characterization'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/analysis'), api('/api/remote-receivers'), api('/api/transmit/status')
+      api('/api/p25/status'), api('/api/spectrum'), api('/api/spectra'), api('/api/range-sync'), api('/api/local-database'), api('/api/local-ai'), api('/api/local-ai/benchmark'), api('/api/calibrations'), api('/api/calibrations/characterization'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/analysis'), api('/api/remote-receivers'), api('/api/transmit/status')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, rangeSync, localDatabase, localAI, calibrations: calibrations || [], characterization, mapper, mapperProgress, analysisStatus, remoteReceivers: remoteReceivers || [], transmitStatus });
+    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, spectra: spectra || [], rangeSync, localDatabase, localAI, localAIBenchmark, calibrations: calibrations || [], characterization, mapper, mapperProgress, analysisStatus, remoteReceivers: remoteReceivers || [], transmitStatus });
     if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
       state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
     }
@@ -193,15 +196,21 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderBandMonitor(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); renderTransmit(); renderDecoders(); renderMapper(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); renderTransmit(); renderDecoders(); renderMapper(); renderRFMonitor(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
 }
+
+function drawReceiverSpectrum(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(120,Math.floor(170*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}const ctx=canvas.getContext('2d'),bins=snapshot.binsDBFS||[];ctx.clearRect(0,0,width,height);ctx.fillStyle='#080b0f';ctx.fillRect(0,0,width,height);if(!bins.length)return;ctx.beginPath();bins.forEach((value,index)=>{const x=index/Math.max(1,bins.length-1)*width,y=Math.max(0,Math.min(height,(1-(value+120)/110)*height));index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle='#4dd6aa';ctx.lineWidth=Math.max(1,ratio);ctx.stroke();ctx.lineTo(width,height);ctx.lineTo(0,height);ctx.closePath();ctx.fillStyle='rgba(77,214,170,.10)';ctx.fill();}
+function drawReceiverWaterfall(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(90,Math.floor(120*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}let history=receiverWaterfalls.get(snapshot.deviceID);if(!history)history={last:'',rows:[]};if(history.last!==snapshot.capturedAt&&snapshot.binsDBFS?.length){history.last=snapshot.capturedAt;history.rows.unshift([...snapshot.binsDBFS]);history.rows=history.rows.slice(0,80);receiverWaterfalls.set(snapshot.deviceID,history);}const ctx=canvas.getContext('2d');ctx.fillStyle='#05070a';ctx.fillRect(0,0,width,height);if(!history.rows.length)return;const sourceWidth=history.rows.reduce((count,row)=>Math.max(count,row.length),1),image=ctx.createImageData(sourceWidth,80);history.rows.forEach((row,y)=>row.forEach((value,x)=>{const [red,green,blue]=waterfallColor(value),offset=(y*sourceWidth+x)*4;image.data[offset]=red;image.data[offset+1]=green;image.data[offset+2]=blue;image.data[offset+3]=255;}));const scratch=document.createElement('canvas');scratch.width=sourceWidth;scratch.height=80;scratch.getContext('2d').putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(scratch,0,0,width,height);}
+function renderRFMonitor(){const root=$('#rf-monitor-grid');if(!root)return;const items=state.spectra||[],now=Date.now();$('#rf-monitor-state').textContent=items.length?`${items.length} receiver${items.length===1?'':'s'}`:'Waiting';$('#rf-monitor-state').className=`chip ${items.length?'ready':''}`;root.className=items.length?'rf-monitor-grid':'rf-monitor-grid empty-state compact';root.innerHTML=items.length?items.map((snapshot,index)=>{const device=state.devices.find(item=>item.id===snapshot.deviceID),age=Math.max(0,(now-new Date(snapshot.capturedAt))/1000);return `<article class="rf-monitor-card"><div><strong>${escapeHTML(device?receiverLabel(device):snapshot.deviceID)}</strong><small>${formatFrequency(snapshot.startFrequencyHz)} – ${formatFrequency(snapshot.endFrequencyHz)} · ${(snapshot.sampleRateHz/1e6).toFixed(2)} MS/s · ${age<2?'live':`${Math.round(age)}s old`}</small></div><label>Spectrum</label><canvas data-spectrum-index="${index}" height="170"></canvas><label>Waterfall</label><canvas class="rf-waterfall" data-waterfall-index="${index}" height="120"></canvas><div class="frequency-axis"><span>${formatFrequency(snapshot.startFrequencyHz)}</span><span>${formatFrequency(snapshot.centerFrequencyHz)}</span><span>${formatFrequency(snapshot.endFrequencyHz)}</span></div></article>`;}).join(''):'Start a receiver or Mapper job to watch it here.';items.forEach((snapshot,index)=>{drawReceiverSpectrum(root.querySelector(`[data-spectrum-index="${index}"]`),snapshot);drawReceiverWaterfall(root.querySelector(`[data-waterfall-index="${index}"]`),snapshot);});}
 
 function renderLocalAI(){
   const status=state.localAI,form=$('#local-ai-form');if(!status||!form)return;const config=status.config||{},focused=form.contains(document.activeElement);
-  if(!focused){$('#local-ai-enabled').checked=!!config.enabled;$('#local-ai-profile').value=config.profile||'lightweight';$('#local-ai-model').value=config.model||'qwen2.5:1.5b';$('#local-ai-endpoint').value=config.endpoint||'http://127.0.0.1:11434';$('#local-ai-confidence').value=String(config.minimumConfidence||55);}
+  if(!focused){$('#local-ai-enabled').checked=!!config.enabled;$('#local-ai-profile').value=config.profile||'lightweight';$('#local-ai-model').value=config.model||'qwen2.5:1.5b';$('#local-ai-context').value=String(config.contextLength||0);$('#local-ai-endpoint').value=config.endpoint||'http://127.0.0.1:11434';$('#local-ai-confidence').value=String(config.minimumConfidence||55);}
   const models=status.models||[],modelList=$('#local-ai-models');modelList.replaceChildren(...models.map((model,index)=>{const option=document.createElement('option');option.value=model.name;const lower=model.name.toLowerCase();option.label=lower.includes('9b')?'Fast batch':lower.includes('35b')?'High quality':lower.includes('122b')?'Deep · slow':lower.includes('coder')?'Structured alternate':`Available ${index+1}`;return option;}));
+	const benchmarkModels=$('#local-ai-benchmark-models'),priorBenchmarkModels=[...benchmarkModels.selectedOptions].map(option=>option.value);if(!benchmarkModels.matches(':focus')){benchmarkModels.replaceChildren(...models.map(model=>{const option=document.createElement('option');option.value=model.name;option.textContent=`${model.name}${model.sizeBytes?` · ${formatBytes(model.sizeBytes)}`:''}`;option.selected=priorBenchmarkModels.length?priorBenchmarkModels.includes(model.name):(model.name===config.model||model.name.toLowerCase().includes('9b'));return option;}));}
   const selected=models.find(model=>model.name===config.model),hint=$('#local-ai-model-hint');hint.textContent=selected?`${selected.parameterSize||'Model'}${selected.quantization?` · ${selected.quantization}`:''} · ${selected.sizeBytes?formatBytes(selected.sizeBytes):'available on server'}`:models.length?`${models.length} generation models available · custom names are also accepted`:'Choose speed or depth; availability comes from the selected Ollama server.';
   const count=Number(status.learning?.count||0),badge=$('#local-ai-state');badge.textContent=status.state==='ready'?`Ready · ${count} learned`:status.state==='setup'?'Runtime needed':status.state==='error'?'Error':count?`Off · ${count} learned`:'Off';badge.className=`chip ${status.state==='ready'?'ready':status.state==='error'?'warning':''}`;$('#local-ai-detail').textContent=`${status.note||'Local evidence analysis is off.'} · ${count} user-confirmed ${count===1?'sample':'samples'}.`;form.querySelectorAll('input,select,button').forEach(control=>control.disabled=!status.canManage);const exportLink=$('#local-ai-export');exportLink.href=`/api/local-ai/learning/export${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;exportLink.classList.toggle('disabled',!count);
+	const benchmark=state.localAIBenchmark||{},benchmarkButton=$('#local-ai-benchmark'),results=$('#local-ai-benchmark-results');benchmarkButton.disabled=!status.canManage||benchmark.running||!models.length;benchmarkButton.textContent=benchmark.running?`Testing ${benchmark.current||'models'}…`:'Run benchmark';results.className=benchmark.results?.length?'benchmark-results':'benchmark-results empty-state compact';results.innerHTML=benchmark.results?.length?benchmark.results.map(item=>`<div><strong>${escapeHTML(item.model)}</strong><span>${Math.round(item.groundedPercent)}% grounded · ${Math.round(item.structuredPercent)}% valid JSON · ${Math.round(item.averageMillis)} ms/case</span></div>`).join(''):(benchmark.running?'Benchmark starting…':'No benchmark run yet.');
 }
 
 function renderTransmit(){
@@ -1508,10 +1517,11 @@ window.addEventListener('resize',()=>{drawSpectrum();drawWaterfall();});
 const decoderHash = location.hash.match(/^#decoder\/(.+)$/);
 const savedView = localStorage.getItem('gpsdr-last-view');
 if (decoderHash) { state.selectedDecoderID = decodeURIComponent(decoderHash[1]); setView('decoders'); }
-else if (['live','tuner','band','activity','mapper','profiles','decoders','hardware','settings'].includes(savedView)) setView(savedView);
+else if (['live','tuner','band','rfmonitor','activity','mapper','profiles','decoders','hardware','settings'].includes(savedView)) setView(savedView);
 $('#storage-policy-form').addEventListener('submit',async event=>{event.preventDefault();const gb=1024**3;try{const storage=await api('/api/storage/policy',{method:'PUT',body:JSON.stringify({autoCleanup:$('#storage-auto-cleanup').checked,autoRemoveQuarantine:$('#storage-auto-remove-rejected').checked,quarantineRetentionHours:Number($('#storage-rejected-hours').value),maxCaptureDays:Number($('#storage-max-days').value),recordingCapBytes:Math.round(Number($('#storage-recording-cap').value)*gb),iqCapBytes:Math.round(Number($('#storage-iq-cap').value)*gb)})});state.status.storage=storage;renderStatus();toast('Storage limits saved');}catch(error){toast(error.message,true);}});
 $('#storage-clean-now').addEventListener('click',async()=>{if(!await confirmAction({title:'Clean stored captures?',message:'Remove the oldest GP-SDR recordings and IQ evidence until the saved age and size limits are met? Profiles, Mapper results, and channel data will be kept.',confirmLabel:'Clean captures'}))return;try{$('#storage-clean-now').disabled=true;const storage=await api('/api/storage/cleanup',{method:'POST'});state.status.storage=storage;renderStatus();toast(`Cleanup complete · ${formatBytes(storage.lastCleanup?.bytesFreed||0)} freed`);}catch(error){toast(error.message,true);$('#storage-clean-now').disabled=false;}});
-$('#local-ai-form').addEventListener('submit',async event=>{event.preventDefault();try{state.localAI=await api('/api/local-ai',{method:'PUT',body:JSON.stringify({enabled:$('#local-ai-enabled').checked,profile:$('#local-ai-profile').value,model:$('#local-ai-model').value.trim(),endpoint:$('#local-ai-endpoint').value.trim(),minimumConfidence:Number($('#local-ai-confidence').value)})});renderLocalAI();toast(state.localAI.state==='ready'?'Local model analysis ready':'Local model settings saved');}catch(error){toast(error.message,true);}});
+$('#local-ai-form').addEventListener('submit',async event=>{event.preventDefault();try{state.localAI=await api('/api/local-ai',{method:'PUT',body:JSON.stringify({enabled:$('#local-ai-enabled').checked,profile:$('#local-ai-profile').value,model:$('#local-ai-model').value.trim(),contextLength:Number($('#local-ai-context').value),endpoint:$('#local-ai-endpoint').value.trim(),minimumConfidence:Number($('#local-ai-confidence').value)})});renderLocalAI();toast(state.localAI.state==='ready'?'Local model analysis ready':'Local model settings saved');}catch(error){toast(error.message,true);}});
+$('#local-ai-benchmark').addEventListener('click',async()=>{try{const models=[...$('#local-ai-benchmark-models').selectedOptions].map(option=>option.value);state.localAIBenchmark=await api('/api/local-ai/benchmark',{method:'POST',body:JSON.stringify({models})});renderLocalAI();toast('Model benchmark started');}catch(error){toast(error.message,true);}});
 $('#learning-form').addEventListener('submit',async event=>{if(event.submitter?.value!=='confirm')return;event.preventDefault();try{await api('/api/local-ai/learning',{method:'POST',body:JSON.stringify({eventID:$('#learning-event-id').value,modulation:$('#learning-modulation').value.trim(),protocol:$('#learning-protocol').value.trim(),notes:$('#learning-notes').value.trim(),retainCaptures:$('#learning-retain').checked})});$('#learning-dialog').close();toast('Confirmed sample added to local learning');await refreshAll();}catch(error){toast(error.message,true);}});
 resetMapperJob();
 refreshAll();
@@ -1521,12 +1531,12 @@ setInterval(async()=>{
 },750);
 setInterval(async()=>{
 	if(document.hidden)return;
-	try{const eventQuery=$('#event-search')?.value.trim()||'';const requests=[api(`/api/events?limit=150${eventQuery?`&q=${encodeURIComponent(eventQuery)}`:''}`),api('/api/signals?limit=400')],mapperIndex=state.view==='mapper'?requests.push(api('/api/mapper'))-1:-1,analysisIndex=state.view==='mapper'&&state.mapperPage==='analysis'?requests.push(api('/api/analysis'))-1:-1,responses=await Promise.all(requests),events=responses[0],signals=responses[1],mapper=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null;Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;if(analysisStatus)state.analysisStatus=analysisStatus;renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='band')renderBandMonitor();if(state.view==='mapper'&&mapper)renderMapper();}catch(_){ }
+	try{const eventQuery=$('#event-search')?.value.trim()||'';const requests=[api(`/api/events?limit=150${eventQuery?`&q=${encodeURIComponent(eventQuery)}`:''}`),api('/api/signals?limit=400')],mapperIndex=state.view==='mapper'?requests.push(api('/api/mapper'))-1:-1,analysisIndex=state.view==='mapper'&&state.mapperPage==='analysis'?requests.push(api('/api/analysis'))-1:-1,benchmarkIndex=state.view==='settings'&&state.localAIBenchmark?.running?requests.push(api('/api/local-ai/benchmark'))-1:-1,responses=await Promise.all(requests),events=responses[0],signals=responses[1],mapper=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null,benchmark=benchmarkIndex>=0?responses[benchmarkIndex]:null;Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;if(analysisStatus)state.analysisStatus=analysisStatus;if(benchmark)state.localAIBenchmark=benchmark;renderLatest();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='band')renderBandMonitor();if(state.view==='mapper'&&mapper)renderMapper();if(benchmark)renderLocalAI();}catch(_){ }
 },5000);
 async function pollSpectrum() {
 	const mapperRunning=state.view==='mapper'&&mapperActiveJobs().length>0;
-	if(!document.hidden && ((state.status?.running&&(state.view==='live'||state.view==='tuner'))||mapperRunning)){try{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);renderTuner();if(state.view==='mapper')renderMapperRF();drawSpectrum();drawWaterfall();}catch(_){ }}
-	setTimeout(pollSpectrum,Math.max(40,1000/displayPrefs.fps));
+	if(!document.hidden && ((state.status?.running&&(state.view==='live'||state.view==='tuner'))||mapperRunning||state.view==='rfmonitor')){try{if(state.view==='rfmonitor'){state.spectra=await api('/api/spectra?bins='+displayPrefs.detail);renderRFMonitor();}else{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);renderTuner();if(state.view==='mapper')renderMapperRF();drawSpectrum();drawWaterfall();}}catch(_){ }}
+	setTimeout(pollSpectrum,Math.max(16,1000/displayPrefs.fps));
 }
 pollSpectrum();
 

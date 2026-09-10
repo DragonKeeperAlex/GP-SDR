@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type Runtime struct {
 	remoteReceivers     *RemoteReceiverStore
 	localDatabase       *LocalDatabaseManager
 	spectrum            SpectrumSnapshot
+	deviceSpectra       map[string]SpectrumSnapshot
 	tuning              bool
 	tunerUpdates        chan TunerRequest
 	tunerHardware       *TunerRequest
@@ -99,10 +101,12 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		return nil, err
 	}
 	learning := NewSignalLearningLibrary(dataDirectory)
+	localAI := NewLocalAIAnalyzer(dataDirectory, learning)
+	localAI.SetReferenceProfiles(profiles)
 	runtimeState := &Runtime{mediaRecovery: recovery, Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
-		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: NewLocalAIAnalyzer(dataDirectory, learning), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
+		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: localAI, op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
-		characterization: NewCharacterizationManager(dataDirectory)}
+		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
@@ -120,6 +124,10 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 func (r *Runtime) LocalAIStatus() LocalAIStatus { return r.localAI.Status() }
 func (r *Runtime) UpdateLocalAI(config LocalAIConfig) (LocalAIStatus, error) {
 	return r.localAI.Update(config)
+}
+func (r *Runtime) LocalAIBenchmark() LocalAIBenchmarkStatus { return r.localAI.BenchmarkStatus() }
+func (r *Runtime) StartLocalAIBenchmark(models []string) (LocalAIBenchmarkStatus, error) {
+	return r.localAI.StartBenchmark(models)
 }
 func (r *Runtime) LearningStatus() LearningLibraryStatus { return r.learning.Status() }
 func (r *Runtime) ConfirmLearningSample(eventID, modulation, protocol, notes string, retainCaptures bool) (ConfirmedSignalSample, error) {
@@ -661,6 +669,35 @@ func (r *Runtime) Spectrum(maxBins int) SpectrumSnapshot {
 		snapshot.BinsDBFS = bins
 	}
 	return snapshot
+}
+
+func (r *Runtime) Spectra(maxBins int) []DeviceSpectrumSnapshot {
+	r.mu.RLock()
+	items := make([]DeviceSpectrumSnapshot, 0, len(r.deviceSpectra))
+	for deviceID, source := range r.deviceSpectra {
+		snapshot := source
+		snapshot.BinsDBFS = downsampleSpectrum(snapshot.BinsDBFS, maxBins)
+		items = append(items, DeviceSpectrumSnapshot{DeviceID: deviceID, SpectrumSnapshot: snapshot})
+	}
+	r.mu.RUnlock()
+	sort.Slice(items, func(i, j int) bool { return items[i].DeviceID < items[j].DeviceID })
+	return items
+}
+
+func downsampleSpectrum(source []float64, maxBins int) []float64 {
+	bins := append([]float64(nil), source...)
+	if maxBins < 64 || maxBins >= len(bins) {
+		return bins
+	}
+	group := len(bins) / maxBins
+	result := make([]float64, maxBins)
+	for index := range result {
+		for offset := 0; offset < group; offset++ {
+			result[index] += bins[index*group+offset]
+		}
+		result[index] /= float64(group)
+	}
+	return result
 }
 
 func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {

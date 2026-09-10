@@ -17,6 +17,8 @@ GP-SDR supports independent work on multiple radios. A software VFO is a channel
 4. Save/start the second job. Each has independent progress and Stop controls; **Stop all** stops all Mapper jobs.
 5. Filter Combined results by receiver or job to inspect provenance. Export CSV to keep both sources with the observations.
 
+Open **RF monitor** to see an independent live spectrum and waterfall for every receiver currently producing IQ. A stale age label means the last frame is being retained for inspection; it is not proof that the receiver is still streaming.
+
 **Use all connected receivers** applies one template to available radios; it does not automatically divide a wide range into non-overlapping slices. For a split survey, create jobs with explicit bounds. Busy radios are skipped and reported.
 
 Within a job, **Channels at once** lets nearby targets share a capture. In rc9, Auto uses up to 512 Discovery targets, 64 Map targets, or one Identify target; the passband can reduce the actual batch. Version 1.4.1 used 16/four for Discovery/Identify. Set 1 if analysis falls behind and increase gradually after checking CPU/USB health.

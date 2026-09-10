@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ type LocalAIConfig struct {
 	Model             string `json:"model"`
 	Profile           string `json:"profile"`
 	MinimumConfidence int    `json:"minimumConfidence"`
+	ContextLength     int    `json:"contextLength"`
 }
 
 type LocalAIStatus struct {
@@ -43,14 +45,39 @@ type LocalAIModelOption struct {
 	Quantization  string `json:"quantization,omitempty"`
 }
 
-type LocalAIAnalyzer struct {
-	mu        sync.RWMutex
-	path      string
-	config    LocalAIConfig
-	client    *http.Client
-	semaphore chan struct{}
-	learning  *SignalLearningLibrary
+type LocalAIBenchmarkModel struct {
+	Model             string  `json:"model"`
+	Cases             int     `json:"cases"`
+	Grounded          int     `json:"grounded"`
+	Errors            int     `json:"errors"`
+	AverageMillis     float64 `json:"averageMillis"`
+	GroundedPercent   float64 `json:"groundedPercent"`
+	StructuredPercent float64 `json:"structuredPercent"`
 }
+
+type LocalAIBenchmarkStatus struct {
+	Running    bool                    `json:"running"`
+	StartedAt  *time.Time              `json:"startedAt,omitempty"`
+	FinishedAt *time.Time              `json:"finishedAt,omitempty"`
+	Current    string                  `json:"current,omitempty"`
+	Source     string                  `json:"source"`
+	Results    []LocalAIBenchmarkModel `json:"results"`
+	LastError  string                  `json:"lastError,omitempty"`
+}
+
+type LocalAIAnalyzer struct {
+	mu          sync.RWMutex
+	path        string
+	config      LocalAIConfig
+	client      *http.Client
+	semaphore   chan struct{}
+	learning    *SignalLearningLibrary
+	profiles    *ProfileStore
+	benchmarkMu sync.RWMutex
+	benchmark   LocalAIBenchmarkStatus
+}
+
+func (a *LocalAIAnalyzer) SetReferenceProfiles(profiles *ProfileStore) { a.profiles = profiles }
 
 func NewLocalAIAnalyzer(dataDirectory string, learning ...*SignalLearningLibrary) *LocalAIAnalyzer {
 	a := &LocalAIAnalyzer{path: filepath.Join(dataDirectory, "Data", "local-ai.json"), client: &http.Client{Timeout: 90 * time.Second}, semaphore: make(chan struct{}, 1)}
@@ -86,6 +113,9 @@ func normalizeLocalAIConfig(config LocalAIConfig) LocalAIConfig {
 	}
 	if config.MinimumConfidence < 10 || config.MinimumConfidence > 100 {
 		config.MinimumConfidence = defaults.MinimumConfidence
+	}
+	if config.ContextLength != 0 && (config.ContextLength < 2048 || config.ContextLength > 262144) {
+		config.ContextLength = 0
 	}
 	return config
 }
@@ -197,6 +227,10 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	a.mu.RLock()
 	config := a.config
 	a.mu.RUnlock()
+	return a.analyzeWithConfig(parent, event, config)
+}
+
+func (a *LocalAIAnalyzer) analyzeWithConfig(parent context.Context, event TransmissionEvent, config LocalAIConfig) (SignalIntelligence, error) {
 	if !config.Enabled {
 		return SignalIntelligence{}, errors.New("local model analysis is off")
 	}
@@ -208,7 +242,8 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	}
 	metadata := map[string]any{"frequencyHz": event.FrequencyHz, "bandwidthHz": event.BandwidthHz, "observedModulation": event.Modulation,
 		"signalDBFS": event.SignalDBFS, "noiseDBFS": event.NoiseDBFS, "transcript": stringValue(event.Transcript), "callsigns": event.Callsigns,
-		"decoderMessages": event.DecoderMessages, "waveformAnalysis": event.Analysis, "frequencyBand": radioFrequencyBand(event.FrequencyHz), "location": event.Location}
+		"decoderMessages": event.DecoderMessages, "waveformAnalysis": event.Analysis, "frequencyBand": radioFrequencyBand(event.FrequencyHz), "location": event.Location,
+		"localReferenceMatches": a.localReferenceMatches(event)}
 	encoded, _ := json.Marshal(metadata)
 	examples := []ConfirmedSignalSample{}
 	if a.learning != nil {
@@ -226,7 +261,7 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	// Radio analysis needs the schema-constrained answer, not a model's hidden
 	// reasoning stream. Qwen 3.5 can otherwise return only `thinking` and leave
 	// Ollama's `response` empty.
-	requestBody, _ := json.Marshal(map[string]any{"model": config.Model, "prompt": prompt, "stream": false, "think": false, "format": format, "options": map[string]any{"temperature": 0.1, "num_ctx": localAIContext(config.Profile)}})
+	requestBody, _ := json.Marshal(map[string]any{"model": config.Model, "prompt": prompt, "stream": false, "think": false, "format": format, "options": map[string]any{"temperature": 0.1, "num_ctx": localAIContext(config)}})
 	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, config.Endpoint+"/api/generate", bytes.NewReader(requestBody))
@@ -283,6 +318,148 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 			ExtractCallsigns(stringValue(event.Transcript)))}, nil
 }
 
+func (a *LocalAIAnalyzer) BenchmarkStatus() LocalAIBenchmarkStatus {
+	a.benchmarkMu.RLock()
+	defer a.benchmarkMu.RUnlock()
+	status := a.benchmark
+	status.Results = append([]LocalAIBenchmarkModel(nil), status.Results...)
+	return status
+}
+
+func (a *LocalAIAnalyzer) StartBenchmark(models []string) (LocalAIBenchmarkStatus, error) {
+	a.benchmarkMu.Lock()
+	if a.benchmark.Running {
+		a.benchmarkMu.Unlock()
+		return a.BenchmarkStatus(), errors.New("a model benchmark is already running")
+	}
+	available := make(map[string]bool)
+	for _, option := range a.Status().Models {
+		available[option.Name] = true
+	}
+	selected := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model != "" && available[model] && !containsString(selected, model) {
+			selected = append(selected, model)
+		}
+	}
+	if len(selected) == 0 {
+		a.benchmarkMu.Unlock()
+		return a.BenchmarkStatus(), errors.New("choose at least one installed generation model")
+	}
+	if len(selected) > 6 {
+		selected = selected[:6]
+	}
+	now := time.Now().UTC()
+	a.benchmark = LocalAIBenchmarkStatus{Running: true, StartedAt: &now, Source: "Built-in grounded radio evidence cases"}
+	a.benchmarkMu.Unlock()
+	go a.runBenchmark(selected)
+	return a.BenchmarkStatus(), nil
+}
+
+func (a *LocalAIAnalyzer) runBenchmark(models []string) {
+	cases := []struct {
+		event      TransmissionEvent
+		modulation string
+		family     string
+	}{
+		{TransmissionEvent{FrequencyHz: 99.7e6, BandwidthHz: 200e3, Modulation: "WFM", Analysis: &SignalIntelligence{SignalFamily: "Analog frequency", Modulation: "WFM", Confidence: .95}}, "WFM", "analog"},
+		{TransmissionEvent{FrequencyHz: 162.55e6, BandwidthHz: 12500, Modulation: "NFM", Transcript: ptr("National Weather Service forecast"), Analysis: &SignalIntelligence{SignalFamily: "Analog voice", Modulation: "NFM", Confidence: .91}}, "NFM", "analog"},
+		{TransmissionEvent{FrequencyHz: 774.5e6, BandwidthHz: 12500, Modulation: "P25", ProtocolName: ptr("P25 Phase 1"), DecoderMessages: []DecoderMessage{{Protocol: "P25", Summary: "NAC 0x293 trunk control frame"}}, Analysis: &SignalIntelligence{SignalFamily: "Digital voice", Modulation: "P25", Confidence: .96}}, "P25", "digital"},
+		{TransmissionEvent{FrequencyHz: 460.025e6, BandwidthHz: 12500, Modulation: "DMR", ProtocolName: ptr("DMR"), DecoderMessages: []DecoderMessage{{Protocol: "DMR", Summary: "Color code 1 slot 2 voice frame"}}, Analysis: &SignalIntelligence{SignalFamily: "Digital voice", Modulation: "DMR", Confidence: .94}}, "DMR", "digital"},
+		{TransmissionEvent{FrequencyHz: 315e6, BandwidthHz: 12500, Modulation: "UNKNOWN", Analysis: &SignalIntelligence{SignalFamily: "Unknown", Modulation: "UNKNOWN", Confidence: .18}}, "UNKNOWN", "unknown"},
+	}
+	a.mu.RLock()
+	base := a.config
+	a.mu.RUnlock()
+	for _, model := range models {
+		a.benchmarkMu.Lock()
+		a.benchmark.Current = model
+		a.benchmarkMu.Unlock()
+		result := LocalAIBenchmarkModel{Model: model, Cases: len(cases)}
+		elapsed := time.Duration(0)
+		for _, item := range cases {
+			config := base
+			config.Enabled, config.Model = true, model
+			started := time.Now()
+			analysis, err := a.analyzeWithConfig(context.Background(), item.event, config)
+			elapsed += time.Since(started)
+			if err != nil {
+				result.Errors++
+				continue
+			}
+			modulationOK := strings.EqualFold(analysis.Modulation, item.modulation)
+			familyOK := strings.Contains(strings.ToLower(analysis.SignalFamily), item.family)
+			if modulationOK && familyOK {
+				result.Grounded++
+			}
+		}
+		result.AverageMillis = float64(elapsed.Milliseconds()) / float64(len(cases))
+		result.GroundedPercent = float64(result.Grounded) / float64(len(cases)) * 100
+		result.StructuredPercent = float64(len(cases)-result.Errors) / float64(len(cases)) * 100
+		a.benchmarkMu.Lock()
+		a.benchmark.Results = append(a.benchmark.Results, result)
+		a.benchmarkMu.Unlock()
+	}
+	finished := time.Now().UTC()
+	a.benchmarkMu.Lock()
+	a.benchmark.Running, a.benchmark.Current, a.benchmark.FinishedAt = false, "", &finished
+	a.benchmarkMu.Unlock()
+}
+
+func containsString(items []string, wanted string) bool {
+	for _, item := range items {
+		if item == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *LocalAIAnalyzer) localReferenceMatches(event TransmissionEvent) []map[string]any {
+	if a.profiles == nil {
+		return nil
+	}
+	matches := make([]map[string]any, 0, 8)
+	for _, profile := range a.profiles.All() {
+		source := "Saved profile · " + profile.Name
+		verified, reason, distance, allowed := false, "", (*float64)(nil), true
+		isReference := strings.HasPrefix(profile.ID, "localdb-") || strings.Contains(strings.ToLower(profile.Summary), "radioreference") || (profile.ReferenceArea != nil && strings.EqualFold(profile.ReferenceArea.Provider, "RadioReference"))
+		if !isReference {
+			continue
+		}
+		if profile.ReferenceArea != nil && strings.EqualFold(profile.ReferenceArea.Provider, "RadioReference") {
+			source = "RadioReference · " + profile.Name
+			verified, reason, distance, allowed = radioReferenceProfileEligibility(profile, event.Location)
+			if !allowed {
+				continue
+			}
+		} else {
+			source = "Local catalog · " + profile.Name
+		}
+		for _, channel := range profile.Channels {
+			if math.Abs(channel.FrequencyHz-event.FrequencyHz) > math.Max(1, event.BandwidthHz/2) {
+				continue
+			}
+			match := map[string]any{"name": channel.Name, "frequencyHz": channel.FrequencyHz, "mode": channel.Mode, "source": source, "locationVerified": verified}
+			if channel.Decoder != nil {
+				match["decoder"] = *channel.Decoder
+			}
+			if reason != "" {
+				match["locationReason"] = reason
+			}
+			if distance != nil {
+				match["distanceMiles"] = *distance
+			}
+			matches = append(matches, match)
+			if len(matches) >= 12 {
+				return matches
+			}
+		}
+	}
+	return matches
+}
+
 func radioFrequencyBand(frequencyHz float64) string {
 	switch {
 	case frequencyHz >= 3e6 && frequencyHz < 30e6:
@@ -308,11 +485,14 @@ func reportedRadioBand(family string) string {
 	return ""
 }
 
-func localAIContext(profile string) int {
-	if profile == "deep" {
+func localAIContext(config LocalAIConfig) int {
+	if config.ContextLength > 0 {
+		return config.ContextLength
+	}
+	if config.Profile == "deep" {
 		return 8192
 	}
-	if profile == "balanced" {
+	if config.Profile == "balanced" {
 		return 4096
 	}
 	return 2048

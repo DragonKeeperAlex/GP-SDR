@@ -115,13 +115,24 @@ func BuildSpectrumSnapshot(spec CaptureSpec, data []byte, format SampleFormat) (
 		EndFrequencyHz: float64(spec.CenterFrequencyHz) + halfSpan, SampleRateHz: spec.SampleRateHz, BinsDBFS: bins, CapturedAt: time.Now()}, nil
 }
 
-func (r *Runtime) updateSpectrum(spec CaptureSpec, data []byte, format SampleFormat) {
+type DeviceSpectrumSnapshot struct {
+	DeviceID string `json:"deviceID"`
+	SpectrumSnapshot
+}
+
+func (r *Runtime) updateSpectrum(deviceID string, spec CaptureSpec, data []byte, format SampleFormat) {
 	snapshot, err := BuildSpectrumSnapshot(spec, data, format)
 	if err != nil {
 		return
 	}
 	r.mu.Lock()
 	r.spectrum = snapshot
+	if r.deviceSpectra == nil {
+		r.deviceSpectra = make(map[string]SpectrumSnapshot)
+	}
+	if deviceID != "" {
+		r.deviceSpectra[deviceID] = snapshot
+	}
 	r.mu.Unlock()
 }
 

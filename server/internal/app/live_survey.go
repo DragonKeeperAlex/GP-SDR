@@ -702,7 +702,7 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 		removeDC, iqGain, iqPhase, iqSwap = calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap
 	}
 	ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
-	r.updateSpectrum(spec, data, format)
+	r.updateSpectrum(device.ID, spec, data, format)
 	// Measure every software VFO from one shared FFT. Previously each target
 	// repeated the same FFT before discovering whether it was quiet, which made
 	// wide HackRF captures CPU-bound long before they reached the RF bandwidth
@@ -1391,7 +1391,7 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			removeDC = *profile.Settings.DCRemoval
 		}
 		ApplyIQCorrection(data, format, removeDC, iqGain, iqPhase, iqSwap)
-		r.updateSpectrum(spec, data, format)
+		r.updateSpectrum(device.ID, spec, data, format)
 		levels, err := MeasureChannelSpectrum(data, format, spec.SampleRateHz, float64(spec.CenterFrequencyHz), channels)
 		if err != nil {
 			r.setRuntimeError(err.Error())
@@ -1529,7 +1529,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		}
 		format := DetectSampleFormat(data, stream.Format)
 		ApplyIQCorrection(data, format, request.IQDCRemoval, request.IQGain, request.IQPhase, request.IQSwap)
-		r.updateSpectrum(spec, data, format)
+		r.updateSpectrum(device.ID, spec, data, format)
 		analysisFrames++
 		if analysisFrames == 1 || analysisFrames >= 10 {
 			latestAnalysis = AnalyzeSignalIQ(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), request.BandwidthHz)

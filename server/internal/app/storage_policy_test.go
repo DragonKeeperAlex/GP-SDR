@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,6 +41,54 @@ func TestStoragePolicyCleanupIsBoundedAndOldestFirst(t *testing.T) {
 	for _, path := range []string{"Recordings/2026-08-22/active.wav", "Profiles/keep.json"} {
 		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
 			t.Fatalf("cleanup removed protected data %s: %v", path, err)
+		}
+	}
+}
+
+func TestStorageCleanupNeverDeletesResultsOrEventHistory(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.Local)
+	results := []byte(`{"155250000":{"frequencyHz":155250000,"hits":42,"name":"Verified channel","identificationVerified":true}}`)
+	events := []byte("{\"id\":\"event-1\",\"frequencyHz\":155250000,\"label\":\"Verified channel\"}\n")
+	for relative, data := range map[string][]byte{
+		"Data/mapper-records.json": results,
+		"Data/events.jsonl":        events,
+		"Data/event-updates.jsonl": []byte("{\"id\":\"event-1\",\"analysisStatus\":\"complete\"}\n"),
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relative := range []string{"Recordings/2026-09-01/old.wav", "IQ/Retained/2026-09-01/old.cu8"} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, bytes.Repeat([]byte{1}, 64), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		old := now.Add(-48 * time.Hour)
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := enforceStoragePolicy(root, StoragePolicy{MaxCaptureDays: 1, RecordingCapBytes: 1, IQCapBytes: 1}, now)
+	if result.FilesRemoved == 0 {
+		t.Fatal("test did not remove any media")
+	}
+	for relative, want := range map[string][]byte{
+		"Data/mapper-records.json": results,
+		"Data/events.jsonl":        events,
+		"Data/event-updates.jsonl": []byte("{\"id\":\"event-1\",\"analysisStatus\":\"complete\"}\n"),
+	} {
+		got, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("cleanup changed results data %s: err=%v", relative, err)
 		}
 	}
 }

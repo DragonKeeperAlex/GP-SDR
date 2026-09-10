@@ -87,6 +87,10 @@ func saveStoragePolicy(dataDirectory string, policy StoragePolicy) error {
 }
 
 func enforceStoragePolicy(dataDirectory string, policy StoragePolicy, now time.Time) StorageCleanupResult {
+	// Results and event history are intentionally stored under Data and are not
+	// cleanup targets. Only derived media under Recordings and IQ is eligible.
+	// Keep TestStorageCleanupNeverDeletesResultsOrEventHistory as a hard guard
+	// if storage layout or retention behavior changes in a future release.
 	result := StorageCleanupResult{CompletedAt: now}
 	before := directoryBytes(filepath.Join(dataDirectory, "Recordings")) + directoryBytes(filepath.Join(dataDirectory, "IQ"))
 	if policy.AutoRemoveQuarantine {
@@ -97,7 +101,8 @@ func enforceStoragePolicy(dataDirectory string, policy StoragePolicy, now time.T
 		}
 	}
 	if policy.MaxCaptureDays > 0 {
-		_, err := pruneExpiredRecordings(dataDirectory, policy.MaxCaptureDays, now)
+		removed, err := pruneExpiredRecordings(dataDirectory, policy.MaxCaptureDays, now)
+		result.FilesRemoved += removed
 		if err != nil {
 			result.LastError = err.Error()
 		}

@@ -46,10 +46,13 @@ server needs the host’s power settings configured for unattended operation.
 
 ## Display performance
 
-Settings controls waterfall frame rate, quality/FFT detail, smoothing, peak
+**Spectrum refresh** controls every Live, Tuner, Mapper, and RF Monitor spectrum
+and waterfall from 1 through 60 Hz. It changes UI polling only; it does not
+change receiver sample rate, RF bandwidth, recording fidelity, or decoder
+timing. Settings also controls rendering quality/FFT detail, smoothing, peak
 hold, and display floor/ceiling. Suggested order when reducing lag:
 
-1. Lower waterfall frame rate.
+1. Lower Spectrum refresh.
 2. Lower FFT/detail quality.
 3. Reduce receiver sample rate only if USB or DSP is overloaded.
 
@@ -63,9 +66,12 @@ journal/profile data. Set separate caps for Recordings and IQ, choose an age
 limit, and optionally enable automatic cleanup. Zero disables a particular
 limit. **Clean now** applies the saved policy immediately after confirmation.
 Files modified during the last ten minutes are protected so an active capture
-is not removed. Cleanup stays inside GP-SDR's Recordings and IQ directories;
-profiles, Mapper history, calibration, local channel databases, and range sync
-data are never targets. General automatic cleanup is off until explicitly
+is not removed. Cleanup stays inside GP-SDR's Recordings and IQ directories.
+Mapper results and event history are stored separately under Data and remain
+available after their recording/IQ links are removed. Profiles, transcripts,
+decoded metadata, calibration, local channel databases, and range sync data
+are never cleanup targets and require an explicit data-specific clear action.
+General automatic cleanup is off until explicitly
 enabled. Mapper's rejected-IQ cleanup is separate: after local analysis
 finishes, quarantined low-value IQ remains recoverable for 24 hours by default and is then
 removed. In rc9, the job’s Delete after analysis policy instead removes rejected IQ immediately after finalization, without that recovery timer. The Data and Managed IQ cards show analyzing, retained, and rejected

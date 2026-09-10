@@ -1,6 +1,6 @@
 # Local signal intelligence and confirmed examples
 
-**Available in 1.5.0-rc9.** This optional layer summarizes existing DSP, decoder, transcript, frequency, and location evidence using a local Ollama model. It does not replace protocol decoding or prove a transmitter’s identity.
+This optional layer summarizes existing DSP, decoder, transcript, frequency, location, and bounded local-reference evidence using an Ollama model. It does not replace protocol decoding or prove a transmitter’s identity.
 
 ## Set up the local model
 
@@ -12,15 +12,17 @@ ollama pull qwen2.5:1.5b
 ```
 
 3. Open **Settings → Local intelligence → Local signal intelligence** on the host.
-4. Enable **Analyze Mapper evidence locally**. Leave Local service at `http://127.0.0.1:11434`, Model at `qwen2.5:1.5b`, Performance at **Lightweight**, and Minimum confidence at **55%** to begin.
+4. Enable **Analyze Mapper evidence locally**. Use `http://127.0.0.1:11434` for Ollama on the Mac, or a private-LAN address such as `http://192.168.1.54:11434` for a trusted compute server. Start with a small model, **Automatic** context, and Minimum confidence at **55%**.
 5. Press **Save**. Confirm the service is reachable, then analyze a real capture and inspect its evidence. Ready checks the service response; it does not guarantee that the named model has been downloaded or can generate successfully.
 6. Use [Analyze](Analyze-and-Schedule) for queued work or Live analysis timing for new Mapper jobs.
 
-The endpoint must be localhost or a loopback IP over HTTP; a LAN/remote Ollama server is rejected. Configuration changes are restricted to the GP-SDR host. GP-SDR sends metadata, including available transcript, decoder fields, and location, to that local service; raw audio/IQ is not sent to the model endpoint. Model downloads themselves need network access.
+The endpoint must be localhost or a private-network address; public Internet model endpoints are rejected. Configuration changes are restricted to the GP-SDR host. GP-SDR sends bounded text metadata, including available transcript, decoder fields, capture location, and nearby imported channel matches. Raw audio/IQ is not sent to the model endpoint. RadioReference candidates are admitted only when the capture has location evidence and the reference area passes GP-SDR's distance filter.
 
 ## Performance and confidence
 
-Lightweight, Balanced, and Deep analysis set increasing model context budgets (2,048, 4,096, and 8,192). They do not download a different model automatically. Enter a model name only after making it available in Ollama. Start small, then increase if memory and response time permit.
+Lightweight, Balanced, and Deep analysis set default context budgets of 2K, 4K, and 8K. The explicit Context control can request 8K through 256K, but long context consumes much more model memory and normally does not improve GP-SDR's short evidence payloads. It does not download a different model automatically.
+
+Use **Models to compare** and **Run benchmark** to check installed generation models against the same five grounded radio-evidence cases. The result measures structured-output compatibility, evidence grounding, and latency on that server. It is not an RF-identification accuracy claim and does not replace real captures or decoder validation.
 
 Minimum confidence gates the returned label; a below-threshold answer becomes Unknown. Model modulation that conflicts with stronger measured DSP evidence is corrected and confidence limited. Even a high-confidence summary is not valid protocol frames or an authoritative station identification.
 
@@ -44,7 +46,7 @@ Use **Export confirmed training set** in Settings after adding examples. The JSO
 
 - **Runtime needed:** start Ollama on this host and check the local service address.
 - **Ready but no summary:** verify the exact model is installed, inspect the analysis stages, and confirm there is usable evidence. Optional-stage failures may not increment the overall failed-file count.
-- **Remote address rejected:** use localhost on the host; there is no remote-model mode here.
+- **Remote address rejected:** use localhost or an RFC1918/private-LAN address; public endpoints are intentionally blocked.
 - **Unknown:** verify RF/decoder evidence before lowering the confidence threshold.
 - **High memory use or slow processing:** use Lightweight, a smaller model, and fewer parallel Analyze groups.
 

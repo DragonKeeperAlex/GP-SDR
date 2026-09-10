@@ -164,6 +164,21 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		status, err := s.runtime.UpdateLocalAI(config)
 		writeResult(w, status, err, 200)
+	case r.Method == "GET" && path == "/api/local-ai/benchmark":
+		writeJSON(w, 200, s.runtime.LocalAIBenchmark())
+	case r.Method == "POST" && path == "/api/local-ai/benchmark":
+		if !requestIsLocal(r) {
+			writeError(w, http.StatusForbidden, "Model benchmarks can only be started from the GP-SDR computer.")
+			return
+		}
+		var body struct {
+			Models []string `json:"models"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		status, err := s.runtime.StartLocalAIBenchmark(body.Models)
+		writeResult(w, status, err, http.StatusAccepted)
 	case r.Method == "GET" && path == "/api/local-ai/learning":
 		writeJSON(w, 200, s.runtime.LearningStatus())
 	case r.Method == "POST" && path == "/api/local-ai/learning":
@@ -212,6 +227,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":
 		writeJSON(w, 200, s.runtime.Spectrum(intQuery(r, "bins", 512)))
+	case r.Method == "GET" && path == "/api/spectra":
+		writeJSON(w, 200, s.runtime.Spectra(intQuery(r, "bins", 512)))
 	case r.Method == "GET" && path == "/api/storage":
 		writeJSON(w, 200, s.runtime.StorageStatus())
 	case r.Method == "PUT" && path == "/api/storage/policy":

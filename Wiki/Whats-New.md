@@ -1,4 +1,17 @@
-# What’s new through GP-SDR 1.5.0-rc16
+# What’s new through GP-SDR 1.5.0-rc18
+
+## 1.5.0-rc18: protected results and faster displays
+
+- Storage cleanup is guarded by regression tests that preserve Mapper results, event history, transcripts, decoded metadata, profiles, and calibration while eligible IQ/audio media is removed.
+- Spectrum refresh is shared across Live, Tuner, Mapper, and RF Monitor and can be selected from 1 Hz through a near-real-time 60 Hz mode.
+- Age-based storage cleanup now reports its removed-file count correctly.
+
+## 1.5.0-rc17: live analysis queue and multi-receiver RF monitor
+
+- Analyze continuously absorbs captures added by active Mapper jobs.
+- RF Monitor displays separate live spectrum and waterfall views for every active receiver.
+- Ollama context is selectable through 256K, and installed models can be benchmarked from Settings.
+- Local and RadioReference catalog matches are supplied as bounded model evidence; geographically scoped RadioReference entries must match the capture location.
 
 ## 1.5.0-rc16: cleaner transcripts and private Ollama servers
 

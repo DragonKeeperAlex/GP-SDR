@@ -76,3 +76,34 @@ func TestDeferredAnalysisReportsMissingEvidenceAcrossParallelGroups(t *testing.T
 		t.Fatalf("unexpected completed status: %#v", status)
 	}
 }
+
+func TestDeferredAnalysisAddsCapturesFromRunningMapper(t *testing.T) {
+	store, err := NewEventStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := TransmissionEvent{ID: "first", StartedAt: time.Now(), FrequencyHz: 150e6, AnalysisPolicy: "manual", AnalysisStatus: "pending"}
+	if err := store.Append(first); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{Events: store, mapperJobs: map[string]*mapperJobRuntime{"collecting": {deviceID: "test"}}}
+	if _, err := runtime.StartDeferredAnalysis("", 1); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for runtime.DeferredAnalysisStatus().Failed < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	second := TransmissionEvent{ID: "second", StartedAt: time.Now(), FrequencyHz: 151e6, AnalysisPolicy: "manual", AnalysisStatus: "pending"}
+	if err := store.Append(second); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(4 * time.Second)
+	for runtime.DeferredAnalysisStatus().Failed < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	status := runtime.StopDeferredAnalysis()
+	if status.Failed != 2 || status.Total != 2 {
+		t.Fatalf("live queue did not absorb new capture: %#v", status)
+	}
+}

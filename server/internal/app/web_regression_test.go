@@ -136,7 +136,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-filter-repeated"`, `value="verified">Successfully identified`, `id="mapper-upload-verified"`, `Identified only`,
 		`id="mapper-identify-min-hits"`, `id="mapper-identify-hit-source"`, `id="mapper-identify-occupancy"`, `100% only`,
 		`class="mapper-tuning-panel"`, `id="mixer-search"`, `id="mixer-sort"`, `Active first`,
-		`40 FPS · performance`, `3× · performance`, `4096 bins · performance`,
+		`60 Hz · near real time`, `3× · performance`, `4096 bins · performance`,
 		`id="mapper-all-receivers"`, `Use all connected receivers`,
 		`id="confirm-dialog"`, `id="confirm-dialog-message"`, `id="confirm-dialog-accept"`,
 	} {
@@ -169,7 +169,7 @@ func TestSettingsExposeBoundedCaptureStorageControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	for _, required := range []string{`id="storage-policy-form"`, `id="storage-auto-cleanup"`, `id="storage-max-days"`, `id="storage-recording-cap"`, `id="storage-iq-cap"`, `id="storage-clean-now"`} {
+	for _, required := range []string{`id="storage-policy-form"`, `id="storage-auto-cleanup"`, `id="storage-max-days"`, `id="storage-recording-cap"`, `id="storage-iq-cap"`, `id="storage-clean-now"`, `Results are separate.`, `id="display-fps"`, `value="60">60 Hz`} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("storage control %q is missing", required)
 		}
@@ -183,6 +183,9 @@ func TestSettingsExposeBoundedCaptureStorageControls(t *testing.T) {
 		if !strings.Contains(app, required) {
 			t.Fatalf("storage behavior %q is missing", required)
 		}
+	}
+	if !strings.Contains(app, "Math.max(16,1000/displayPrefs.fps)") {
+		t.Fatal("spectrum refresh is still capped below the 60 Hz setting")
 	}
 }
 

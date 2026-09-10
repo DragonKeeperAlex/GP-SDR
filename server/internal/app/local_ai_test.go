@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLocalAIRejectsPublicEndpoint(t *testing.T) {
@@ -27,6 +28,28 @@ func TestLocalAIAllowsPrivateOllamaServer(t *testing.T) {
 	}
 }
 
+func TestLocalAIContextCanUseConfiguredLongWindow(t *testing.T) {
+	if got := localAIContext(LocalAIConfig{Profile: "deep", ContextLength: 262144}); got != 262144 {
+		t.Fatalf("context = %d, want 262144", got)
+	}
+	if got := localAIContext(LocalAIConfig{Profile: "balanced"}); got != 4096 {
+		t.Fatalf("automatic balanced context = %d, want 4096", got)
+	}
+}
+
+func TestLocalAIReferenceMatchesRespectReceiveLocation(t *testing.T) {
+	profiles := &ProfileStore{profiles: map[string]ScanProfile{
+		"near": {ID: "near", Name: "Alameda County", Summary: "RadioReference import", ReferenceArea: &ProfileReferenceArea{Provider: "RadioReference", Latitude: 37.7, Longitude: -121.8, RadiusMiles: 25}, Channels: []ChannelDefinition{{Name: "Local dispatch", FrequencyHz: 774.5e6, Mode: "P25"}}},
+		"far":  {ID: "far", Name: "Los Angeles", Summary: "RadioReference import", ReferenceArea: &ProfileReferenceArea{Provider: "RadioReference", Latitude: 34.05, Longitude: -118.24, RadiusMiles: 25}, Channels: []ChannelDefinition{{Name: "Distant reuse", FrequencyHz: 774.5e6, Mode: "P25"}}},
+	}}
+	analyzer := NewLocalAIAnalyzer(t.TempDir())
+	analyzer.SetReferenceProfiles(profiles)
+	matches := analyzer.localReferenceMatches(TransmissionEvent{FrequencyHz: 774.5e6, BandwidthHz: 12500, Location: &ObservationLocation{Latitude: 37.68, Longitude: -121.77, Label: "Livermore", Precision: "exact"}})
+	if len(matches) != 1 || matches[0]["name"] != "Local dispatch" || matches[0]["locationVerified"] != true {
+		t.Fatalf("unexpected location-filtered references: %#v", matches)
+	}
+}
+
 func TestLocalAIStatusListsGenerationModelsOnly(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"models":[{"name":"qwen3.5:9b","size":6000000000,"details":{"parameter_size":"9B","quantization_level":"Q4_K_M"}},{"name":"nomic-embed-text:v1.5","size":100}]}`))
@@ -37,6 +60,33 @@ func TestLocalAIStatusListsGenerationModelsOnly(t *testing.T) {
 	status := analyzer.Status()
 	if status.State != "ready" || len(status.Models) != 1 || status.Models[0].Name != "qwen3.5:9b" || status.Models[0].ParameterSize != "9B" {
 		t.Fatalf("unexpected model inventory: %+v", status)
+	}
+}
+
+func TestLocalAIBenchmarkComparesInstalledModelsWithoutChangingSelection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"fast:1b"},{"name":"careful:2b"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"response":"{\"signalFamily\":\"Unknown\",\"modulation\":\"UNKNOWN\",\"summary\":\"Insufficient evidence\",\"confidence\":0.2,\"evidence\":[],\"callsigns\":[]}"}`))
+	}))
+	defer server.Close()
+	analyzer := NewLocalAIAnalyzer(t.TempDir())
+	analyzer.config = LocalAIConfig{Enabled: true, Endpoint: server.URL, Model: "fast:1b", Profile: "lightweight", MinimumConfidence: 55}
+	if _, err := analyzer.StartBenchmark([]string{"fast:1b", "careful:2b"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for analyzer.BenchmarkStatus().Running && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	status := analyzer.BenchmarkStatus()
+	if status.Running || len(status.Results) != 2 || status.Results[0].Cases != 5 || status.Results[0].StructuredPercent != 100 {
+		t.Fatalf("unexpected benchmark result: %#v", status)
+	}
+	if analyzer.config.Model != "fast:1b" {
+		t.Fatal("benchmark changed the configured model")
 	}
 }
 
