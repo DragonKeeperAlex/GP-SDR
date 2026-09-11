@@ -29,6 +29,12 @@ Apple Silicon (`arm64`) or Intel (`x86_64`) package.
 6. Return to GP-SDR, press **Refresh**, select the receiver, and try the
    Broadcast FM profile with conservative gain and the amplifier off.
 
+After this first installation, use **Settings → Software update** to check the
+official GitHub release, review its notes, and install it. GP-SDR verifies the
+universal ZIP against the release SHA-256 manifest and validates the app bundle
+before restarting. The update replaces only the application; Application
+Support data, profiles, results, recordings, and calibration remain in place.
+
 If macOS says the app is damaged after downloading, first download it again and
 verify its checksum. Do not remove quarantine attributes from an unverified file.
 

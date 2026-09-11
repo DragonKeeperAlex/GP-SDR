@@ -1,4 +1,8 @@
-# What’s new through GP-SDR 1.5.0-rc18
+# What’s new through GP-SDR 1.5.0-rc19
+
+## 1.5.0-rc19: built-in verified updates
+
+The native macOS app can check the official GP-SDR GitHub releases at launch or on demand, show the release notes, download the universal package, validate its SHA-256 entry and macOS code-signature structure, replace the running app, and restart. Active radio work is stopped cleanly first. Application Support data is outside the app bundle and is never replaced; one previous application bundle is retained as a rollback copy until the next successful update.
 
 ## 1.5.0-rc18: protected results and faster displays
 

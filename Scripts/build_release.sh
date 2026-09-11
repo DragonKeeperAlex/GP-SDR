@@ -113,6 +113,7 @@ make_mac_app() {
   cp "$PROJECT_ROOT/packaging/macos/Info.plist" "$app_root/Contents/Info.plist"
   cp "$PROJECT_ROOT/packaging/macos/GP-SDR.icns" "$app_root/Contents/Resources/GP-SDR.icns"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUNDLE_VERSION" "$app_root/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUNDLE_VERSION" "$app_root/Contents/Info.plist"
   cp "$shell_binary" "$app_root/Contents/MacOS/GP-SDR"
   cp "$server_binary" "$app_root/Contents/Resources/bin/gpsdr-server"
   usb_arch=$architecture

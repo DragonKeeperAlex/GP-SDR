@@ -1,9 +1,11 @@
 #import <AppKit/AppKit.h>
 #import <CoreLocation/CoreLocation.h>
 #import <WebKit/WebKit.h>
+#import <CommonCrypto/CommonDigest.h>
 #import <arpa/inet.h>
 #import <netinet/in.h>
 #import <sys/socket.h>
+#import <sys/stat.h>
 #import <unistd.h>
 
 @interface GPSDRAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, CLLocationManagerDelegate>
@@ -16,6 +18,10 @@
 @property(nonatomic, strong) CLLocationManager *locationManager;
 @property(nonatomic) BOOL locationRequestPending;
 @property(nonatomic, strong) id sleepActivity;
+@property(nonatomic, copy) NSString *updateVersion;
+@property(nonatomic, copy) NSString *updateDownloadURL;
+@property(nonatomic, copy) NSString *updateChecksumsURL;
+@property(nonatomic, copy) NSString *updateReleaseURL;
 @end
 
 @implementation GPSDRAppDelegate
@@ -105,7 +111,7 @@
     configuration.websiteDataStore = WKWebsiteDataStore.defaultDataStore;
     [configuration.userContentController addScriptMessageHandler:self name:@"gpsdrNative"];
     WKUserScript *capabilities = [[WKUserScript alloc]
-        initWithSource:@"window.gpsdrNativeCapabilities=['location','localDatabaseFolder'];"
+        initWithSource:@"window.gpsdrNativeCapabilities=['location','localDatabaseFolder'];window.gpsdrNativeCapabilities.push('appUpdater');"
         injectionTime:WKUserScriptInjectionTimeAtDocumentStart
         forMainFrameOnly:YES];
     [configuration.userContentController addUserScript:capabilities];
@@ -236,7 +242,149 @@
     if ([action isEqualToString:@"chooseLocalDatabaseFolder"]) [self chooseLocalDatabaseFolder];
     else if ([action isEqualToString:@"requestLocation"]) [self requestCurrentLocation];
     else if ([action isEqualToString:@"openLocationSettings"]) [self openLocationSettings];
+    else if ([action isEqualToString:@"checkForUpdates"]) [self checkForUpdates:[(NSDictionary *)message.body objectForKey:@"currentVersion"]];
+    else if ([action isEqualToString:@"installUpdate"]) [self installAvailableUpdate];
     else if ([action isEqualToString:@"retryInterface"]) [self loadConsoleWithAttempt:0];
+}
+
+- (void)sendUpdateResult:(NSDictionary *)result {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+    NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.webView evaluateJavaScript:[NSString stringWithFormat:@"window.gpsdrNativeUpdateResult(%@)", json] completionHandler:nil];
+    });
+}
+
+- (void)checkForUpdates:(NSString *)currentVersion {
+    [self sendUpdateResult:@{@"state": @"checking", @"message": @"Checking GitHub Releases…"}];
+    NSURL *url = [NSURL URLWithString:@"https://api.github.com/repos/DragonKeeperAlex/GP-SDR/releases/latest"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+    [request setValue:@"GP-SDR-Updater" forHTTPHeaderField:@"User-Agent"];
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
+        NSDictionary *release = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if (error || http.statusCode != 200 || ![release isKindOfClass:NSDictionary.class]) {
+            [self sendUpdateResult:@{@"state": @"error", @"message": error.localizedDescription ?: @"GitHub Releases did not answer correctly."}];
+            return;
+        }
+        NSString *tag = release[@"tag_name"];
+        NSString *latest = [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag;
+        NSString *download = nil, *checksums = nil;
+        for (NSDictionary *asset in release[@"assets"]) {
+            NSString *name = asset[@"name"];
+            if ([name hasSuffix:@"-macos-universal.zip"]) download = asset[@"browser_download_url"];
+            if ([name isEqualToString:@"SHA256SUMS.txt"]) checksums = asset[@"browser_download_url"];
+        }
+        if (!latest.length || !download.length || !checksums.length) {
+            [self sendUpdateResult:@{@"state": @"error", @"message": @"The latest release does not contain a verified universal macOS package."}];
+            return;
+        }
+        self.updateVersion = latest;
+        self.updateDownloadURL = download;
+        self.updateChecksumsURL = checksums;
+        self.updateReleaseURL = release[@"html_url"];
+        BOOL available = [self version:latest isNewerThan:(currentVersion ?: @"")];
+        [self sendUpdateResult:@{@"state": available ? @"available" : @"current", @"version": latest,
+            @"releaseURL": self.updateReleaseURL ?: @"", @"notes": release[@"body"] ?: @"",
+            @"message": available ? [NSString stringWithFormat:@"GP-SDR %@ is ready to install.", latest] : @"GP-SDR is up to date."}];
+    }] resume];
+}
+
+- (BOOL)version:(NSString *)candidate isNewerThan:(NSString *)current {
+    if (!candidate.length || !current.length) return !current.length;
+    NSArray<NSString *> *(^parts)(NSString *) = ^NSArray<NSString *> *(NSString *value) {
+        NSString *clean = [[value hasPrefix:@"v"] ? [value substringFromIndex:1] : value lowercaseString];
+        return [clean componentsSeparatedByString:@"-"];
+    };
+    NSArray *left = parts(candidate), *right = parts(current);
+    NSArray *leftNumbers = [left[0] componentsSeparatedByString:@"."];
+    NSArray *rightNumbers = [right[0] componentsSeparatedByString:@"."];
+    for (NSInteger index = 0; index < 3; index++) {
+        NSInteger a = index < leftNumbers.count ? [leftNumbers[index] integerValue] : 0;
+        NSInteger b = index < rightNumbers.count ? [rightNumbers[index] integerValue] : 0;
+        if (a != b) return a > b;
+    }
+    NSInteger leftRC = left.count == 1 ? NSIntegerMax : [[[left[1] stringByReplacingOccurrencesOfString:@"rc" withString:@""] componentsSeparatedByString:@"."][0] integerValue];
+    NSInteger rightRC = right.count == 1 ? NSIntegerMax : [[[right[1] stringByReplacingOccurrencesOfString:@"rc" withString:@""] componentsSeparatedByString:@"."][0] integerValue];
+    return leftRC > rightRC;
+}
+
+- (NSString *)sha256ForFile:(NSString *)path {
+    NSFileHandle *file = [NSFileHandle fileHandleForReadingAtPath:path];
+    if (!file) return nil;
+    CC_SHA256_CTX context; CC_SHA256_Init(&context);
+    while (true) {
+        NSData *chunk = [file readDataOfLength:1024 * 1024];
+        if (!chunk.length) break;
+        CC_SHA256_Update(&context, chunk.bytes, (CC_LONG)chunk.length);
+    }
+    [file closeFile];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256_Final(digest, &context);
+    NSMutableString *result = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (NSInteger index = 0; index < CC_SHA256_DIGEST_LENGTH; index++) [result appendFormat:@"%02x", digest[index]];
+    return result;
+}
+
+- (void)installAvailableUpdate {
+    if (!self.updateDownloadURL.length || !self.updateChecksumsURL.length) {
+        [self sendUpdateResult:@{@"state": @"error", @"message": @"Check for updates again before installing."}];
+        return;
+    }
+    NSString *applicationParent = [NSBundle.mainBundle.bundlePath stringByDeletingLastPathComponent];
+    if (![NSFileManager.defaultManager isWritableFileAtPath:applicationParent]) {
+        [self sendUpdateResult:@{@"state": @"error", @"message": @"GP-SDR cannot replace itself from this folder. Move it to your Applications folder, reopen it, and try again."}];
+        return;
+    }
+    [self sendUpdateResult:@{@"state": @"downloading", @"message": @"Downloading and verifying the update…"}];
+    [[[NSURLSession sharedSession] dataTaskWithURL:[NSURL URLWithString:self.updateChecksumsURL] completionHandler:^(NSData *checksumData, NSURLResponse *checksumResponse, NSError *checksumError) {
+        if (checksumError || !checksumData.length) {
+            [self sendUpdateResult:@{@"state": @"error", @"message": checksumError.localizedDescription ?: @"Could not download release checksums."}]; return;
+        }
+        NSString *checksums = [[NSString alloc] initWithData:checksumData encoding:NSUTF8StringEncoding];
+        NSString *assetName = [NSURL URLWithString:self.updateDownloadURL].lastPathComponent;
+        __block NSString *expected = nil;
+        [checksums enumerateLinesUsingBlock:^(NSString *line, BOOL *stop) {
+            if ([line hasSuffix:assetName] && line.length >= 64) { expected = [[line substringToIndex:64] lowercaseString]; *stop = YES; }
+        }];
+        if (!expected.length) { [self sendUpdateResult:@{@"state": @"error", @"message": @"The package is missing from the release checksum list."}]; return; }
+        [[[NSURLSession sharedSession] downloadTaskWithURL:[NSURL URLWithString:self.updateDownloadURL] completionHandler:^(NSURL *temporaryURL, NSURLResponse *response, NSError *error) {
+            if (error || !temporaryURL) { [self sendUpdateResult:@{@"state": @"error", @"message": error.localizedDescription ?: @"The update download failed."}]; return; }
+            NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"GP-SDR-update-%@", NSUUID.UUID.UUIDString]];
+            NSString *archive = [root stringByAppendingPathComponent:assetName];
+            NSString *staging = [root stringByAppendingPathComponent:@"staging"];
+            [NSFileManager.defaultManager createDirectoryAtPath:staging withIntermediateDirectories:YES attributes:nil error:nil];
+            NSError *moveError = nil;
+            [NSFileManager.defaultManager moveItemAtURL:temporaryURL toURL:[NSURL fileURLWithPath:archive] error:&moveError];
+            if (moveError || ![[self sha256ForFile:archive] isEqualToString:expected]) {
+                [NSFileManager.defaultManager removeItemAtPath:root error:nil];
+                [self sendUpdateResult:@{@"state": @"error", @"message": moveError.localizedDescription ?: @"The downloaded package failed SHA-256 verification."}]; return;
+            }
+            NSTask *extract = [[NSTask alloc] init]; extract.executableURL = [NSURL fileURLWithPath:@"/usr/bin/ditto"];
+            extract.arguments = @[@"-x", @"-k", archive, staging];
+            NSError *taskError = nil; [extract launchAndReturnError:&taskError]; [extract waitUntilExit];
+            NSString *newApp = [staging stringByAppendingPathComponent:@"GP-SDR.app"];
+            NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[newApp stringByAppendingPathComponent:@"Contents/Info.plist"]];
+            NSTask *verify = [[NSTask alloc] init]; verify.executableURL = [NSURL fileURLWithPath:@"/usr/bin/codesign"];
+            verify.arguments = @[@"--verify", @"--deep", @"--strict", newApp];
+            [verify launchAndReturnError:&taskError]; [verify waitUntilExit];
+            if (extract.terminationStatus != 0 || verify.terminationStatus != 0 || ![info[@"CFBundleIdentifier"] isEqualToString:@"app.gp-sdr.desktop"]) {
+                [NSFileManager.defaultManager removeItemAtPath:root error:nil];
+                [self sendUpdateResult:@{@"state": @"error", @"message": @"The update package is not a valid GP-SDR application."}]; return;
+            }
+            NSString *current = NSBundle.mainBundle.bundlePath;
+            NSString *backup = [[current stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"GP-SDR Previous.app"];
+            NSString *script = [root stringByAppendingPathComponent:@"install.sh"];
+            NSString *body = @"#!/bin/sh\nset -eu\ncurrent=$1\nnew=$2\nbackup=$3\npid=$4\nwhile kill -0 \"$pid\" 2>/dev/null; do sleep 0.2; done\nrm -rf \"$backup\"\nmv \"$current\" \"$backup\"\nif mv \"$new\" \"$current\"; then\n  open \"$current\"\nelse\n  mv \"$backup\" \"$current\"\n  open \"$current\"\n  exit 1\nfi\nrm -rf \"$(dirname \"$new\")/..\"\n";
+            [body writeToFile:script atomically:YES encoding:NSUTF8StringEncoding error:&taskError];
+            chmod(script.fileSystemRepresentation, 0700);
+            NSTask *installer = [[NSTask alloc] init]; installer.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
+            installer.arguments = @[script, current, newApp, backup, [NSString stringWithFormat:@"%d", getpid()]];
+            if (![installer launchAndReturnError:&taskError]) { [self sendUpdateResult:@{@"state": @"error", @"message": taskError.localizedDescription ?: @"Could not start the update installer."}]; return; }
+            [self sendUpdateResult:@{@"state": @"installing", @"message": @"Update verified. GP-SDR is restarting…"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+        }] resume];
+    }] resume];
 }
 
 - (void)chooseLocalDatabaseFolder {

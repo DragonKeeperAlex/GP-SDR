@@ -116,6 +116,40 @@ func TestMapperLocationUsesNativeBridgeWithWebFallback(t *testing.T) {
 	}
 }
 
+func TestNativeUpdaterVerifiesPackageAndPreservesUserData(t *testing.T) {
+	projectRoot := filepath.Join("..", "..", "..")
+	shellData, err := os.ReadFile(filepath.Join(projectRoot, "macos", "GPSDRApp.m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell := string(shellData)
+	for _, required := range []string{
+		"api.github.com/repos/DragonKeeperAlex/GP-SDR/releases/latest",
+		"-macos-universal.zip",
+		"SHA256SUMS.txt",
+		"sha256ForFile",
+		`@"--verify", @"--deep", @"--strict"`,
+		`@"app.gp-sdr.desktop"`,
+		`window.gpsdrNativeCapabilities.push('appUpdater')`,
+	} {
+		if !strings.Contains(shell, required) {
+			t.Fatalf("native updater safety behavior %q is missing", required)
+		}
+	}
+	if strings.Contains(shell, "Application Support/GP-SDR") || strings.Contains(shell, "mapper-records.json") {
+		t.Fatal("native updater must not manipulate GP-SDR user data")
+	}
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`id="app-update-button"`, `id="app-update-auto"`, `id="app-update-notes"`} {
+		if !strings.Contains(string(indexData), required) {
+			t.Fatalf("update interface %q is missing", required)
+		}
+	}
+}
+
 func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {

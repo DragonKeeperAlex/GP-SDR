@@ -59,6 +59,20 @@ hold, and display floor/ceiling. Suggested order when reducing lag:
 The spectrum can remain responsive at a lower display rate because capture and
 audio processing are not tied to every visual frame.
 
+## Software updates on macOS
+
+The native app checks the official GP-SDR GitHub Releases page when it opens by
+default. Disable the launch check, check manually, read the release notes, or
+install an available version under **Settings → Software update**. Installation
+stops active receiver, Mapper, and analysis work, verifies the release checksum
+and app bundle, replaces only `GP-SDR.app`, and restarts it. User data remains in
+Application Support and is not part of the replacement. The prior app bundle is
+kept beside GP-SDR as `GP-SDR Previous.app` until the next update.
+
+The headless Linux and Windows packages continue to use their platform package
+or service update procedure; a remote browser cannot replace software on the
+host.
+
 ## Storage and retention
 
 The Data card separates total GP-SDR use, recordings, IQ evidence, and
