@@ -1,4 +1,16 @@
-# What’s new through GP-SDR 1.5.0-rc19
+# What’s new through GP-SDR 1.5.0-rc20
+
+## 1.5.0-rc20: combined Mapper monitor and PlutoSDR receive
+
+- Mapper Overview now shows every active job, receiver, current batch, channel
+  list, spectrum, and waterfall simultaneously instead of cycling one job.
+- Added PlutoSDR/compatible AD936x receive discovery through libiio and
+  SoapyPlutoSDR, including stable USB/network URI selection and multiple-device
+  identity.
+- Added driver-reported tuning ranges, AGC/manual gain, calibration, Tuner,
+  Band Monitor, RF Monitor, and Mapper compatibility for Pluto receivers.
+- Kept the per-capture ceiling at 20 MHz and receive-only support; GP-SDR does
+  not infer RF bandwidth from a higher advertised transport sample rate.
 
 ## 1.5.0-rc19: built-in verified updates
 

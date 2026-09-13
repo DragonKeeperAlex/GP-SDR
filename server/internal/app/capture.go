@@ -125,6 +125,9 @@ func BuildCaptureCommand(device SDRDevice, spec CaptureSpec) (CaptureCommand, er
 }
 
 func soapyDeviceArguments(device SDRDevice) string {
+	if strings.TrimSpace(device.DeviceArguments) != "" {
+		return device.DeviceArguments
+	}
 	driver := strings.TrimPrefix(device.Driver, "SoapySDR:")
 	parts := []string{"driver=" + driver}
 	if device.Serial != nil && *device.Serial != "" {

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.5.0-rc19"
+var Version = "1.5.0-rc20"
 
 type SDRDevice struct {
 	ID                      string             `json:"id"`
@@ -15,6 +15,7 @@ type SDRDevice struct {
 	Kind                    string             `json:"kind"`
 	Serial                  *string            `json:"serial"`
 	Driver                  string             `json:"driver"`
+	DeviceArguments         string             `json:"deviceArguments,omitempty"`
 	Connected               bool               `json:"connected"`
 	Available               bool               `json:"available"`
 	HealthWarning           string             `json:"healthWarning,omitempty"`

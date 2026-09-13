@@ -7,6 +7,24 @@
 | HackRF One / PortaPack in USB mode | Wide tuning range, selectable sample rate, LNA/VGA, RF amplifier, DC/IQ correction; half-duplex hardware; receive workflows plus guarded local WAV transmission |
 | RTL-SDR family | Low-cost receive-only IQ source, gain control, model-dependent direct sampling and bias tee |
 | SoapySDR | Other local SDRs supported by an installed Soapy module |
+| PlutoSDR / compatible AD936x boards | USB or Ethernet receive through libiio + SoapyPlutoSDR; AGC/manual gain, Tuner, Band Monitor, calibration, and Mapper jobs |
+
+GP-SDR uses the exact `uri` and serial reported by libiio so multiple Pluto-class
+boards remain distinct. Stock Pluto hardware is shown with its conservative
+325 MHz–3.8 GHz range. Modified boards use the driver-reported range, clearly
+labelled as such. A single GP-SDR capture is capped at 20 MHz even when firmware
+advertises a higher transport sample rate; transport rate is not RF bandwidth.
+
+On macOS, confirm the receive stack with:
+
+```sh
+SoapySDRUtil --info
+SoapySDRUtil --find
+SoapySDRUtil --probe="driver=plutosdr"
+```
+
+The Hardware page offers Pluto-specific setup instructions when the module is
+missing. GP-SDR does not rewrite `config.txt` or firmware during setup.
 | `rtl_tcp` | Remote RTL-SDR stream with reduced hardware-control visibility |
 
 Multiple receivers can be connected simultaneously. GP-SDR assigns exactly one

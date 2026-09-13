@@ -45,7 +45,22 @@ func DiscoverDevices(includeSimulator bool) []SDRDevice {
 var discoverPhysicalDevices = func() []SDRDevice {
 	devices := discoverHackRF()
 	devices = append(devices, discoverRTLSDR()...)
-	return append(devices, discoverSoapy()...)
+	soapy := discoverSoapy()
+	devices = append(devices, soapy...)
+	hasPluto := false
+	for _, device := range soapy {
+		hasPluto = hasPluto || device.Kind == "PlutoSDR"
+	}
+	if !hasPluto {
+		limit := 20e6
+		available := soapyFactoryAvailable("plutosdr")
+		note := "Install libiio and the SoapyPlutoSDR module, connect the board's data USB or Ethernet interface, then refresh."
+		if available {
+			note = "PlutoSDR driver ready; no compatible board is currently detected."
+		}
+		devices = append(devices, SDRDevice{ID: "plutosdr-driver", Name: "PlutoSDR / AD936x", Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", Available: available, Connected: false, SampleRateLimit: &limit, Note: ptr(note)})
+	}
+	return devices
 }
 
 // applyNominalFrequencyRange reports the commonly supported tuning range for
@@ -72,8 +87,10 @@ func applyNominalFrequencyRange(device *SDRDevice) {
 		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 47e6, 6e9
 		device.FrequencyRangeNote = "Nominal family range; verify the exact model"
 	case "PlutoSDR":
-		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 325e6, 3.8e9
-		device.FrequencyRangeNote = "Stock nominal range; firmware variants may differ"
+		if device.FrequencyMinimumHz == 0 || device.FrequencyMaximumHz == 0 {
+			device.FrequencyMinimumHz, device.FrequencyMaximumHz = 325e6, 3.8e9
+			device.FrequencyRangeNote = "Stock nominal range; firmware variants may differ"
+		}
 	case "Simulator":
 		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e6, 6e9
 		device.FrequencyRangeNote = "Simulated wideband test range"
@@ -240,6 +257,22 @@ func discoverSoapy() []SDRDevice {
 			label = "SoapySDR " + driver
 		}
 		serial := firstValue("serial =", block)
+		uri := firstValue("uri =", block)
+		minimumHz, maximumHz, capabilityNote := 0.0, 0.0, ""
+		if strings.Contains(strings.ToLower(driver), "pluto") {
+			probeArgs := "driver=" + driver
+			if uri != "" {
+				probeArgs += ",uri=" + uri
+			}
+			probe, _ := runTool(tool, []string{"--probe=" + probeArgs}, 6*time.Second)
+			if serial == "" {
+				serial = firstValue("hw_serial=", probe)
+			}
+			minimumHz, maximumHz = parseSoapyFrequencyRange(probe)
+			if minimumHz > 0 && maximumHz > minimumHz {
+				capabilityNote = "Driver-reported tuning range; GP-SDR caps one receive capture at 20 MHz"
+			}
+		}
 		if strings.EqualFold(driver, "hackrf") {
 			serial = validHackRFSerial(serial)
 		}
@@ -249,9 +282,43 @@ func discoverSoapy() []SDRDevice {
 			id = "soapy-" + driver + "-" + serial
 			serialPtr = &serial
 		}
-		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, Connected: true, Available: true, HelperArchitecture: ptr(runtime.GOARCH)})
+		arguments := "driver=" + driver
+		if uri != "" {
+			arguments += ",uri=" + uri
+		} else if serial != "" {
+			arguments += ",serial=" + serial
+		}
+		limit := soapySampleRateLimit(driver)
+		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, DeviceArguments: arguments, Connected: true, Available: true, SampleRateLimit: limit, FrequencyMinimumHz: minimumHz, FrequencyMaximumHz: maximumHz, FrequencyRangeNote: capabilityNote, HelperArchitecture: ptr(runtime.GOARCH)})
 	}
 	return items
+}
+
+func parseSoapyFrequencyRange(output string) (float64, float64) {
+	match := regexp.MustCompile(`(?im)^\s*(?:RF )?freq range:\s*\[\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\]\s*MHz`).FindStringSubmatch(output)
+	if len(match) != 3 {
+		return 0, 0
+	}
+	minimum, _ := strconv.ParseFloat(match[1], 64)
+	maximum, _ := strconv.ParseFloat(match[2], 64)
+	return minimum * 1e6, maximum * 1e6
+}
+
+func soapySampleRateLimit(driver string) *float64 {
+	if strings.Contains(strings.ToLower(driver), "pluto") {
+		limit := 20e6
+		return &limit
+	}
+	return nil
+}
+
+func soapyFactoryAvailable(factory string) bool {
+	tool, err := findTool("SoapySDRUtil")
+	if err != nil {
+		return false
+	}
+	output, _ := runTool(tool, []string{"--info"}, 4*time.Second)
+	return regexp.MustCompile(`(?i)(^|[=,\s])` + regexp.QuoteMeta(factory) + `($|[,\s])`).MatchString(output)
 }
 
 func validHackRFSerial(value string) string {

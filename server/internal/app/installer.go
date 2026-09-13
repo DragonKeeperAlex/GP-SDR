@@ -82,6 +82,9 @@ func setupRecipes() []installerRecipe {
 		{component: SetupComponent{ID: "soapysdr", Name: "SoapySDR", Category: "integration",
 			Guide:    "Installs the vendor-neutral SoapySDR runtime. A matching device module is also required. The stream helper is already included in macOS packages; native HackRF and RTL-SDR paths do not require SoapySDR.",
 			GuideURL: "https://github.com/pothosware/SoapySDR"}, tools: []string{"SoapySDRUtil"}, formulae: []string{"soapysdr"}},
+		{component: SetupComponent{ID: "plutosdr", Name: "PlutoSDR receive support", Category: "receiver",
+			Guide:    "Install Analog Devices libiio and the SoapyPlutoSDR module for your platform. GP-SDR then supports USB or network receive, gain, tuning, calibration, Tuner, Band Monitor, and concurrent Mapper jobs. Clone frequency limits are accepted only as reported by its driver.",
+			GuideURL: "https://github.com/pothosware/SoapyPlutoSDR"}},
 		{component: SetupComponent{ID: "transcription", Name: "Transcription", Category: "integration",
 			Guide:    "Installs whisper.cpp and downloads GP-SDR's checksum-pinned English base model. Processing stays on this computer; no account or API key is required.",
 			GuideURL: "https://github.com/ggml-org/whisper.cpp"}, tools: []string{"whisper-cli"}, formulae: []string{"whisper-cpp"}},
@@ -155,6 +158,9 @@ func (installer *Installer) Overview() SetupOverview {
 		component := recipe.component
 		applyPlatformSetupGuidance(&component)
 		ready := recipeReady(recipe)
+		if component.ID == "plutosdr" {
+			ready = soapyFactoryAvailable("plutosdr")
+		}
 		if component.ID == "transcription" {
 			status := NewTranscriber(installer.dataDirectory).Status()
 			ready = status.State == "ready"

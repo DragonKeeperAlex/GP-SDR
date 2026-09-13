@@ -42,6 +42,21 @@ func TestValidHackRFSerialRejectsTransientProbeGarbage(t *testing.T) {
 	}
 }
 
+func TestPlutoSoapyDiscoveryPreservesURIAndSafeLimit(t *testing.T) {
+	// The parser-facing invariants are tested without opening physical RF hardware.
+	device := SDRDevice{Driver: "SoapySDR:plutosdr", DeviceArguments: "driver=plutosdr,uri=usb:2.14.5"}
+	if got := soapyDeviceArguments(device); got != device.DeviceArguments {
+		t.Fatalf("Pluto URI was not preserved: %q", got)
+	}
+	if limit := soapySampleRateLimit("plutosdr"); limit == nil || *limit != 20e6 {
+		t.Fatalf("unexpected Pluto capture limit: %v", limit)
+	}
+	minimum, maximum := parseSoapyFrequencyRange("  Full freq range: [70, 6000] MHz\n    RF freq range: [70, 6000] MHz")
+	if minimum != 70e6 || maximum != 6e9 {
+		t.Fatalf("unexpected driver-reported Pluto range: %.0f..%.0f", minimum, maximum)
+	}
+}
+
 func TestParseHackRFInfoOutputKeepsSelfTestPerDevice(t *testing.T) {
 	output := `hackrf_info version: 2026.01.3
 Found HackRF

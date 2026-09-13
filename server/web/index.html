@@ -8,9 +8,9 @@
   <title>GP-SDR</title>
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
-  <link rel="stylesheet" href="/app.css?v=1.5.0-rc19">
+  <link rel="stylesheet" href="/app.css?v=1.5.0-rc20">
   <link rel="stylesheet" href="/console.css?v=1.5.0-rc8a">
-  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc19">
+  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc20">
 </head>
 <body>
   <div class="shell">
@@ -355,17 +355,10 @@
             <div><span>Next pass ETA</span><strong id="mapper-eta">—</strong><small id="mapper-eta-time">No active pass</small></div>
           </div>
           <div class="mapper-progress-track" role="progressbar" aria-label="Current Mapper pass" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="mapper-progress-bar"></i></div>
-          <div class="mapper-now">
-            <div><span>Operation</span><strong id="mapper-operation">Idle</strong><small id="mapper-operation-detail">Create or start a Mapper job</small></div>
-            <div><span>Receiver capture</span><strong id="mapper-capture">—</strong><small id="mapper-capture-detail">No sampled band yet</small></div>
-            <div class="mapper-now-channels"><span>Channels being checked now</span><div id="mapper-channel-list" class="mapper-channel-list"><small>Waiting for a receiver batch</small></div></div>
-          </div>
+          <div id="mapper-active-job-list" class="mapper-active-job-list"><div class="empty-state compact">Create or start a Mapper job.</div></div>
 </article>        <article class="panel mapper-rf-panel">
-          <div class="panel-head"><div><h2>Latest receiver capture</h2><span id="mapper-rf-detail">Spectrum and waterfall update while Mapper is sampling</span></div><span id="mapper-rf-state" class="chip">Waiting</span></div>
-          <div class="mapper-rf-grid">
-            <div class="mapper-rf-view"><div class="mapper-rf-label"><span>Spectrum</span><small id="mapper-spectrum-caption">No capture yet</small></div><canvas id="mapper-spectrum" height="170" aria-label="Mapper spectrum display"></canvas><div class="frequency-axis"><span id="mapper-spectrum-start">—</span><span id="mapper-spectrum-mid">—</span><span id="mapper-spectrum-end">—</span></div></div>
-            <div class="mapper-rf-view"><div class="mapper-rf-label"><span>Waterfall</span><small>Newest samples at top</small></div><canvas id="mapper-waterfall" height="170" aria-label="Mapper waterfall display"></canvas><div class="frequency-axis"><span id="mapper-waterfall-start">—</span><span id="mapper-waterfall-mid">—</span><span id="mapper-waterfall-end">—</span></div></div>
-          </div>
+          <div class="panel-head"><div><h2>Receiver captures</h2><span id="mapper-rf-detail">Every active Mapper receiver is shown at the same time</span></div><span id="mapper-rf-state" class="chip">Waiting</span></div>
+          <div id="mapper-rf-grid" class="rf-monitor-grid empty-state compact">Start a Mapper job to watch its receivers.</div>
         </article>
 <div id="mapper-job-grid" class="mapper-job-grid"></div></div></div>
         <article id="mapper-analysis-workspace" class="panel mapper-analysis-workspace">
@@ -634,7 +627,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc19"></script>
-  <script src="/explore.js?v=1.5.0-rc19"></script>
+  <script src="/app.js?v=1.5.0-rc20"></script>
+  <script src="/explore.js?v=1.5.0-rc20"></script>
 </body>
 </html>

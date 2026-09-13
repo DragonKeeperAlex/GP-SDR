@@ -165,7 +165,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 		`id="mapper-workflow"`, `name="mapper-workflow" value="discovery"`, `name="mapper-workflow" value="decipher"`, `>Identify</span>`,
 		`id="mapper-listen-value"`, `id="mapper-listen-unit"`, `value="86400">days`,
 		`id="mapper-concurrent"`, `256 · fast collection`, `512 · maximum collection`, `1,024 · extreme collection`,
-		`id="mapper-operation"`, `id="mapper-channel-list"`, `id="mapper-spectrum"`, `id="mapper-waterfall"`,
+		`id="mapper-active-job-list"`, `id="mapper-rf-grid"`, `Every active Mapper receiver is shown at the same time`,
 		`id="mapper-results-toggle"`, `id="mapper-results-content"`, `id="mapper-filter-type"`, `id="mapper-filter-state"`, `id="mapper-sort"`, `id="mapper-filter-reset"`,
 		`id="mapper-filter-repeated"`, `value="verified">Successfully identified`, `id="mapper-upload-verified"`, `Identified only`,
 		`id="mapper-identify-min-hits"`, `id="mapper-identify-hit-source"`, `id="mapper-identify-occupancy"`, `100% only`,
@@ -189,7 +189,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 	for _, required := range []string{
 		"api('/api/mapper/progress')", "renderMapperProgress()", "mapperPeakHours", "mapperDetailHTML",
 		"decipherListenSeconds", "concurrentChannels", "mapperBatchReadout", "expandedMapperFrequencies", "confirmAction", "Delete Mapper job?", "Clear Mapper results?",
-		"renderMapperRF", "mapperSpectrumJob", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort", "identifyMinimumHits", "identifyMinimumOccupancy", "mapper-filter-repeated", "mapperFullyIdentified", "uploadVerifiedOnly", "visibleRecords=records.slice(0,250)", "mapper-results-more", "/api/mapper/jobs/start-all", "receiverLabel",
+		"renderMapperRF", "state.spectra", "mapper-active-row", "setMapperResultsCollapsed", "mapper-filter-type", "mapper-filter-state", "mapper-sort", "identifyMinimumHits", "identifyMinimumOccupancy", "mapper-filter-repeated", "mapperFullyIdentified", "uploadVerifiedOnly", "visibleRecords=records.slice(0,250)", "mapper-results-more", "/api/mapper/jobs/start-all", "receiverLabel",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)

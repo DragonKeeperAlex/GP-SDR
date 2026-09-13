@@ -28,6 +28,8 @@ encryption and marks or excludes encrypted calls.
 | Project or service | How GP-SDR uses it | Upstream license or terms | Bundled |
 |---|---|---|---|
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | Device discovery and streaming through the original, dynamically loaded `gpsdr-soapy` bridge | Boost Software License 1.0 | The GP-SDR bridge is bundled on macOS; upstream SoapySDR/modules are not |
+| [libiio](https://github.com/analogdevicesinc/libiio) | USB/network transport for PlutoSDR and compatible IIO radios | LGPL-2.1-or-later library; GPL utilities | Installed separately; consult upstream notices for the exact build |
+| [SoapyPlutoSDR](https://github.com/pothosware/SoapyPlutoSDR) | PlutoSDR/AD936x discovery and receive streaming through SoapySDR | Boost Software License 1.0 | Installed separately; GP-SDR preserves the reported libiio URI |
 | [OP25, boatbod fork](https://github.com/boatbod/op25) | Developer/source compatibility code; it is not the packaged or selected P25 backend | GPL-3.0-or-later | No |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | Offline transcription through `whisper-cli` | MIT | No; the in-app installer can install the executable and download a checksum-pinned English base model on request |
 | [Ollama](https://github.com/ollama/ollama) | Optional localhost-only model runtime for radio-evidence correlation | MIT | No; GP-SDR detects or installs the separate runtime |
