@@ -83,7 +83,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs the vendor-neutral SoapySDR runtime. A matching device module is also required. The stream helper is already included in macOS packages; native HackRF and RTL-SDR paths do not require SoapySDR.",
 			GuideURL: "https://github.com/pothosware/SoapySDR"}, tools: []string{"SoapySDRUtil"}, formulae: []string{"soapysdr"}},
 		{component: SetupComponent{ID: "plutosdr", Name: "PlutoSDR receive support", Category: "receiver",
-			Guide:    "Install Analog Devices libiio and the SoapyPlutoSDR module for your platform. GP-SDR then supports USB or network receive, gain, tuning, calibration, Tuner, Band Monitor, and concurrent Mapper jobs. Clone frequency limits are accepted only as reported by its driver.",
+			Guide:    "Install Analog Devices libiio and the SoapyPlutoSDR module for your platform. GP-SDR then supports USB or network receive, guarded transmit, AGC/manual gain, filter bandwidth, PPM correction, calibration, Tuner, Band Monitor, and Mapper jobs. Clone limits and channel counts are accepted only when the installed driver can open them.",
 			GuideURL: "https://github.com/pothosware/SoapyPlutoSDR"}},
 		{component: SetupComponent{ID: "transcription", Name: "Transcription", Category: "integration",
 			Guide:    "Installs whisper.cpp and downloads GP-SDR's checksum-pinned English base model. Processing stays on this computer; no account or API key is required.",

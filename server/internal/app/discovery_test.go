@@ -57,6 +57,25 @@ func TestPlutoSoapyDiscoveryPreservesURIAndSafeLimit(t *testing.T) {
 	}
 }
 
+func TestParsePlutoFirmwareCapabilities(t *testing.T) {
+	probe := `Channels: 1 Rx, 1 Tx
+Full-duplex: YES
+Supports AGC: YES
+Sample rates: [0.260417, 61.44] MSps
+Filter bandwidths: 0.2, 1, 2, 3, 4, 6, 7, 8, 9, 10 MHz`
+	rx, tx := parseSoapyChannelCounts(probe)
+	if rx != 1 || tx != 1 {
+		t.Fatalf("unexpected channels %d/%d", rx, tx)
+	}
+	minimum, maximum := parseSoapySampleRateRange(probe)
+	if minimum != 260417 || maximum != 61440000 {
+		t.Fatalf("unexpected rates %.0f..%.0f", minimum, maximum)
+	}
+	if bandwidth := parseSoapyMaximumBandwidth(probe); bandwidth != 10e6 {
+		t.Fatalf("unexpected bandwidth %.0f", bandwidth)
+	}
+}
+
 func TestParseHackRFInfoOutputKeepsSelfTestPerDevice(t *testing.T) {
 	output := `hackrf_info version: 2026.01.3
 Found HackRF

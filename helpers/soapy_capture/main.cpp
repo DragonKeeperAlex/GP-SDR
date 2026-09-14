@@ -27,6 +27,7 @@ struct SoapySDRKwargs;
 
 namespace {
 constexpr int soapyRx = 1;
+constexpr int soapyTx = 0;
 constexpr int soapyTimeout = -1;
 constexpr const char *soapyCF32 = "CF32";
 std::atomic<bool> running{true};
@@ -47,6 +48,11 @@ double optionalValue(int argc, char **argv, const std::string &name, double fall
     return fallback;
 }
 
+std::string optionalString(int argc, char **argv, const std::string &name) {
+    for (int i = 1; i + 1 < argc; ++i) if (std::string(argv[i]) == name) return argv[i + 1];
+    return {};
+}
+
 class SoapyAPI {
 public:
     using Make = SoapySDRDevice *(*)(const char *);
@@ -56,12 +62,16 @@ public:
     using SetRate = int (*)(SoapySDRDevice *, int, std::size_t, double);
     using SetFrequency = int (*)(SoapySDRDevice *, int, std::size_t, double, const SoapySDRKwargs *);
     using SetGain = int (*)(SoapySDRDevice *, int, std::size_t, double);
+    using SetGainMode = int (*)(SoapySDRDevice *, int, std::size_t, bool);
+    using SetBandwidth = int (*)(SoapySDRDevice *, int, std::size_t, double);
+    using SetFrequencyCorrection = int (*)(SoapySDRDevice *, int, std::size_t, double);
     using SetupStream = SoapySDRStream *(*)(SoapySDRDevice *, int, const char *, const std::size_t *, std::size_t, const SoapySDRKwargs *);
     using CloseStream = int (*)(SoapySDRDevice *, SoapySDRStream *);
     using StreamMTU = std::size_t (*)(const SoapySDRDevice *, SoapySDRStream *);
     using ActivateStream = int (*)(SoapySDRDevice *, SoapySDRStream *, int, long long, std::size_t);
     using DeactivateStream = int (*)(SoapySDRDevice *, SoapySDRStream *, int, long long);
     using ReadStream = int (*)(SoapySDRDevice *, SoapySDRStream *, void *const *, std::size_t, int *, long long *, long);
+    using WriteStream = int (*)(SoapySDRDevice *, SoapySDRStream *, const void *const *, std::size_t, int *, long long, long);
 
     SoapyAPI() {
 #ifdef _WIN32
@@ -97,12 +107,16 @@ public:
         setRate = symbol<SetRate>("SoapySDRDevice_setSampleRate");
         setFrequency = symbol<SetFrequency>("SoapySDRDevice_setFrequency");
         setGain = symbol<SetGain>("SoapySDRDevice_setGain");
+        setGainMode = symbol<SetGainMode>("SoapySDRDevice_setGainMode");
+        setBandwidth = symbol<SetBandwidth>("SoapySDRDevice_setBandwidth");
+        setFrequencyCorrection = symbol<SetFrequencyCorrection>("SoapySDRDevice_setFrequencyCorrection");
         setupStream = symbol<SetupStream>("SoapySDRDevice_setupStream");
         closeStream = symbol<CloseStream>("SoapySDRDevice_closeStream");
         streamMTU = symbol<StreamMTU>("SoapySDRDevice_getStreamMTU");
         activateStream = symbol<ActivateStream>("SoapySDRDevice_activateStream");
         deactivateStream = symbol<DeactivateStream>("SoapySDRDevice_deactivateStream");
         readStream = symbol<ReadStream>("SoapySDRDevice_readStream");
+        writeStream = symbol<WriteStream>("SoapySDRDevice_writeStream");
     }
 
     ~SoapyAPI() {
@@ -130,12 +144,16 @@ public:
     SetRate setRate{};
     SetFrequency setFrequency{};
     SetGain setGain{};
+    SetGainMode setGainMode{};
+    SetBandwidth setBandwidth{};
+    SetFrequencyCorrection setFrequencyCorrection{};
     SetupStream setupStream{};
     CloseStream closeStream{};
     StreamMTU streamMTU{};
     ActivateStream activateStream{};
     DeactivateStream deactivateStream{};
     ReadStream readStream{};
+    WriteStream writeStream{};
 
 private:
 #ifdef _WIN32
@@ -166,6 +184,11 @@ int main(int argc, char **argv) {
         const double frequency = std::stod(valueFor(argc, argv, "--frequency"));
         const double rate = std::stod(valueFor(argc, argv, "--rate"));
         const double gain = optionalValue(argc, argv, "--gain", -1.0);
+        const bool agc = optionalValue(argc, argv, "--agc", 0.0) != 0.0;
+        const double bandwidth = optionalValue(argc, argv, "--bandwidth", 0.0);
+        const double ppm = optionalValue(argc, argv, "--ppm", 0.0);
+        const std::string txFile = optionalString(argc, argv, "--tx-file");
+        const int direction = txFile.empty() ? soapyRx : soapyTx;
         SoapyAPI api;
 
         std::signal(SIGINT, stop);
@@ -181,10 +204,13 @@ int main(int argc, char **argv) {
         }
         SoapySDRStream *stream = nullptr;
         try {
-            api.check(api.setRate(device, soapyRx, 0, rate), "set sample rate");
-            api.check(api.setFrequency(device, soapyRx, 0, frequency, nullptr), "set frequency");
-            if (gain >= 0.0) api.check(api.setGain(device, soapyRx, 0, gain), "set gain");
-            stream = api.setupStream(device, soapyRx, soapyCF32, nullptr, 0, nullptr);
+            api.check(api.setRate(device, direction, 0, rate), "set sample rate");
+            api.check(api.setFrequency(device, direction, 0, frequency, nullptr), "set frequency");
+            if (direction == soapyRx) api.check(api.setGainMode(device, direction, 0, agc), "set automatic gain");
+            if (gain >= 0.0) api.check(api.setGain(device, direction, 0, gain), "set gain");
+            if (bandwidth > 0.0) api.check(api.setBandwidth(device, direction, 0, bandwidth), "set filter bandwidth");
+            if (ppm != 0.0) api.check(api.setFrequencyCorrection(device, direction, 0, ppm), "set frequency correction");
+            stream = api.setupStream(device, direction, soapyCF32, nullptr, 0, nullptr);
             if (!stream) {
                 const char *message = api.lastError();
                 throw std::runtime_error(message && *message ? message : "SoapySDR did not create a receive stream");
@@ -192,6 +218,26 @@ int main(int argc, char **argv) {
             api.check(api.activateStream(device, stream, 0, 0, 0), "activate stream");
 
             const std::size_t mtu = std::max<std::size_t>(1024, api.streamMTU(device, stream));
+            if (direction == soapyTx) {
+                std::FILE *input = std::fopen(txFile.c_str(), "rb");
+                if (!input) throw std::runtime_error("could not open transmit IQ file");
+                std::vector<std::int8_t> source(mtu * 2); std::vector<float> samples(mtu * 2);
+                while (running) {
+                    const std::size_t bytesRead = std::fread(source.data(), 1, source.size(), input), count = bytesRead / 2;
+                    if (count == 0) break;
+                    for (std::size_t i = 0; i < count * 2; ++i) samples[i] = static_cast<float>(source[i]) / 127.0f;
+                    std::size_t offset = 0;
+                    while (offset < count && running) {
+                        const void *buffers[] = {samples.data() + offset * 2}; int flags = 0;
+                        const int written = api.writeStream(device, stream, buffers, count - offset, &flags, 0, 500000);
+                        if (written == soapyTimeout) continue;
+                        if (written < 0) api.check(written, "write stream");
+                        offset += static_cast<std::size_t>(written);
+                    }
+                    if (bytesRead < source.size()) break;
+                }
+                std::fclose(input); api.deactivateStream(device, stream, 0, 0); api.closeStream(device, stream); api.unmake(device); return 0;
+            }
             std::vector<float> iq(mtu * 2);
             std::vector<std::int8_t> bytes(mtu * 2);
             void *buffers[] = {iq.data()};

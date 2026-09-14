@@ -145,7 +145,7 @@ function setView(view) {
     band: ['Band monitor', 'Whole-band channel audio and tone detection'],
 	rfmonitor: ['RF monitor', 'Live spectrum and waterfall for every active receiver'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
-    transmit: ['Transmit', 'Guarded HackRF audio playback'],
+    transmit: ['Transmit', 'Guarded SDR audio playback'],
     activity: ['Activity', 'Signals and transmission history'],
     explore: ['Explore', 'Activity patterns, collection locations, and reference evidence'],
     mapper: ({overview:['Mapper overview','Live jobs, receivers, spectrum, and throughput'],discovery:['Discovery','High-throughput RF activity collection'],identify:['Identify','Focused decoding and signal identification'],analysis:['Analyze','Process stored captures and inspect live results'],schedule:['Mapper schedule','Timed collection, identification, and offline compute'],results:['Mapper results','Search, verify, export, and sync collected activity']}[state.mapperPage]||['Mapper','Wide-range activity survey']),
@@ -215,8 +215,8 @@ function renderLocalAI(){
 
 function renderTransmit(){
   const select=$('#transmit-device'); if(!select)return;
-  const radios=state.devices.filter(d=>d.kind==='HackRF'&&d.connected&&d.available),previous=select.value;
-  select.innerHTML=radios.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(receiverLabel(d,radios))}</option>`).join('')||'<option value="">No available HackRF</option>';
+  const radios=state.devices.filter(d=>d.connected&&d.available&&(d.kind==='HackRF'||(d.kind==='PlutoSDR'&&d.transmitChannels>0))),previous=select.value;
+  select.innerHTML=radios.map(d=>`<option value="${escapeHTML(d.id)}">${escapeHTML(receiverLabel(d,radios))}</option>`).join('')||'<option value="">No transmit-capable SDR</option>';
   if(radios.some(d=>d.id===previous))select.value=previous;
   const status=state.transmitStatus||{}; const badge=$('#transmit-state'),detail=$('#transmit-detail');
   badge.textContent=status.state==='running'?'Transmitting':status.state==='complete'?'Complete':status.state==='error'?'Error':'Receive-only';
@@ -579,7 +579,7 @@ function renderHardware() {
   $('#device-grid').innerHTML = state.devices.length ? state.devices.map(device => `
     <article class="hardware-card"><div class="hardware-title"><i class="${device.healthWarning ? 'optional' : device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
 		<p>${escapeHTML(hardwareActivityText(device))}</p>
-      <div class="hardware-detail">${device.kind === 'HackRF' ? 'LNA 0–40 dB · VGA 0–62 dB · RF amp · antenna power · 2–20 MS/s' : device.kind === 'RTL-SDR' ? 'Tuner AGC/manual gain · PPM correction · 0.225–3.2 MS/s' : 'SoapySDR gain · PPM and device-specific controls'}<br>${escapeHTML(hardwareRangeText(device))}<br>${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
+      <div class="hardware-detail">${escapeHTML(hardwareCapabilityText(device))}<br>${escapeHTML(hardwareRangeText(device))}<br>${device.firmwareVersion?`${escapeHTML(device.firmwareVersion)} · `:''}${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
       ${device.healthWarning?`<div class="hardware-warning" role="status">⚠ ${escapeHTML(device.healthWarning)}</div>`:''}
       ${hardwareTelemetryHTML(device)}
       <footer><span>${escapeHTML(device.kind)}</span><span>${device.connected ? (device.healthWarning ? 'Connected · warning' : device.available ? 'Ready' : 'Unavailable') : device.available ? 'Driver ready' : 'Driver needed'}</span></footer>
@@ -595,6 +595,13 @@ function renderHardware() {
 }
 
 function hardwareRangeText(device){return device.frequencyMinimumHz&&device.frequencyMaximumHz?`${formatFrequency(device.frequencyMinimumHz)}–${formatFrequency(device.frequencyMaximumHz)} nominal · ${device.frequencyRangeNote||'model-dependent range'}`:'Frequency range reported by the installed driver';}
+
+function hardwareCapabilityText(device){
+  if(device.kind!=='PlutoSDR')return device.kind === 'HackRF' ? 'LNA 0–40 dB · VGA 0–62 dB · RF amp · antenna power · 2–20 MS/s' : device.kind === 'RTL-SDR' ? 'Tuner AGC/manual gain · PPM correction · 0.225–3.2 MS/s' : 'SoapySDR gain · PPM and device-specific controls';
+  const channels=`${device.receiveChannels||1} RX · ${device.transmitChannels||1} TX${device.fullDuplex?' · full duplex':''}`;
+  const rates=device.sampleRateMinimumHz&&device.driverSampleRateMaximumHz?`${(device.sampleRateMinimumHz/1e6).toFixed(3)}–${(device.driverSampleRateMaximumHz/1e6).toFixed(2)} MS/s driver range`:'';
+  return [channels,device.supportsAGC?'AGC + manual gain':'manual gain',rates,device.filterBandwidthLimitHz?`filters to ${(device.filterBandwidthLimitHz/1e6).toFixed(0)} MHz`:'',device.transport?`via ${device.transport}`:''].filter(Boolean).join(' · ');
+}
 
 function hardwareActivityText(device) {
   const mapperJob=(state.mapper?.jobs||[]).find(job=>job.config?.deviceID===device.id&&(job.state==='running'||job.state==='stopping'));

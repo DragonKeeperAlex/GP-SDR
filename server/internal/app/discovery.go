@@ -244,7 +244,9 @@ func discoverSoapy() []SDRDevice {
 	if err != nil {
 		return nil
 	}
-	output, _ := runTool(tool, []string{"--find"}, 5*time.Second)
+	// Tezuka network discovery may take several seconds while mDNS and libiio
+	// settle, especially when the same board also advertises a USB URI.
+	output, _ := runTool(tool, []string{"--find"}, 12*time.Second)
 	blocks := strings.Split(output, "Found device")
 	items := make([]SDRDevice, 0)
 	for index, block := range blocks[1:] {
@@ -259,15 +261,30 @@ func discoverSoapy() []SDRDevice {
 		serial := firstValue("serial =", block)
 		uri := firstValue("uri =", block)
 		minimumHz, maximumHz, capabilityNote := 0.0, 0.0, ""
+		hardwareModel, firmwareVersion, transport := "", "", ""
+		receiveChannels, transmitChannels := 0, 0
+		fullDuplex, supportsAGC := false, false
+		minimumRateHz, maximumRateHz, maximumBandwidthHz := 0.0, 0.0, 0.0
 		if strings.Contains(strings.ToLower(driver), "pluto") {
 			probeArgs := "driver=" + driver
 			if uri != "" {
 				probeArgs += ",uri=" + uri
 			}
-			probe, _ := runTool(tool, []string{"--probe=" + probeArgs}, 6*time.Second)
+			probe, _ := runTool(tool, []string{"--probe=" + probeArgs}, 15*time.Second)
+			if !strings.Contains(probe, "Device identification") {
+				continue
+			}
 			if serial == "" {
 				serial = firstValue("hw_serial=", probe)
 			}
+			hardwareModel = firstValue("hw_model=", probe)
+			firmwareVersion = firstValue("fw_version=", probe)
+			transport = uri
+			receiveChannels, transmitChannels = parseSoapyChannelCounts(probe)
+			fullDuplex = strings.Contains(probe, "Full-duplex: YES")
+			supportsAGC = strings.Contains(probe, "Supports AGC: YES")
+			minimumRateHz, maximumRateHz = parseSoapySampleRateRange(probe)
+			maximumBandwidthHz = parseSoapyMaximumBandwidth(probe)
 			minimumHz, maximumHz = parseSoapyFrequencyRange(probe)
 			if minimumHz > 0 && maximumHz > minimumHz {
 				capabilityNote = "Driver-reported tuning range; GP-SDR caps one receive capture at 20 MHz"
@@ -289,9 +306,47 @@ func discoverSoapy() []SDRDevice {
 			arguments += ",serial=" + serial
 		}
 		limit := soapySampleRateLimit(driver)
-		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, DeviceArguments: arguments, Connected: true, Available: true, SampleRateLimit: limit, FrequencyMinimumHz: minimumHz, FrequencyMaximumHz: maximumHz, FrequencyRangeNote: capabilityNote, HelperArchitecture: ptr(runtime.GOARCH)})
+		if hardwareModel != "" {
+			label = hardwareModel
+		}
+		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, DeviceArguments: arguments, Connected: true, Available: true, SampleRateLimit: limit, FrequencyMinimumHz: minimumHz, FrequencyMaximumHz: maximumHz, FrequencyRangeNote: capabilityNote, HardwareModel: hardwareModel, FirmwareVersion: firmwareVersion, Transport: transport, ReceiveChannels: receiveChannels, TransmitChannels: transmitChannels, FullDuplex: fullDuplex, SupportsAGC: supportsAGC, SampleRateMinimumHz: minimumRateHz, DriverSampleRateMaximumHz: maximumRateHz, FilterBandwidthLimitHz: maximumBandwidthHz, HelperArchitecture: ptr(runtime.GOARCH)})
 	}
 	return items
+}
+
+func parseSoapyChannelCounts(output string) (int, int) {
+	match := regexp.MustCompile(`(?im)^\s*Channels:\s*(\d+)\s*Rx,\s*(\d+)\s*Tx`).FindStringSubmatch(output)
+	if len(match) != 3 {
+		return 0, 0
+	}
+	rx, _ := strconv.Atoi(match[1])
+	tx, _ := strconv.Atoi(match[2])
+	return rx, tx
+}
+
+func parseSoapySampleRateRange(output string) (float64, float64) {
+	match := regexp.MustCompile(`(?im)^\s*Sample rates:\s*\[\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\]\s*MSps`).FindStringSubmatch(output)
+	if len(match) != 3 {
+		return 0, 0
+	}
+	minimum, _ := strconv.ParseFloat(match[1], 64)
+	maximum, _ := strconv.ParseFloat(match[2], 64)
+	return minimum * 1e6, maximum * 1e6
+}
+
+func parseSoapyMaximumBandwidth(output string) float64 {
+	match := regexp.MustCompile(`(?im)^\s*Filter bandwidths:\s*([^\n]+)`).FindStringSubmatch(output)
+	if len(match) != 2 {
+		return 0
+	}
+	maximum := 0.0
+	for _, value := range regexp.MustCompile(`[0-9.]+`).FindAllString(match[1], -1) {
+		parsed, _ := strconv.ParseFloat(value, 64)
+		if parsed > maximum {
+			maximum = parsed
+		}
+	}
+	return maximum * 1e6
 }
 
 func parseSoapyFrequencyRange(output string) (float64, float64) {

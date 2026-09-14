@@ -85,7 +85,7 @@ browser and is designed for phones and tablets.
 - Optional localhost-only signal intelligence with a lightweight Ollama model,
   conservative confidence gating, user-confirmed examples, and JSONL training export
 - Included Universal macOS SoapySDR bridge for other installed SDRs and remote sources
-- PlutoSDR/compatible AD936x receive via libiio + SoapyPlutoSDR, with USB/network URI identity and driver-reported tuning limits
+- PlutoSDR/compatible AD936x receive and guarded analog transmit via libiio + SoapyPlutoSDR, with USB/network failover, hardware AGC, manual gain, filter bandwidth, PPM correction, firmware identity, and driver-reported tuning limits
 - Authenticated, responsive web console for headless and mobile use
 
 Encrypted P25 calls are identified and skipped. GP-SDR does not transmit and

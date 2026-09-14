@@ -7,29 +7,39 @@ import (
 	"time"
 )
 
-var Version = "1.5.0-rc20"
+var Version = "1.5.0-rc21"
 
 type SDRDevice struct {
-	ID                      string             `json:"id"`
-	Name                    string             `json:"name"`
-	Kind                    string             `json:"kind"`
-	Serial                  *string            `json:"serial"`
-	Driver                  string             `json:"driver"`
-	DeviceArguments         string             `json:"deviceArguments,omitempty"`
-	Connected               bool               `json:"connected"`
-	Available               bool               `json:"available"`
-	HealthWarning           string             `json:"healthWarning,omitempty"`
-	FirmwareSelfTestWarning bool               `json:"-"`
-	TunerID                 string             `json:"tunerID,omitempty"`
-	SampleRateLimit         *float64           `json:"sampleRateLimit"`
-	FrequencyMinimumHz      float64            `json:"frequencyMinimumHz,omitempty"`
-	FrequencyMaximumHz      float64            `json:"frequencyMaximumHz,omitempty"`
-	FrequencyRangeNote      string             `json:"frequencyRangeNote,omitempty"`
-	HelperArchitecture      *string            `json:"helperArchitecture"`
-	Note                    *string            `json:"note"`
-	Calibration             *DeviceCalibration `json:"calibration,omitempty"`
-	Host                    string             `json:"host,omitempty"`
-	Port                    int                `json:"port,omitempty"`
+	ID                        string             `json:"id"`
+	Name                      string             `json:"name"`
+	Kind                      string             `json:"kind"`
+	Serial                    *string            `json:"serial"`
+	Driver                    string             `json:"driver"`
+	DeviceArguments           string             `json:"deviceArguments,omitempty"`
+	Connected                 bool               `json:"connected"`
+	Available                 bool               `json:"available"`
+	HealthWarning             string             `json:"healthWarning,omitempty"`
+	FirmwareSelfTestWarning   bool               `json:"-"`
+	TunerID                   string             `json:"tunerID,omitempty"`
+	SampleRateLimit           *float64           `json:"sampleRateLimit"`
+	FrequencyMinimumHz        float64            `json:"frequencyMinimumHz,omitempty"`
+	FrequencyMaximumHz        float64            `json:"frequencyMaximumHz,omitempty"`
+	FrequencyRangeNote        string             `json:"frequencyRangeNote,omitempty"`
+	HardwareModel             string             `json:"hardwareModel,omitempty"`
+	FirmwareVersion           string             `json:"firmwareVersion,omitempty"`
+	Transport                 string             `json:"transport,omitempty"`
+	ReceiveChannels           int                `json:"receiveChannels,omitempty"`
+	TransmitChannels          int                `json:"transmitChannels,omitempty"`
+	FullDuplex                bool               `json:"fullDuplex,omitempty"`
+	SupportsAGC               bool               `json:"supportsAGC,omitempty"`
+	SampleRateMinimumHz       float64            `json:"sampleRateMinimumHz,omitempty"`
+	DriverSampleRateMaximumHz float64            `json:"driverSampleRateMaximumHz,omitempty"`
+	FilterBandwidthLimitHz    float64            `json:"filterBandwidthLimitHz,omitempty"`
+	HelperArchitecture        *string            `json:"helperArchitecture"`
+	Note                      *string            `json:"note"`
+	Calibration               *DeviceCalibration `json:"calibration,omitempty"`
+	Host                      string             `json:"host,omitempty"`
+	Port                      int                `json:"port,omitempty"`
 }
 
 type RemoteReceiver struct {

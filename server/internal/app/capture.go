@@ -31,6 +31,7 @@ type CaptureSpec struct {
 	AmpEnabled        bool
 	AntennaPower      bool
 	AutoGain          bool
+	BandwidthHz       int
 }
 
 type CaptureCommand struct {
@@ -52,8 +53,22 @@ func BuildCaptureCommand(device SDRDevice, spec CaptureSpec) (CaptureCommand, er
 			return CaptureCommand{}, errors.New("GP-SDR's SoapySDR stream helper is not installed")
 		}
 		args := []string{"--device", soapyDeviceArguments(device), "--frequency", strconv.FormatInt(spec.CenterFrequencyHz, 10), "--rate", strconv.Itoa(spec.SampleRateHz)}
+		if spec.AutoGain {
+			args = append(args, "--agc", "1")
+		}
 		if spec.GainDB > 0 && !spec.AutoGain {
 			args = append(args, "--gain", fmt.Sprintf("%.1f", spec.GainDB))
+		}
+		bandwidth := spec.BandwidthHz
+		if bandwidth <= 0 {
+			bandwidth = spec.SampleRateHz
+		}
+		if device.FilterBandwidthLimitHz > 0 && float64(bandwidth) > device.FilterBandwidthLimitHz {
+			bandwidth = int(device.FilterBandwidthLimitHz)
+		}
+		args = append(args, "--bandwidth", strconv.Itoa(bandwidth))
+		if spec.PPMCorrection != 0 {
+			args = append(args, "--ppm", strconv.Itoa(spec.PPMCorrection))
 		}
 		return CaptureCommand{Executable: tool, Arguments: args, Format: ComplexSigned8}, nil
 	}

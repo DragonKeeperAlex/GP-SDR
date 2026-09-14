@@ -48,7 +48,7 @@ type transmitState struct {
 }
 
 func newTransmitState() *transmitState {
-	return &transmitState{status: TransmitStatus{State: "idle", Note: "Transmit is receive-only until an armed HackRF job is started."}}
+	return &transmitState{status: TransmitStatus{State: "idle", Note: "Transmit is receive-only until an armed transmit-capable SDR job is started."}}
 }
 
 func (r *Runtime) TransmitStatus() TransmitStatus {
@@ -104,8 +104,8 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if request.DurationSecond > 60 {
 		return r.TransmitStatus(), errors.New("Transmit duration is limited to 60 seconds per job.")
 	}
-	if request.TXGainDB < 0 || request.TXGainDB > 47 {
-		return r.TransmitStatus(), errors.New("HackRF TX gain must be between 0 and 47 dB.")
+	if request.TXGainDB < 0 || request.TXGainDB > 89 {
+		return r.TransmitStatus(), errors.New("TX gain must be between 0 and 89 dB.")
 	}
 	if !request.DryRun && !request.Armed {
 		return r.TransmitStatus(), errors.New("Check the local RF safety confirmation before transmitting.")
@@ -127,8 +127,12 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	}
 	busy := r.running && r.profileUsesDeviceLocked(device.ID)
 	r.mu.RUnlock()
-	if device.ID == "" || !device.Connected || !device.Available || !strings.EqualFold(device.Kind, "HackRF") {
-		return r.TransmitStatus(), errors.New("select a connected, available HackRF; RTL-SDR cannot transmit")
+	transmitCapable := strings.EqualFold(device.Kind, "HackRF") || (strings.EqualFold(device.Kind, "PlutoSDR") && device.TransmitChannels > 0)
+	if device.ID == "" || !device.Connected || !device.Available || !transmitCapable {
+		return r.TransmitStatus(), errors.New("select a connected HackRF or PlutoSDR with an exposed TX channel; RTL-SDR cannot transmit")
+	}
+	if strings.EqualFold(device.Kind, "HackRF") && request.TXGainDB > 47 {
+		return r.TransmitStatus(), errors.New("HackRF TX gain must be between 0 and 47 dB")
 	}
 	if (device.HealthWarning != "" || device.FirmwareSelfTestWarning) && !request.DryRun {
 		return r.TransmitStatus(), errors.New("resolve the HackRF diagnostic warning before RF transmission; receive and transmit dry runs remain available")
@@ -159,7 +163,7 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 		return r.TransmitStatus(), err
 	}
 	now := time.Now()
-	status := TransmitStatus{State: "running", Note: "IQ generated; waiting for HackRF transmitter.", DeviceID: device.ID, FrequencyHz: request.FrequencyHz, Mode: request.Mode, StartedAt: &now, IQPath: iqPath, Samples: samples, DryRun: request.DryRun}
+	status := TransmitStatus{State: "running", Note: "IQ generated; waiting for SDR transmitter.", DeviceID: device.ID, FrequencyHz: request.FrequencyHz, Mode: request.Mode, StartedAt: &now, IQPath: iqPath, Samples: samples, DryRun: request.DryRun}
 	r.transmit.mu.Lock()
 	if r.transmit.cancel != nil {
 		r.transmit.mu.Unlock()
@@ -176,16 +180,27 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 func (r *Runtime) runTransmit(ctx context.Context, request TransmitRequest, device SDRDevice, iqPath string, started TransmitStatus) {
 	var runErr error
 	if !request.DryRun {
-		tool, err := findTool("hackrf_transfer")
-		if err != nil {
-			runErr = errors.New("hackrf_transfer is not installed")
-		} else {
-			args := []string{"-t", iqPath, "-f", strconv.FormatInt(int64(request.FrequencyHz), 10), "-s", "2000000", "-x", strconv.Itoa(request.TXGainDB)}
-			if device.Serial != nil && *device.Serial != "" {
-				args = append(args, "-d", *device.Serial)
+		if strings.EqualFold(device.Kind, "HackRF") {
+			tool, err := findTool("hackrf_transfer")
+			if err != nil {
+				runErr = errors.New("hackrf_transfer is not installed")
+			} else {
+				args := []string{"-t", iqPath, "-f", strconv.FormatInt(int64(request.FrequencyHz), 10), "-s", "2000000", "-x", strconv.Itoa(request.TXGainDB)}
+				if device.Serial != nil && *device.Serial != "" {
+					args = append(args, "-d", *device.Serial)
+				}
+				command := exec.CommandContext(ctx, tool, args...)
+				_, runErr = command.Output()
 			}
-			command := exec.CommandContext(ctx, tool, args...)
-			_, runErr = command.Output()
+		} else {
+			tool, err := findTool("gpsdr-soapy")
+			if err != nil {
+				runErr = errors.New("GP-SDR's SoapySDR transmit helper is not installed")
+			} else {
+				args := []string{"--device", soapyDeviceArguments(device), "--frequency", strconv.FormatInt(int64(request.FrequencyHz), 10), "--rate", "2000000", "--gain", strconv.Itoa(request.TXGainDB), "--bandwidth", "2000000", "--tx-file", iqPath}
+				command := exec.CommandContext(ctx, tool, args...)
+				_, runErr = command.Output()
+			}
 		}
 	}
 	finished := time.Now()
