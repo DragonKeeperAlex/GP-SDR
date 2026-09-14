@@ -31,6 +31,7 @@
           <span class="nav-icon">▥</span><span>Band monitor</span>
         </button>
 		<button class="nav-item" data-view="rfmonitor" title="Watch every active receiver spectrum and waterfall"><span class="nav-icon">⌁</span><span>RF monitor</span></button>
+		<button class="nav-item" data-view="analyzer" title="Sweep one or every receiver and accumulate a wide spectrum"><span class="nav-icon">⌇</span><span>Spectrum analyzer</span></button>
         <span class="nav-group-label">Mapping</span>
         <button class="nav-item" data-view="mapper" data-mapper-page="overview" title="All Mapper jobs and live receiver status"><span class="nav-icon">⌘</span><span>Overview</span></button>
         <button class="nav-item" data-view="mapper" data-mapper-page="discovery" title="Collect activity across a frequency range"><span class="nav-icon">↻</span><span>Discovery</span></button>
@@ -176,6 +177,29 @@
 	  <section id="view-rfmonitor" class="view">
 		<article class="panel"><div class="panel-head"><div><h2>Live receivers</h2><span>Independent spectrum and waterfall for every SDR currently producing IQ</span></div><span id="rf-monitor-state" class="chip">Waiting</span></div><div id="rf-monitor-grid" class="rf-monitor-grid empty-state compact">Start a receiver or Mapper job to watch it here.</div></article>
 	  </section>
+
+      <section id="view-analyzer" class="view">
+        <article class="panel analyzer-controls">
+          <div class="panel-head"><div><h2>Sweep setup</h2><span>Repeated wide-range peak survey</span></div><span id="analyzer-state" class="chip">Idle</span></div>
+          <form id="analyzer-form" class="analyzer-form">
+            <label>Receiver<select id="analyzer-device"></select></label>
+            <label class="check-line"><input id="analyzer-all" type="checkbox"> Use every connected receiver</label>
+            <label class="check-line"><input id="analyzer-full-range" type="checkbox" checked> Use full receiver range</label>
+            <label>Start · MHz<input id="analyzer-start" type="number" min="0.001" step="0.001"></label>
+            <label>End · MHz<input id="analyzer-end" type="number" min="0.001" step="0.001"></label>
+            <label>Resolution<select id="analyzer-step"><option value="12500">12.5 kHz · detailed</option><option value="25000">25 kHz</option><option value="100000" selected>100 kHz · fast</option><option value="1000000">1 MHz · overview</option></select></label>
+            <label>Capture width<select id="analyzer-rate"><option value="0">Auto per receiver</option><option value="3200000">3.2 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option><option value="30720000">30.72 MS/s · Pluto</option><option value="40000000">40 MS/s · Pluto</option><option value="61440000">61.44 MS/s · Pluto maximum</option></select></label>
+            <label>Graph layout<select id="analyzer-layout"><option value="combined">Combined peak graph</option><option value="separate">One graph per receiver</option></select></label>
+            <label>Peak threshold · dB over noise<input id="analyzer-margin" type="number" min="1" max="40" step="1" value="8"></label>
+            <button class="primary" type="submit">Start sweep</button><button id="analyzer-stop" type="button">Stop</button>
+          </form>
+          <p class="analyzer-note">The sweep loops until stopped. Auto gain is used and only activity above the selected noise margin is retained as a peak. Full-range sweeps can take a long time; use a smaller range for faster updates.</p>
+        </article>
+        <div class="analyzer-metrics"><article><span>Receivers</span><strong id="analyzer-receivers">0</strong></article><article><span>Saved peaks</span><strong id="analyzer-peaks">0</strong></article><article><span>Checks</span><strong id="analyzer-checks">0</strong></article><article><span>Passes</span><strong id="analyzer-passes">0</strong></article></div>
+        <article class="panel"><div class="panel-head"><div><h2>Live receiver slices</h2><span>Current hardware capture from every assigned SDR</span></div></div><div id="analyzer-live-grid" class="rf-monitor-grid empty-state compact">Live slices appear while receivers sweep.</div></article>
+        <article class="panel"><div class="panel-head"><div><h2>Accumulated spectrum</h2><span id="analyzer-range-label">No sweep data</span></div><div class="analyzer-actions"><button id="analyzer-save" type="button">Save CSV</button><button id="analyzer-identify" type="button">Add selected peaks to Identify</button></div></div><div id="analyzer-graphs" class="analyzer-graphs empty-state compact">Start a sweep to accumulate peaks across the selected range.</div></article>
+        <article class="panel"><div class="panel-head"><div><h2>Peaks</h2><span>Select useful signals for focused identification</span></div><label class="check-line"><input id="analyzer-repeated" type="checkbox" checked> Repeated only</label></div><div class="table-scroll"><table><thead><tr><th></th><th>Frequency</th><th>Peak</th><th>Noise</th><th>Hits</th><th>Receivers</th><th>Last seen</th></tr></thead><tbody id="analyzer-peak-list"></tbody></table></div></article>
+      </section>
 
       <section id="view-tuner" class="view">
         <div class="tuner-layout tuner-console">
@@ -627,7 +651,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc20"></script>
-  <script src="/explore.js?v=1.5.0-rc20"></script>
+  <script src="/app.js?v=1.5.0-rc23"></script>
+  <script src="/explore.js?v=1.5.0-rc23"></script>
 </body>
 </html>
