@@ -46,6 +46,7 @@ type Runtime struct {
 	localDatabase       *LocalDatabaseManager
 	spectrum            SpectrumSnapshot
 	deviceSpectra       map[string]SpectrumSnapshot
+	spectrumAnalyzer    *spectrumAnalyzerState
 	tuning              bool
 	tunerUpdates        chan TunerRequest
 	tunerHardware       *TunerRequest

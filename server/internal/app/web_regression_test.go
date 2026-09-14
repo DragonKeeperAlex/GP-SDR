@@ -195,7 +195,7 @@ func TestMapperShowsDistinctDiscoveryAndIdentifyControls(t *testing.T) {
 			t.Fatalf("Mapper live or expandable-detail behavior %q is missing", required)
 		}
 	}
-	for _, required := range []string{"renderSpectrumAnalyzer", "startSpectrumAnalyzer", "analyzerDraft", "analyzer-full-range", "analyzer-live-grid", "saveAnalyzerCSV", "analyzer-clear", "analyzerIgnoredJobIDs", "detectionBandwidthHz", "analyzer-instrument", "Spectrum bins"} {
+	for _, required := range []string{"renderSpectrumAnalyzer", "startSpectrumAnalyzer", "analyzer-full-range", "saveAnalyzerCSV", "analyzer-clear", "analyzer-reset-view", "/api/spectrum-analyzer/start", "/api/spectrum-analyzer/stop", "analyzer-instrument", "Spectrum bins", "scroll to zoom", "pointermove"} {
 		if !strings.Contains(app, required) && !strings.Contains(index, required) {
 			t.Fatalf("Spectrum Analyzer behavior %q is missing", required)
 		}

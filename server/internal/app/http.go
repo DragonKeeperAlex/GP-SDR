@@ -229,6 +229,19 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Spectrum(intQuery(r, "bins", 512)))
 	case r.Method == "GET" && path == "/api/spectra":
 		writeJSON(w, 200, s.runtime.Spectra(intQuery(r, "bins", 512)))
+	case r.Method == "GET" && path == "/api/spectrum-analyzer":
+		writeJSON(w, 200, s.runtime.SpectrumAnalyzerStatus())
+	case r.Method == "POST" && path == "/api/spectrum-analyzer/start":
+		var request SpectrumAnalyzerRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.StartSpectrumAnalyzer(request)
+		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/spectrum-analyzer/stop":
+		writeJSON(w, 200, s.runtime.StopSpectrumAnalyzer())
+	case r.Method == "POST" && path == "/api/spectrum-analyzer/clear":
+		writeJSON(w, 200, s.runtime.ClearSpectrumAnalyzer())
 	case r.Method == "GET" && path == "/api/storage":
 		writeJSON(w, 200, s.runtime.StorageStatus())
 	case r.Method == "PUT" && path == "/api/storage/policy":
