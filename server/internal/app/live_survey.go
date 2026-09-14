@@ -471,9 +471,54 @@ func mapperJobTargets(job MapperJob, records []MapperFrequencyRecord) ([]surveyT
 	targets := make([]surveyTarget, 0, count)
 	dwell := time.Duration(config.DwellMilliseconds) * time.Millisecond
 	for frequency := config.StartHz; frequency <= config.EndHz+config.StepHz*.001; frequency += config.StepHz {
-		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: decoderBandwidthHz(config.PreferredDecoder, config.StepHz), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell, Decoder: optionalString(config.PreferredDecoder)})
+		targets = append(targets, surveyTarget{FrequencyHz: frequency, BandwidthHz: mapperDetectionBandwidth(config, frequency), Mode: firstNonEmpty(config.PreferredMode, "auto"), Label: job.Name, Dwell: dwell, Decoder: optionalString(config.PreferredDecoder)})
 	}
 	return targets, nil
+}
+
+// mapperDetectionBandwidth keeps the frequency grid independent from the RF
+// width examined around each point. A fine 12.5 kHz grid is useful for locating
+// narrow channels, but it must not truncate a 180–200 kHz broadcast FM signal
+// or the IQ evidence retained for later classification.
+func mapperDetectionBandwidth(config MapperConfig, frequencyHz float64) float64 {
+	if config.DetectionBandwidthHz > 0 {
+		return config.DetectionBandwidthHz
+	}
+	mode := strings.ToLower(strings.TrimSpace(config.PreferredMode))
+	if mode == "wfm" || mode == "fm" {
+		return 200_000
+	}
+	if mode == "am" {
+		return math.Max(config.StepHz, 10_000)
+	}
+	if mode == "nfm" || mode == "digital" || mode == "p25" || mode == "dmr" {
+		return math.Max(config.StepHz, 12_500)
+	}
+	decoder := canonicalDecoderID(config.PreferredDecoder)
+	if decoder != "" && decoder != "auto" {
+		return decoderBandwidthHz(decoder, config.StepHz)
+	}
+	// Automatic mode uses known allocation widths where there is a strong,
+	// universal convention. Elsewhere it uses a modest 25 kHz minimum so a
+	// fine scan grid does not reduce every unknown signal to one FFT sliver.
+	switch {
+	case frequencyHz >= 87_500_000 && frequencyHz <= 108_000_000:
+		// North-American FM centers sit on the odd 100 kHz points. Measuring
+		// the full channel only there prevents one wide station from becoming
+		// sixteen duplicate hits when the scan grid is 12.5 kHz.
+		if math.Abs(math.Mod(frequencyHz, 200_000)-100_000) <= math.Max(1, config.StepHz*.1) {
+			return 200_000
+		}
+		return math.Max(config.StepHz, 25_000)
+	case frequencyHz >= 530_000 && frequencyHz <= 1_710_000:
+		return 10_000
+	case frequencyHz >= 118_000_000 && frequencyHz <= 137_000_000:
+		return 25_000
+	case math.Abs(frequencyHz-1_090_000_000) <= math.Max(1, config.StepHz*.49):
+		return 2_000_000
+	default:
+		return math.Max(config.StepHz, 25_000)
+	}
 }
 
 func mapperIdentifyHistory(record MapperFrequencyRecord, source string) (hits, checks int, occupancy float64) {

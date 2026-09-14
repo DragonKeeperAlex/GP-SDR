@@ -82,6 +82,20 @@ func TestLiveSampleRateHonorsHackRFMinimumForWFM(t *testing.T) {
 	}
 }
 
+func TestMapperAutomaticBandwidthDoesNotTruncateBroadcastFM(t *testing.T) {
+	config := MapperConfig{PreferredMode: "auto", PreferredDecoder: "auto", StepHz: 12_500}
+	if width := mapperDetectionBandwidth(config, 98_100_000); width != 200_000 {
+		t.Fatalf("98.1 MHz automatic width = %.0f, want 200000", width)
+	}
+	if width := mapperDetectionBandwidth(config, 98_112_500); width != 25_000 {
+		t.Fatalf("off-raster FM probe width = %.0f, want 25000 to avoid duplicate wide hits", width)
+	}
+	config.DetectionBandwidthHz = 180_000
+	if width := mapperDetectionBandwidth(config, 450_000_000); width != 180_000 {
+		t.Fatalf("explicit analysis width = %.0f, want 180000", width)
+	}
+}
+
 func TestAutomaticTunerRateFitsSeparatedHackRFVFO(t *testing.T) {
 	limit := 20_000_000.0
 	device := SDRDevice{Kind: "HackRF", SampleRateLimit: &limit}

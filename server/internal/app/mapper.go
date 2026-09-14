@@ -36,6 +36,7 @@ type MapperConfig struct {
 	StartHz                  float64  `json:"startHz,omitempty"`
 	EndHz                    float64  `json:"endHz,omitempty"`
 	StepHz                   float64  `json:"stepHz,omitempty"`
+	DetectionBandwidthHz     float64  `json:"detectionBandwidthHz,omitempty"`
 	DwellMilliseconds        int      `json:"dwellMilliseconds,omitempty"`
 	SampleRateHz             int      `json:"sampleRateHz,omitempty"`
 	ConcurrentChannels       int      `json:"concurrentChannels,omitempty"`
@@ -521,6 +522,9 @@ func validateMapperScanConfig(config MapperConfig) (MapperConfig, error) {
 	}
 	if config.ConcurrentChannels < 1 || config.ConcurrentChannels > 1024 {
 		return config, errors.New("simultaneous Mapper channels must be between 1 and 1,024")
+	}
+	if config.DetectionBandwidthHz != 0 && (config.DetectionBandwidthHz < 5_000 || config.DetectionBandwidthHz > 5_000_000) {
+		return config, errors.New("signal analysis width must be Auto or between 5 kHz and 5 MHz")
 	}
 	config.GainMode = strings.ToLower(strings.TrimSpace(config.GainMode))
 	if config.GainMode == "" {
