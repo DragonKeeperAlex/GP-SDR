@@ -86,7 +86,7 @@ func automaticTunerSampleRate(device SDRDevice, request TunerRequest, fallback i
 		return fallback
 	}
 	required := (math.Abs(request.FrequencyHz-request.HardwareCenterHz) + request.BandwidthHz/2) / .44
-	minimum, maximum := 225_000, 20_000_000
+	minimum, maximum := 225_000, maximumCaptureRate(device)
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		minimum = 10_000_000
 	}
@@ -96,7 +96,7 @@ func automaticTunerSampleRate(device SDRDevice, request TunerRequest, fallback i
 	if device.SampleRateLimit != nil {
 		maximum = int(math.Min(float64(maximum), *device.SampleRateLimit))
 	}
-	for _, rate := range []int{1_000_000, 2_000_000, 2_400_000, 3_200_000, 4_000_000, 8_000_000, 10_000_000, 12_000_000, 16_000_000, 20_000_000} {
+	for _, rate := range selectableCaptureRates() {
 		if rate >= minimum && rate <= maximum && float64(rate) >= required {
 			return rate
 		}
@@ -105,7 +105,7 @@ func automaticTunerSampleRate(device SDRDevice, request TunerRequest, fallback i
 }
 
 func supportedUserSampleRate(rate int) bool {
-	for _, supported := range []int{0, 1_000_000, 2_000_000, 2_400_000, 3_200_000, 4_000_000, 5_000_000, 8_000_000, 10_000_000, 12_000_000, 16_000_000, 20_000_000} {
+	for _, supported := range append([]int{0}, selectableCaptureRates()...) {
 		if rate == supported {
 			return true
 		}
@@ -117,7 +117,7 @@ func compatibleUserSampleRate(device SDRDevice, requested, automatic int) int {
 	if requested == 0 {
 		return automatic
 	}
-	maximum := 20_000_000
+	maximum := maximumCaptureRate(device)
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		maximum = 3_200_000
 	}
@@ -128,6 +128,18 @@ func compatibleUserSampleRate(device SDRDevice, requested, automatic int) int {
 		return automatic
 	}
 	return requested
+}
+
+func maximumCaptureRate(device SDRDevice) int {
+	maximum := 20_000_000
+	if strings.HasPrefix(device.Driver, "SoapySDR:") && device.SampleRateLimit != nil {
+		maximum = int(*device.SampleRateLimit)
+	}
+	return maximum
+}
+
+func selectableCaptureRates() []int {
+	return []int{1_000_000, 2_000_000, 2_400_000, 3_200_000, 4_000_000, 5_000_000, 8_000_000, 10_000_000, 12_000_000, 16_000_000, 20_000_000, 24_000_000, 30_720_000, 40_000_000, 50_000_000, 61_440_000}
 }
 
 func surveyCaptureSpec(device SDRDevice, target surveyTarget, sampleRate int) CaptureSpec {
@@ -1294,8 +1306,8 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 		return CaptureSpec{}, nil, false
 	}
 	required := maximum - minimum + math.Max(widest*2, 50_000)
-	rates := []int{1_000_000, 2_000_000, 2_400_000, 3_200_000, 4_000_000, 8_000_000, 10_000_000, 12_000_000, 16_000_000, 20_000_000}
-	minimumRate, maximumRate := 225_000, 20_000_000
+	rates := selectableCaptureRates()
+	minimumRate, maximumRate := 225_000, maximumCaptureRate(device)
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		minimumRate = 10_000_000
 	}

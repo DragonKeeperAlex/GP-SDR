@@ -287,7 +287,7 @@ func discoverSoapy() []SDRDevice {
 			maximumBandwidthHz = parseSoapyMaximumBandwidth(probe)
 			minimumHz, maximumHz = parseSoapyFrequencyRange(probe)
 			if minimumHz > 0 && maximumHz > minimumHz {
-				capabilityNote = "Driver-reported tuning range; GP-SDR caps one receive capture at 20 MHz"
+				capabilityNote = "Driver-reported tuning range and sample-rate ceiling; usable sustained rate depends on transport"
 			}
 		}
 		if strings.EqualFold(driver, "hackrf") {
@@ -306,6 +306,13 @@ func discoverSoapy() []SDRDevice {
 			arguments += ",serial=" + serial
 		}
 		limit := soapySampleRateLimit(driver)
+		if strings.Contains(strings.ToLower(driver), "pluto") && maximumRateHz > 20e6 {
+			// Tezuka and other alternate firmware can advertise rates beyond the
+			// stock 20 MS/s GP-SDR ceiling. Preserve the driver's actual limit;
+			// failed streams remain visible errors rather than silent clamping.
+			reportedLimit := maximumRateHz
+			limit = &reportedLimit
+		}
 		if hardwareModel != "" {
 			label = hardwareModel
 		}

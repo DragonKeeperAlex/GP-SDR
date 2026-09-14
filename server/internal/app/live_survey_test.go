@@ -91,6 +91,17 @@ func TestAutomaticTunerRateFitsSeparatedHackRFVFO(t *testing.T) {
 	}
 }
 
+func TestPlutoAcceptsDriverReportedHighSampleRates(t *testing.T) {
+	limit := 61_440_000.0
+	device := SDRDevice{Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", SampleRateLimit: &limit}
+	if rate := compatibleUserSampleRate(device, 40_000_000, 2_000_000); rate != 40_000_000 {
+		t.Fatalf("Pluto high-rate request was clamped to %d", rate)
+	}
+	if rate := compatibleUserSampleRate(device, 61_440_000, 2_000_000); rate != 61_440_000 {
+		t.Fatalf("Pluto driver maximum was clamped to %d", rate)
+	}
+}
+
 func TestSurveyCaptureSpecUsesUsableHackRFDefaultsAndSavedCalibration(t *testing.T) {
 	target := surveyTarget{FrequencyHz: 99_700_000, BandwidthHz: 180_000, Mode: "wfm"}
 	device := SDRDevice{Kind: "HackRF", Driver: "/opt/homebrew/bin/hackrf_transfer"}

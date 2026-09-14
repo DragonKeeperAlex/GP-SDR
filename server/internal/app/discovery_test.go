@@ -76,6 +76,13 @@ Filter bandwidths: 0.2, 1, 2, 3, 4, 6, 7, 8, 9, 10 MHz`
 	}
 }
 
+func TestPlutoReportedRateCanExceedLegacyCeiling(t *testing.T) {
+	_, maximum := parseSoapySampleRateRange("Sample rates: [0.260417, 61.44] MSps")
+	if maximum != 61_440_000 {
+		t.Fatalf("unexpected maximum %.0f", maximum)
+	}
+}
+
 func TestParseHackRFInfoOutputKeepsSelfTestPerDevice(t *testing.T) {
 	output := `hackrf_info version: 2026.01.3
 Found HackRF
