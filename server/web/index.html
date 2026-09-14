@@ -180,7 +180,7 @@
 
       <section id="view-analyzer" class="view">
         <article class="panel analyzer-controls">
-          <div class="panel-head"><div><h2>Sweep setup</h2><span>Repeated wide-range peak survey</span></div><span id="analyzer-state" class="chip">Idle</span></div>
+          <div class="panel-head"><div><h2>Spectrum controls</h2><span>Standalone swept spectrum analyzer</span></div><span id="analyzer-state" class="chip">Idle</span></div>
           <form id="analyzer-form" class="analyzer-form">
             <label>Receiver<select id="analyzer-device"></select></label>
             <label class="check-line"><input id="analyzer-all" type="checkbox"> Use every connected receiver</label>
@@ -190,16 +190,14 @@
             <label>Resolution<select id="analyzer-step"><option value="12500">12.5 kHz · detailed</option><option value="25000">25 kHz</option><option value="100000" selected>100 kHz · fast</option><option value="1000000">1 MHz · overview</option></select></label>
             <label>Signal width<select id="analyzer-bandwidth"><option value="0" selected>Auto · band aware</option><option value="12500">12.5 kHz · narrow digital</option><option value="25000">25 kHz · voice/data</option><option value="200000">200 kHz · broadcast FM</option><option value="250000">250 kHz · wide unknown</option><option value="2000000">2 MHz · wide data</option></select></label>
             <label>Capture width<select id="analyzer-rate"><option value="0">Auto per receiver</option><option value="3200000">3.2 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option><option value="30720000">30.72 MS/s · Pluto</option><option value="40000000">40 MS/s · Pluto</option><option value="61440000">61.44 MS/s · Pluto maximum</option></select></label>
-            <label>Graph layout<select id="analyzer-layout"><option value="combined">Combined peak graph</option><option value="separate">One graph per receiver</option></select></label>
             <label>Peak threshold · dB over noise<input id="analyzer-margin" type="number" min="1" max="40" step="1" value="8"></label>
             <button class="primary" type="submit">Start sweep</button><button id="analyzer-stop" type="button">Stop</button>
           </form>
-          <p class="analyzer-note">The sweep loops until stopped. Auto gain is used and only activity above the selected noise margin is retained as a peak. Full-range sweeps can take a long time; use a smaller range for faster updates.</p>
+          <p class="analyzer-note">The display continuously sweeps and retains the strongest observed level at each frequency until stopped or cleared. Use a smaller range or coarser resolution for faster updates.</p>
         </article>
-        <div class="analyzer-metrics"><article><span>Receivers</span><strong id="analyzer-receivers">0</strong></article><article><span>Saved peaks</span><strong id="analyzer-peaks">0</strong></article><article><span>Checks</span><strong id="analyzer-checks">0</strong></article><article><span>Passes</span><strong id="analyzer-passes">0</strong></article></div>
-        <article class="panel"><div class="panel-head"><div><h2>Live receiver slices</h2><span>Current hardware capture from every assigned SDR</span></div></div><div id="analyzer-live-grid" class="rf-monitor-grid empty-state compact">Live slices appear while receivers sweep.</div></article>
-        <article class="panel"><div class="panel-head"><div><h2>Wide spectrum</h2><span id="analyzer-range-label">No sweep data</span></div><div class="analyzer-actions"><button id="analyzer-clear" type="button">Clear display</button><button id="analyzer-save" type="button">Save CSV</button><button id="analyzer-identify" type="button">Add selected peaks to Identify</button></div></div><div id="analyzer-graphs" class="analyzer-graphs empty-state compact">Start a sweep to build a continuous max-hold spectrum across the selected range.</div></article>
-        <article class="panel"><div class="panel-head"><div><h2>Peaks</h2><span>Select useful signals for focused identification</span></div><label class="check-line"><input id="analyzer-repeated" type="checkbox" checked> Repeated only</label></div><div class="table-scroll"><table><thead><tr><th></th><th>Frequency</th><th>Peak</th><th>Noise</th><th>Hits</th><th>Receivers</th><th>Last seen</th></tr></thead><tbody id="analyzer-peak-list"></tbody></table></div></article>
+        <div class="analyzer-metrics"><article><span>Receivers</span><strong id="analyzer-receivers">0</strong></article><article><span>Spectrum bins</span><strong id="analyzer-peaks">0</strong></article><article><span>Checks</span><strong id="analyzer-checks">0</strong></article><article><span>Passes</span><strong id="analyzer-passes">0</strong></article></div>
+        <div id="analyzer-live-grid" class="hidden"></div>
+        <article class="panel analyzer-instrument"><div class="panel-head"><div><h2>Spectrum</h2><span id="analyzer-range-label">No sweep data</span></div><div class="analyzer-actions"><button id="analyzer-clear" type="button">Clear</button><button id="analyzer-save" type="button">Save CSV</button></div></div><div id="analyzer-graphs" class="analyzer-graphs empty-state compact">Start a sweep to build a continuous max-hold spectrum across the selected range.</div></article>
       </section>
 
       <section id="view-tuner" class="view">
@@ -652,7 +650,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc24"></script>
-  <script src="/explore.js?v=1.5.0-rc24"></script>
+  <script src="/app.js?v=1.5.0-rc25"></script>
+  <script src="/explore.js?v=1.5.0-rc25"></script>
 </body>
 </html>
