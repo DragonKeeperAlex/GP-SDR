@@ -214,17 +214,20 @@ body:not([data-view="live"]):not([data-view="profiles"]) .profile-select-wrap,bo
 .settings-section-title:first-child { padding-top:0; }
 .settings-section-title h2 { font-size:14px; }
 .settings-section-title p { margin-top:2px;font-size:10px; }
-.range-sync-card,.local-database-card,.radioreference-card { grid-column:span 4; }
+.range-sync-card,.local-database-card { grid-column:span 6; }
+.radioreference-card { grid-column:1/-1; }
 .local-ai-card,.display-card { grid-column:1/-1; }
-.system-card { grid-column:span 4; }
-.storage-card { grid-column:span 8; }
+.system-card,.update-card { grid-column:span 6; }
+.storage-card { grid-column:1/-1; }
 .settings-card { min-width: 0; min-height: 150px; padding: 16px; }
+.settings-card>*{min-width:0;max-width:100%}.settings-card form,.settings-card dl,.settings-card details,.settings-card pre{min-width:0;max-width:100%}.settings-card input,.settings-card select,.settings-card textarea{max-width:100%;min-width:0}.settings-card pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.settings-card dd{min-width:0;overflow-wrap:anywhere}
 .settings-card h2 { margin-bottom: 15px; }.settings-card p { font-size: 12px; overflow-wrap:anywhere; }
 .range-sync-card { min-height: 0; }
 .settings-card-head { display: flex; flex-wrap:wrap; justify-content: space-between; gap: 8px 14px; align-items: start; }
 .settings-card-head > * { min-width:0; }
 .settings-card-head .chip { flex:0 0 auto; }
 .settings-card-head h2 { margin-bottom: 4px; }
+.hardware-mode{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 8px;align-items:center;margin:9px 0;padding:8px;background:#0d1116;border:1px solid var(--line-soft);color:var(--muted);font-size:10px}.hardware-mode select{width:100%;min-width:0}.hardware-mode small{grid-column:2;overflow-wrap:anywhere;color:var(--dim);font-size:9px}
 .range-sync-form { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 12px; align-items: end; margin-top: 15px; }
 .range-sync-form > label, .range-sync-options > label:not(.check-line) { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 10px; }
 .range-sync-options { display: flex; gap: 9px; align-items: end; }
@@ -553,5 +556,6 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
 .analyzer-instrument{margin-top:10px}.analyzer-instrument .analyzer-graphs{display:block}.analyzer-instrument .analyzer-graph canvas{height:420px}@media(max-width:560px){.analyzer-instrument .analyzer-graph canvas{height:280px}}
 #view-analyzer #analyzer-live-grid{display:none!important}
 .fpv-layout{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:10px}.fpv-controls{align-self:start}.fpv-form{display:grid;grid-template-columns:1fr 1fr;gap:9px}.fpv-form>label,.fpv-form>.toggle-grid,.fpv-actions{min-width:0}.fpv-form>.toggle-grid,.fpv-actions{grid-column:1/-1}.fpv-actions{display:flex;gap:8px}.fpv-screen-panel{min-width:0}.fpv-screen{position:relative;display:grid;place-items:center;min-height:480px;background:#020304;overflow:hidden}.fpv-screen img{display:none;width:100%;height:100%;max-height:calc(100vh - 190px);object-fit:contain;image-rendering:auto}.fpv-screen.live img{display:block}.fpv-screen.live #fpv-placeholder{display:none}#fpv-placeholder{color:var(--dim);text-align:center;padding:24px}.fpv-screen:fullscreen{background:#000}.fpv-screen:fullscreen img{max-height:100vh}
+.capability-hidden{display:none!important}input.invalid{border-color:#d68b58;color:#f0ba93}
 @media(max-width:900px){.fpv-layout{grid-template-columns:1fr}.fpv-screen{min-height:340px}}
 .analyzer-hover{min-width:190px;color:var(--accent);font-variant-numeric:tabular-nums;text-align:right}

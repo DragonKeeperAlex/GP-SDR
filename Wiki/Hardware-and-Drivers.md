@@ -1,5 +1,11 @@
 # Hardware and Drivers
 
+## PlutoSDR connection mode
+
+GP-SDR preserves the SoapySDR/libiio URI for each discovered PlutoSDR path. If the same receiver is advertised over USB and Ethernet, use the **Connection** menu on its Hardware card to choose the path before opening Tuner, Mapper, Spectrum Analyzer, or FPV video. Unavailable paths remain visibly disabled instead of silently falling back.
+
+Receiver controls are capability-driven. HackRF-only LNA, VGA, RF amplifier, and antenna-power controls are hidden when an RTL-SDR, PlutoSDR, or another Soapy receiver is selected.
+
 ## Supported receiver paths
 
 | Receiver path | Typical capabilities |

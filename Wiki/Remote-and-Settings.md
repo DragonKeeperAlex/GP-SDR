@@ -1,5 +1,7 @@
 # Remote Use, Headless Operation, and Settings
 
+The Settings workspace uses full-width and two-column groups that collapse to one column on smaller windows. Long folder paths, server addresses, release notes, and model names wrap or scroll inside their own cards rather than expanding or clipping the page.
+
 ## Native app and companion interface
 
 The macOS app is the primary interface. It opens the complete UI in its WebKit window and starts a token-protected

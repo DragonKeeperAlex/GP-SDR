@@ -92,11 +92,11 @@ func (r *Runtime) StartFPV(request FPVReceiverRequest) (FPVReceiverStatus, error
 	if device.ID == "" {
 		return r.FPVStatus(), errors.New("select a connected receiver")
 	}
-	if device.Kind != "HackRF" && device.Kind != "PlutoSDR" {
-		return r.FPVStatus(), errors.New("analog FPV requires a HackRF or PlutoSDR")
-	}
 	if request.FrequencyHz < 1e6 || request.FrequencyHz > 6e9 {
 		return r.FPVStatus(), errors.New("enter a valid frequency supported by the receiver")
+	}
+	if (device.FrequencyMinimumHz > 0 && request.FrequencyHz < device.FrequencyMinimumHz) || (device.FrequencyMaximumHz > 0 && request.FrequencyHz > device.FrequencyMaximumHz) {
+		return r.FPVStatus(), fmt.Errorf("%s cannot tune %.3f MHz", device.Name, request.FrequencyHz/1e6)
 	}
 	python, script, runtimeRoot, ok := fpvBackend()
 	if !ok {
@@ -115,9 +115,20 @@ func (r *Runtime) StartFPV(request FPVReceiverRequest) (FPVReceiverStatus, error
 		return r.FPVStatus(), err
 	}
 	_ = os.Remove(r.fpv.framePath)
-	driver := "hackrf"
-	if device.Kind == "PlutoSDR" {
+	driver := strings.ToLower(device.Kind)
+	if strings.HasPrefix(device.Driver, "SoapySDR:") {
+		driver = strings.TrimPrefix(device.Driver, "SoapySDR:")
+	}
+	switch device.Kind {
+	case "HackRF":
+		driver = "hackrf"
+	case "PlutoSDR":
 		driver = "pluto"
+	case "RTL-SDR":
+		driver = "rtlsdr"
+	}
+	if device.Kind == "RTL-TCP" || device.Driver == "Android USB" {
+		return r.FPVStatus(), errors.New("this remote receiver does not expose the continuous local IQ source required by the FPV decoder")
 	}
 	args := []string{script, "--sdr", driver, "--freq", fmt.Sprintf("%.0f", request.FrequencyHz), "--samp-rate", fmt.Sprintf("%d", request.SampleRateHz), "--gain", fmt.Sprintf("%.1f", request.GainDB), "--standard", request.Standard, "--no-keys", "--no-window", "--frame-out", r.fpv.framePath}
 	if device.Kind == "HackRF" {

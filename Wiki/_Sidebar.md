@@ -5,6 +5,7 @@
 - [Getting Started](Getting-Started)
 - [Hardware and Drivers](Hardware-and-Drivers)
 - [Tuner and Live](Tuner-and-Live)
+- [FPV video](FPV-Video)
 - [Band Monitor](Band-Monitor)
 - [Profiles and Mixer](Profiles-and-Mixer)
 - [Explore recorded data](Explore)

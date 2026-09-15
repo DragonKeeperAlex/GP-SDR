@@ -636,6 +636,7 @@ function renderHardware() {
 		<p>${escapeHTML(hardwareActivityText(device))}</p>
       <div class="hardware-detail">${escapeHTML(hardwareCapabilityText(device))}<br>${escapeHTML(hardwareRangeText(device))}<br>${device.firmwareVersion?`${escapeHTML(device.firmwareVersion)} · `:''}${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
       ${device.healthWarning?`<div class="hardware-warning" role="status">⚠ ${escapeHTML(device.healthWarning)}</div>`:''}
+	  ${plutoConnectionControl(device)}
       ${hardwareTelemetryHTML(device)}
       <footer><span>${escapeHTML(device.kind)}</span><span>${device.connected ? (device.healthWarning ? 'Connected · warning' : device.available ? 'Ready' : 'Unavailable') : device.available ? 'Driver ready' : 'Driver needed'}</span></footer>
       ${device.connected ? calibrationControls(device) : ''}
@@ -646,8 +647,35 @@ function renderHardware() {
       <div class="card-actions decoder-card-actions"><button class="open-decoder" data-decoder-id="${escapeHTML(decoder.id)}" title="Open the ${escapeHTML(decoder.name)} workspace">Open</button></div>
       ${decoder.state === 'ready' || decoder.id === 'analog' ? '' : setupActions(decoder.id)}</article>`).join('') : '<div class="empty-state">Decoder status is unavailable.</div>';
   renderSetupJob();
+	updateReceiverCapabilityControls();
   const remoteList=$('#remote-list'); if(remoteList) remoteList.innerHTML=state.remoteReceivers.map(item=>`<div class="remote-row"><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.host)}:${item.port}</small></span><button class="remove-remote" data-remote-id="${escapeHTML(item.id)}" title="Remove this remote receiver">Remove</button></div>`).join('')||'<span class="empty-state compact">No remote receivers saved</span>';
 }
+
+function setCapabilityVisibility(id,visible){const control=$('#'+id),container=control?.closest('label');if(container)container.classList.toggle('capability-hidden',!visible);if(control)control.disabled=!visible;}
+function updateReceiverCapabilityControls(){
+	for(const [prefix,selector] of [['live','live-radio-device'],['tuner','tuner-device'],['band','band-device'],['mapper','mapper-device']]){
+		const device=state.devices.find(item=>item.id===$('#'+selector)?.value),hackrf=device?.kind==='HackRF';
+		for(const suffix of ['lna','vga','amp'])setCapabilityVisibility(`${prefix}-${suffix}`,hackrf);
+		if(prefix==='live'||prefix==='tuner')setCapabilityVisibility(`${prefix}-bias`,hackrf);
+	}
+	updateFPVControls();
+}
+
+function plutoConnectionKind(device){const value=(device.transport||device.deviceArguments||'').toLowerCase();return value.includes('usb:')?'usb':value.includes('ip:')||value.includes('network')?'network':'auto';}
+function plutoConnectionControl(device){
+	if(device.kind!=='PlutoSDR'||!device.connected)return '';
+	const peers=state.devices.filter(item=>item.kind==='PlutoSDR'&&item.connected&&((device.serial&&item.serial===device.serial)||(!device.serial&&item.name===device.name))),available=new Map(peers.map(item=>[plutoConnectionKind(item),item]));
+	const key=`gpsdr-pluto-connection-${device.serial||device.name}`,saved=localStorage.getItem(key)||plutoConnectionKind(device);
+	return `<label class="hardware-mode">Connection<select class="pluto-connection-mode" data-preference-key="${escapeHTML(key)}"><option value="auto" ${saved==='auto'?'selected':''}>Automatic</option><option value="usb" ${saved==='usb'?'selected':''} ${available.has('usb')?'':'disabled'}>USB${available.has('usb')?'':' · unavailable'}</option><option value="network" ${saved==='network'?'selected':''} ${available.has('network')?'':'disabled'}>Ethernet / network${available.has('network')?'':' · unavailable'}</option></select><small>${escapeHTML(device.transport||'Driver-selected connection')}</small></label>`;
+}
+
+$('#device-grid').addEventListener('change',event=>{
+	const select=event.target.closest('.pluto-connection-mode');if(!select)return;
+	localStorage.setItem(select.dataset.preferenceKey,select.value);
+	const card=select.closest('.hardware-card'),title=card?.querySelector('h3')?.textContent||'PlutoSDR';
+	const candidates=state.devices.filter(device=>device.kind==='PlutoSDR'&&device.connected),chosen=select.value==='auto'?candidates[0]:candidates.find(device=>plutoConnectionKind(device)===select.value);
+	if(chosen){for(const picker of $$('select'))if([...picker.options].some(option=>option.value===chosen.id))picker.value=chosen.id;toast(`${title} will use ${select.value==='network'?'Ethernet / network':select.value==='usb'?'USB':'the available connection'}`);}else toast('That connection is not currently available',true);
+});
 
 function hardwareRangeText(device){return device.frequencyMinimumHz&&device.frequencyMaximumHz?`${formatFrequency(device.frequencyMinimumHz)}–${formatFrequency(device.frequencyMaximumHz)} nominal · ${device.frequencyRangeNote||'model-dependent range'}`:'Frequency range reported by the installed driver';}
 
@@ -1568,6 +1596,7 @@ $('#mute-all').addEventListener('click', async () => {
 $('#master-mute').addEventListener('click',()=>{masterAudio.muted=!masterAudio.muted;applyMasterAudio();toast(masterAudio.muted?'GP-SDR audio muted':'GP-SDR audio unmuted');});
 $('#master-volume').addEventListener('input',event=>{masterAudio.volume=Number(event.currentTarget.value);masterAudio.muted=false;applyMasterAudio();});
 document.addEventListener('change', async event => {
+	if(['live-radio-device','tuner-device','band-device','mapper-device'].includes(event.target.id))updateReceiverCapabilityControls();
 	const order=event.target.closest('#p25-order');if(order){state.p25Order=order.value;localStorage.setItem('gpsdr-p25-order',order.value);renderDecoders();return;}
 	const p25Rate=event.target.closest('#p25-live-rate,#p25-amp-mode,#p25-lna-gain,#p25-vga-gain');if(p25Rate){const profile=state.profiles.find(item=>item.id===(state.p25ProfileID||state.p25Status?.profileID||state.status?.activeProfileID||$('#p25-profile-choice')?.value));if(!profile)return toast('Start or select a P25 profile first',true);try{const wasRunning=state.status?.running&&state.status.activeProfileID===profile.id;let updated=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):structuredClone(profile);updated.settings||={};if(p25Rate.id==='p25-live-rate')updated.settings.p25SampleRateHz=Number(p25Rate.value)||0;else if(p25Rate.id==='p25-amp-mode')updated.settings.p25AmpMode=p25Rate.value;else updated.settings[p25Rate.id==='p25-lna-gain'?'p25LNAGainDB':'p25VGAGainDB']=p25Rate.value===''?null:Number(p25Rate.value);updated=await api('/api/profiles',{method:'POST',body:JSON.stringify(updated)});if(wasRunning){await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:updated.id})});}state.selectedProfileID=state.p25ProfileID=updated.id;p25Rate.blur();toast('P25 receiver settings applied');await refreshAll();}catch(error){toast(error.message,true);}return;}
 	const volume=event.target.closest('.mixer-volume'),pan=event.target.closest('.mixer-pan');if(!volume&&!pan)return;const slider=volume||pan,row=slider.closest('[data-mixer-id]');
@@ -1592,15 +1621,18 @@ $('#profile-form').addEventListener('submit',async event=>{
 window.addEventListener('resize',()=>{drawSpectrum();drawWaterfall();});
 let fpvStatus=null,fpvFrameTimer=null;
 function renderFPV(){
-	const compatible=state.devices.filter(device=>device.connected&&device.available&&(device.kind==='HackRF'||device.kind==='PlutoSDR')),$device=$('#fpv-device'),selected=$device.value;
+	const compatible=state.devices.filter(device=>device.connected&&device.available&&device.kind!=='RTL-TCP'&&device.driver!=='Android USB'),$device=$('#fpv-device'),selected=$device.value;
 	$device.innerHTML=compatible.map(device=>`<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device))}</option>`).join('')||'<option value="">No compatible receiver</option>';
 	if(compatible.some(device=>device.id===selected))$device.value=selected;
+	updateFPVControls();
 	const running=!!fpvStatus?.running,hasFrame=!!fpvStatus?.frameUpdated;
 	$('#fpv-state').textContent=running?'Receiving':fpvStatus?.lastError?'Stopped':'Idle';$('#fpv-state').className=`chip ${running?'ready':''}`;
 	$('#fpv-detail').textContent=fpvStatus?.lastError||(!fpvStatus?.backendReady?'FPV video backend is not installed':hasFrame?`Frame updated ${new Date(fpvStatus.frameUpdated).toLocaleTimeString()} · ${formatBytes(fpvStatus.frameBytes)}`:running?'Waiting for video synchronization':'Waiting for decoded frames');
 	$('#fpv-form button[type="submit"]').disabled=running||!compatible.length||!fpvStatus?.backendReady;$('#fpv-stop').disabled=!running;
 	if(hasFrame){const suffix=serverToken?`&token=${encodeURIComponent(serverToken)}`:'';$('#fpv-frame').src=`/api/fpv/frame?t=${Date.now()}${suffix}`;$('#fpv-screen').classList.add('live');}
 }
+function updateFPVControls(){const device=state.devices.find(item=>item.id===$('#fpv-device')?.value),hackrf=device?.kind==='HackRF';$$('.fpv-hackrf-only').forEach(item=>item.classList.toggle('capability-hidden',!hackrf));for(const id of ['fpv-lna','fpv-vga','fpv-amp'])if($('#'+id))$('#'+id).disabled=!hackrf;const frequency=Number($('#fpv-frequency')?.value)*1e6,inside=!device||(!device.frequencyMinimumHz||frequency>=device.frequencyMinimumHz)&&(!device.frequencyMaximumHz||frequency<=device.frequencyMaximumHz);$('#fpv-frequency')?.classList.toggle('invalid',!inside);}
+$('#fpv-device').addEventListener('change',updateFPVControls);$('#fpv-frequency').addEventListener('input',updateFPVControls);
 async function refreshFPV(){try{fpvStatus=await api('/api/fpv');renderFPV();}catch(error){$('#fpv-detail').textContent=error.message;}}
 $('#fpv-channel').addEventListener('change',event=>{if(event.target.value)$('#fpv-frequency').value=event.target.value;});
 $('#fpv-form').addEventListener('submit',async event=>{event.preventDefault();try{fpvStatus=await api('/api/fpv/start',{method:'POST',body:JSON.stringify({deviceID:$('#fpv-device').value,frequencyHz:Number($('#fpv-frequency').value)*1e6,sampleRateHz:Number($('#fpv-rate').value),standard:$('#fpv-standard').value,gainDB:Number($('#fpv-gain').value),lnaGainDB:Number($('#fpv-lna').value),vgaGainDB:Number($('#fpv-vga').value),ampEnabled:$('#fpv-amp').checked,dcRemoval:$('#fpv-dc').checked})});renderFPV();toast('FPV receiver started');}catch(error){toast(error.message,true);await refreshFPV();}});
