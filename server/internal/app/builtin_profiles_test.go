@@ -35,3 +35,45 @@ func TestBuiltInScanRangesFitHackRFBandwidth(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltInChannelBanksIncludeCommonReceivePlans(t *testing.T) {
+	wanted := map[string]int{
+		"Railroad · AAR Voice":          91,
+		"Public Safety · Interop":       19,
+		"Marine VHF · Calling & Safety": 10,
+		"Emergency & Calling":           5,
+	}
+	for _, profile := range builtInProfiles() {
+		if count, ok := wanted[profile.Name]; ok {
+			if len(profile.Channels) != count {
+				t.Fatalf("%s channel count: got %d, want %d", profile.Name, len(profile.Channels), count)
+			}
+			for _, channel := range profile.Channels {
+				if !channel.Enabled || channel.FrequencyHz <= 0 || channel.BandwidthHz <= 0 {
+					t.Fatalf("%s contains an unusable channel: %#v", profile.Name, channel)
+				}
+			}
+			delete(wanted, profile.Name)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("missing common receive profiles: %#v", wanted)
+	}
+}
+
+func TestGMRSWholeBandFitsHackRFAndRejectsNarrowRTL(t *testing.T) {
+	var gmrs ScanProfile
+	for _, profile := range builtInProfiles() {
+		if profile.ID == "be8e8ba2-ef4d-47f4-875f-f489bc8d894b" {
+			gmrs = profile
+			break
+		}
+	}
+	hackRFLimit, rtlLimit := 20_000_000.0, 3_200_000.0
+	if spec, channels, ok := widebandSpec(gmrs, SDRDevice{Kind: "HackRF", SampleRateLimit: &hackRFLimit}); !ok || spec.SampleRateHz < 8_000_000 || len(channels) != 30 {
+		t.Fatalf("GMRS HackRF wideband plan unavailable: spec=%#v channels=%d ok=%v", spec, len(channels), ok)
+	}
+	if _, _, ok := widebandSpec(gmrs, SDRDevice{Kind: "RTL-SDR", SampleRateLimit: &rtlLimit}); ok {
+		t.Fatal("GMRS input/output span must not be presented as a simultaneous RTL-SDR capture")
+	}
+}

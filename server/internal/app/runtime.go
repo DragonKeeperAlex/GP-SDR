@@ -477,12 +477,13 @@ func (r *Runtime) Plan() []ReceiverPlanItem {
 
 func (r *Runtime) Status() RuntimeStatus {
 	r.refreshStorageStatus()
+	powerHat := readPiPowerHat()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	status := RuntimeStatus{Running: r.running, Mode: "Idle", StartedAt: r.startedAt, ConnectedDeviceCount: 0,
 		EventCount: r.Events.Count(), WebAddress: r.webAddress, SimulatorEnabled: r.demo, Version: Version,
 		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry,
-		Storage: r.storage, HealthNotices: r.healthNoticesLocked()}
+		Storage: r.storage, HealthNotices: r.healthNoticesLocked(), PowerHat: powerHat}
 	status.Storage.Policy = r.storagePolicy
 	for _, d := range r.devices {
 		if d.Connected && d.Kind != "Simulator" {
@@ -501,6 +502,8 @@ func (r *Runtime) Status() RuntimeStatus {
 				status.Mode = "P25 trunk follow"
 			} else if r.tuning {
 				status.Mode = "Tuner · " + strings.ToUpper(firstChannelMode(*r.active))
+			} else if hasReceiverRole(*r.active, "channelBank") {
+				status.Mode = "Band monitor"
 			}
 		}
 	}

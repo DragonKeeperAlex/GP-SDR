@@ -14,6 +14,7 @@ Receiver controls are capability-driven. HackRF-only LNA, VGA, RF amplifier, and
 | RTL-SDR family | Low-cost receive-only IQ source, gain control, model-dependent direct sampling and bias tee |
 | SoapySDR | Other local SDRs supported by an installed Soapy module |
 | PlutoSDR / compatible AD936x boards | USB or Ethernet receive through libiio + SoapyPlutoSDR; AGC/manual gain, Tuner, Band Monitor, calibration, and Mapper jobs |
+| `rtl_tcp` | Remote RTL-SDR stream with reduced hardware-control visibility |
 
 GP-SDR uses the exact `uri` and serial reported by libiio so multiple Pluto-class
 boards remain distinct. Stock Pluto hardware is shown with its conservative
@@ -31,7 +32,6 @@ SoapySDRUtil --probe="driver=plutosdr"
 
 The Hardware page offers Pluto-specific setup instructions when the module is
 missing. GP-SDR does not rewrite `config.txt` or firmware during setup.
-| `rtl_tcp` | Remote RTL-SDR stream with reduced hardware-control visibility |
 
 Multiple receivers can be connected simultaneously. GP-SDR assigns exactly one
 capture owner to a physical device at a time, preventing the tuner, Mapper, and
@@ -121,3 +121,11 @@ Follow [Receiver and Antenna Lab](Receiver-and-Antenna-Lab) for a complete compa
 1.4.1 baseline source: [discovery.go](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/internal/app/discovery.go), [index.html](https://github.com/DragonKeeperAlex/GP-SDR/blob/26501f8/server/web/index.html).
 
 Current additions checked against [1.5.0-rc9](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md) and its [interface source](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/server/web/index.html).
+
+## Raspberry Pi power telemetry
+
+On Linux, GP-SDR automatically detects the PiPower5 Python package used by the Pi power HAT.
+When available, **Hardware** shows external/battery source, charge state, battery percentage,
+and live input/output voltage, current, and power. The probe is cached and bounded by a short
+timeout, so an absent or disconnected HAT does not block radio controls. This card is not
+compiled into macOS or Windows behavior.

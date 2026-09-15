@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var Version = "1.5.0-rc30"
+var Version = "1.5.0-rc31"
 
 type SDRDevice struct {
 	ID                        string             `json:"id"`
@@ -317,6 +317,7 @@ type RuntimeStatus struct {
 	ReceiverTelemetry    *ReceiverTelemetry  `json:"receiverTelemetry,omitempty"`
 	Storage              StorageStatus       `json:"storage"`
 	HealthNotices        []HealthNotice      `json:"healthNotices"`
+	PowerHat             PiPowerHatStatus    `json:"powerHat"`
 }
 
 type StorageStatus struct {
@@ -474,7 +475,44 @@ func builtInProfiles() []ScanProfile {
 	publicSafety := rangeProfile("5fdcfc10-2b76-43aa-b8e6-4b7c7831f3a4", "Public Safety Discovery", "Common 700 and 800 MHz receive segments", "Public safety",
 		ScanRange{ID: NewID(), Name: "700 MHz", StartHz: 769e6, EndHz: 775e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true},
 		ScanRange{ID: NewID(), Name: "800 MHz", StartHz: 851e6, EndHz: 869e6, StepHz: 12_500, DwellMilliseconds: 180, PreferredMode: "digital", Enabled: true})
-	profiles := []ScanProfile{discovery, gmrs, weather, murs, cb, fm, am, airband, marine, ham, publicSafety}
+	railroad := fixedChannelProfile("3f37d55e-0d3d-4443-b58e-80c775d70d5d", "Railroad · AAR Voice", "AAR channels 7–97 across 160.215–161.565 MHz", "Railroad")
+	for number := 7; number <= 97; number++ {
+		railroad.Channels = append(railroad.Channels, channel(fmt.Sprintf("AAR %d", number), 160.215+float64(number-7)*.015, 12_500, "nfm"))
+	}
+	interop := fixedChannelProfile("c975fcf9-d93d-4870-a990-d96a9fb58f78", "Public Safety · Interop", "National VHF, UHF, 700 MHz, and 800 MHz interoperability calling and tactical channels", "Public safety interop")
+	for _, item := range []struct {
+		name string
+		mhz  float64
+	}{
+		{"VCALL10", 155.7525}, {"VTAC11", 151.1375}, {"VTAC12", 154.4525}, {"VTAC13", 158.7375}, {"VTAC14", 159.4725},
+		{"UCALL40", 453.2125}, {"UTAC41", 453.4625}, {"UTAC42", 453.7125}, {"UTAC43", 453.8625},
+		{"7CALL50", 769.24375}, {"7TAC51", 769.49375}, {"7TAC52", 769.74375}, {"7TAC53", 770.14375}, {"7TAC54", 770.39375},
+		{"8CALL90", 851.0125}, {"8TAC91", 851.5125}, {"8TAC92", 852.0125}, {"8TAC93", 852.5125}, {"8TAC94", 853.0125},
+	} {
+		interop.Channels = append(interop.Channels, channel(item.name, item.mhz, 12_500, "nfm"))
+	}
+	marineCalling := fixedChannelProfile("7a107f7d-54da-401f-9c99-17db23100a4f", "Marine VHF · Calling & Safety", "Common US calling, safety, bridge, and recreational working channels", "Marine VHF")
+	for _, item := range []struct {
+		name string
+		mhz  float64
+	}{
+		{"Ch 06 Safety", 156.300}, {"Ch 09 Calling", 156.450}, {"Ch 13 Bridge", 156.650}, {"Ch 16 Distress", 156.800},
+		{"Ch 22A Coast Guard", 157.100}, {"Ch 68 Working", 156.425}, {"Ch 69 Working", 156.475}, {"Ch 71 Working", 156.575}, {"Ch 72 Working", 156.625}, {"Ch 78A Working", 156.925},
+	} {
+		marineCalling.Channels = append(marineCalling.Channels, channel(item.name, item.mhz, 16_000, "nfm"))
+	}
+	emergency := fixedChannelProfile("4a695f72-bf22-413c-b9e8-39ec5b0885c6", "Emergency & Calling", "Widely used aviation, amateur, and maritime calling or distress frequencies", "Calling")
+	for _, item := range []struct {
+		name           string
+		mhz, bandwidth float64
+		mode           string
+	}{
+		{"Aviation emergency", 121.500, 12_500, "am"}, {"Military aviation emergency", 243.000, 25_000, "am"},
+		{"Marine distress Ch 16", 156.800, 16_000, "nfm"}, {"2 m amateur calling", 146.520, 16_000, "nfm"}, {"70 cm amateur calling", 446.000, 16_000, "nfm"},
+	} {
+		emergency.Channels = append(emergency.Channels, channel(item.name, item.mhz, item.bandwidth, item.mode))
+	}
+	profiles := []ScanProfile{discovery, gmrs, weather, murs, cb, fm, am, airband, marine, ham, publicSafety, railroad, interop, marineCalling, emergency}
 	profiles = append(profiles, decoderScanProfiles()...)
 	profiles = append(profiles, handheldProfiles()...)
 	profiles = append(profiles, regionalConventionalProfiles()...)

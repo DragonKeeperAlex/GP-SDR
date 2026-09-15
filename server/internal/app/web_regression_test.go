@@ -101,6 +101,43 @@ func TestHiddenSpectrumCanvasCannotCreateZeroIncrementLoop(t *testing.T) {
 	}
 }
 
+func TestBandMonitorIncludesLiveWidebandDisplay(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="band-spectrum"`, `id="band-waterfall"`, `id="band-spectrum-cursor"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("Band Monitor display %q is missing", required)
+		}
+	}
+
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"drawSpectrumCanvas($('#band-spectrum'))", "drawWaterfallCanvas(canvas)", "selectedDevice=connected.find"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("Band Monitor behavior %q is missing", required)
+		}
+	}
+}
+
+func TestPiPowerHatCardIsCapabilityDriven(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"state.status?.powerHat", "PiPower5 power HAT", "renderPiPowerHatStatus()"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("Pi power HAT behavior %q is missing", required)
+		}
+	}
+}
+
 func TestLocationImportOffersValidatedCustomRange(t *testing.T) {
 	indexPath := filepath.Join("..", "..", "web", "index.html")
 	indexData, err := os.ReadFile(indexPath)

@@ -1,4 +1,16 @@
-# What’s new through GP-SDR 1.5.0-rc20
+# What’s new through GP-SDR 1.5.0-rc31
+
+## 1.5.0-rc31: working Band Monitor and Pi power telemetry
+
+- Band Monitor now includes a live spectrum and waterfall, frequency hover readout,
+  active-channel markers, and receiver-specific status while its shared IQ capture runs.
+- Added built-in AAR railroad, public-safety interoperability, marine calling/safety,
+  and emergency/calling channel banks alongside the existing presets.
+- Pi deployments can display live PiPower5 input, output, battery, charge, and power-source
+  readings on Hardware. The integration is Linux-only, cached, and absent on macOS and Windows.
+- The Linux ARM64 package includes the Soapy streaming helper needed by PlutoSDR receivers.
+- Receiver rendering now tolerates a disconnected or stale Band Monitor selection without
+  breaking the page.
 
 ## 1.5.0-rc20: combined Mapper monitor and PlutoSDR receive
 

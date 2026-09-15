@@ -9,7 +9,7 @@
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css?v=1.5.0-rc20">
-  <link rel="stylesheet" href="/console.css?v=1.5.0-rc8a">
+  <link rel="stylesheet" href="/console.css?v=1.5.0-rc31">
   <link rel="stylesheet" href="/explore.css?v=1.5.0-rc20">
 </head>
 <body>
@@ -172,6 +172,13 @@
           <p class="band-help"><strong>Privacy codes are squelch tones, not encryption.</strong> Carrier mode hears every transmission, including radios with no code. GP‑SDR identifies CTCSS on active audio and leaves the code blank when there is not enough evidence.</p>
         </article>
         <div class="band-summary"><article><span>Channels</span><strong id="band-channel-count">0</strong><small>monitored</small></article><article><span>Active now</span><strong id="band-active-count">0</strong><small>receiving</small></article><article><span>Last tone</span><strong id="band-last-code">—</strong><small>CTCSS detected</small></article><article><span>Capture</span><strong id="band-capture-width">—</strong><small>shared bandwidth</small></article></div>
+        <article class="panel band-display-panel">
+          <div class="panel-head"><div><h2>Band display</h2><span id="band-spectrum-caption">Start monitoring to view the shared capture</span></div><span id="band-spectrum-cursor" class="frequency-caption">Hover for frequency</span></div>
+          <canvas id="band-spectrum" aria-label="Live spectrum for the monitored band"></canvas>
+          <div class="frequency-axis"><span id="band-spectrum-start">—</span><span id="band-spectrum-mid">—</span><span id="band-spectrum-end">—</span></div>
+          <canvas id="band-waterfall" aria-label="Live waterfall for the monitored band"></canvas>
+          <div class="waterfall-scale"><span>Weak</span><i></i><span>Strong</span></div>
+        </article>
         <article class="panel band-channel-panel"><div class="panel-head"><div><h2>Channels</h2><span>Active channels rise to the top</span></div><div class="mixer-head-actions"><input id="band-search" type="search" placeholder="Channel, frequency, code" aria-label="Filter band channels"><button id="band-mute-all" class="icon-button" title="Mute or unmute every channel">M</button></div></div><div id="band-channel-list" class="band-channel-list empty-state compact">Choose a band and start monitoring</div></article>
       </section>
 
@@ -695,7 +702,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc30.1"></script>
-  <script src="/explore.js?v=1.5.0-rc30.1"></script>
+  <script src="/app.js?v=1.5.0-rc31"></script>
+  <script src="/explore.js?v=1.5.0-rc31"></script>
 </body>
 </html>
