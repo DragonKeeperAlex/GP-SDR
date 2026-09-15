@@ -1,4 +1,4 @@
-**GP-SDR manual · through 1.5.0-rc10**
+**GP-SDR manual · through 1.5.0-rc28**
 
 - [Home](Home)
 - [What’s New](Whats-New)
