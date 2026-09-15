@@ -1,5 +1,11 @@
 # Mapper: Map, Discovery, and Identify
 
+## Digital output and manual confirmation
+
+Expand a result to see the decoder's actual evidence text, including valid frames or messages when a decoder produced them. A detected digital-shaped waveform is shown as a candidate, not silently promoted to P25, DMR, or another protocol.
+
+Use **Confirm label for learning** only after you verify the modulation and protocol from decoded content, recognizable audio, or another reliable source. The confirmation is stored in GP-SDR's local learning library and becomes grounded comparison data for later local analysis. Mapper guesses are never learned automatically.
+
 In **1.5.0-rc9**, Mapping has separate **Overview, Discovery, Identify, Analyze, Schedule, and Results** pages. Map remains a workflow choice in job setup. See [Analyze and Schedule](Analyze-and-Schedule) for deferred processing and timed phases.
 
 Mapper runs unattended receiver jobs and keeps RF evidence for later review.

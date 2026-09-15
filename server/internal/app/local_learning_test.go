@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConfirmedLearningLibraryPersistsAndExports(t *testing.T) {
@@ -24,6 +25,20 @@ func TestConfirmedLearningLibraryPersistsAndExports(t *testing.T) {
 	export := string(reloaded.ExportJSONL())
 	if !strings.Contains(export, `"protocol":"Analog voice"`) || strings.Contains(export, "iqPath") {
 		t.Fatalf("unexpected training export: %s", export)
+	}
+}
+
+func TestConfirmMapperLearningCreatesGroundedSample(t *testing.T) {
+	directory := t.TempDir()
+	runtimeState := &Runtime{learning: NewSignalLearningLibrary(directory), mapper: &MapperManager{records: map[string]MapperFrequencyRecord{
+		"155250000": {FrequencyHz: 155_250_000, LastSeen: time.Now(), StrongestDBFS: -42, NoiseDBFS: -91, Modulation: "NFM", ProtocolName: "Analog voice", Hits: 4, Checks: 10},
+	}}}
+	sample, err := runtimeState.ConfirmMapperLearning(155_250_000, "NFM", "Known campus channel", "verified by monitored audio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sample.FrequencyHz != 155_250_000 || sample.Protocol != "Known campus channel" || runtimeState.learning.Status().Count != 1 {
+		t.Fatalf("unexpected confirmed Mapper sample: %#v", sample)
 	}
 }
 

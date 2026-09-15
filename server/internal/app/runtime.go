@@ -333,7 +333,33 @@ func (r *Runtime) UploadMapperFrequency(frequencyHz float64) MapperStatus {
 	return r.mapper.UploadFrequency(frequencyHz)
 }
 func (r *Runtime) ClearMapperRecords() MapperStatus { return r.mapper.ClearRecords() }
-func (r *Runtime) MapperCSV() ([]byte, int, error)  { return r.mapper.CSV() }
+func (r *Runtime) ConfirmMapperLearning(frequencyHz float64, modulation, protocol, notes string) (ConfirmedSignalSample, error) {
+	var record *MapperFrequencyRecord
+	for _, candidate := range r.mapper.Status().Records {
+		if math.Abs(candidate.FrequencyHz-frequencyHz) < 1 {
+			copy := candidate
+			record = &copy
+			break
+		}
+	}
+	if record == nil {
+		return ConfirmedSignalSample{}, ErrNotFound
+	}
+	protocolName, transcript := strings.TrimSpace(record.ProtocolName), strings.TrimSpace(record.LastTranscript)
+	event := TransmissionEvent{ID: fmt.Sprintf("mapper-%.0f", record.FrequencyHz), StartedAt: record.LastSeen, FrequencyHz: record.FrequencyHz, BandwidthHz: 12_500,
+		SignalDBFS: record.StrongestDBFS, NoiseDBFS: record.NoiseDBFS, Modulation: record.Modulation, Confidence: record.Confidence, Callsigns: append([]string(nil), record.Callsigns...)}
+	if protocolName != "" {
+		event.ProtocolName = &protocolName
+	}
+	if transcript != "" {
+		event.Transcript = &transcript
+	}
+	if record.AnalysisSummary != "" || len(record.AnalysisEvidence) > 0 {
+		event.Analysis = &SignalIntelligence{Engine: record.AnalysisEngine, Modulation: record.Modulation, SignalFamily: protocolName, Confidence: record.Confidence, Evidence: append([]string(nil), record.AnalysisEvidence...)}
+	}
+	return r.learning.Confirm(event, modulation, protocol, notes, false)
+}
+func (r *Runtime) MapperCSV() ([]byte, int, error) { return r.mapper.CSV() }
 func (r *Runtime) SaveMapperCSV() (MapperExportResult, error) {
 	return r.mapper.SaveCSV()
 }

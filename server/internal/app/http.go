@@ -428,6 +428,18 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.UploadMapperFrequency(body.FrequencyHz))
 	case r.Method == "POST" && path == "/api/mapper/clear":
 		writeJSON(w, 200, s.runtime.ClearMapperRecords())
+	case r.Method == "POST" && path == "/api/mapper/confirm":
+		var body struct {
+			FrequencyHz float64 `json:"frequencyHz"`
+			Modulation  string  `json:"modulation"`
+			Protocol    string  `json:"protocol"`
+			Notes       string  `json:"notes"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		result, err := s.runtime.ConfirmMapperLearning(body.FrequencyHz, body.Modulation, body.Protocol, body.Notes)
+		writeResult(w, result, err, 200)
 	case r.Method == "GET" && path == "/api/mapper/export.csv":
 		data, _, err := s.runtime.MapperCSV()
 		if err != nil {
