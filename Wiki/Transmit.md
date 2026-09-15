@@ -1,6 +1,14 @@
 # Guarded HackRF audio-file transmission
 
-GP-SDR normally receives. **Transmit** is an explicit local-computer workflow for bounded AM, NFM, or WFM playback from a WAV file. RTL-SDR cannot transmit. Microphone input, digital voice, repeater operation, and unattended/continuous transmission are not implemented.
+GP-SDR normally receives. **Transmit & test lab** is an explicit local-computer workflow for bounded AM, NFM, or WFM playback from a WAV file and controlled known-signal test fixtures. RTL-SDR cannot transmit. Microphone input, standardized digital voice transmission, repeater operation, and unattended/continuous transmission are not implemented.
+
+## Known-signal fixtures
+
+Choose **Known test fixture** to generate deterministic CW, AM, NFM, WFM, OOK, 2-FSK, GFSK, GMSK-like, BPSK, or QPSK IQ. Packet fixtures accept a known payload and symbol rate. Expand **Channel impairments** to control SNR, frequency offset and drift, IQ gain/phase error, DC offset, and clipping.
+
+Each run stores signed 8-bit IQ plus a `truth.json` manifest in `Transmit/fixtures`. The manifest records the exact payload, symbol count, sample rate, duration, occupied-bandwidth estimate, impairment settings, EVM, and SHA-256. These are synthetic reference fixtures and remain separate from user-confirmed over-the-air learning samples.
+
+Dry-run fixture generation works without an SDR. Turning dry run off requires a connected transmit-capable HackRF or PlutoSDR, the local safety confirmation, and the same 60-second hard limit as audio playback. A successful generated or transmitted fixture is not reported as a receiver decode; independent capture and decoder evidence are required for that claim.
 
 ## Prepare a dry run
 
@@ -11,7 +19,7 @@ GP-SDR normally receives. **Transmit** is an explicit local-computer workflow fo
 5. Keep **Dry run (generate IQ, no RF)** checked. Press **Prepare / transmit**.
 6. Confirm the status says **Dry run complete; no RF was transmitted**. The app creates signed 8-bit IQ under the data directory’s `Transmit/iq` folder. Uploaded WAV files are under `Transmit/audio`.
 
-Dry runs validate preparation, not RF output, spectral compliance, or audio quality at another receiver. Generated IQ is approximately 4 MB per second at 2 MS/s; a 60-second job is about 240 MB. General Recording/IQ cleanup does not target the separate Transmit folders, so review those files separately.
+Dry runs validate preparation, not RF output, spectral compliance, or reception at another receiver. Generated IQ is approximately 4 MB per second at 2 MS/s; a 60-second job is about 240 MB. General Recording/IQ cleanup does not target the separate Transmit folders, so review those files separately.
 
 ## Bounded RF bench test
 

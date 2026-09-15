@@ -151,7 +151,7 @@ function setView(view) {
     analyzer: ['Spectrum analyzer', 'Fast full-range sweeps and accumulated RF peaks'],
     fpv: ['FPV video', 'Low-latency analog NTSC and PAL receiver'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
-    transmit: ['Transmit', 'Guarded SDR audio playback'],
+    transmit: ['Transmit', 'Known-signal test lab and guarded playback'],
     activity: ['Activity', 'Signals and transmission history'],
     explore: ['Explore', 'Activity patterns, collection locations, and reference evidence'],
     mapper: ({overview:['Mapper overview','Live jobs, receivers, spectrum, and throughput'],discovery:['Discovery','High-throughput RF activity collection'],identify:['Identify','Focused decoding and signal identification'],analysis:['Analyze','Process stored captures and inspect live results'],schedule:['Mapper schedule','Timed collection, identification, and offline compute'],results:['Mapper results','Search, verify, export, and sync collected activity']}[state.mapperPage]||['Mapper','Wide-range activity survey']),
@@ -280,6 +280,12 @@ function renderTransmit(){
   detail.textContent=status.note||'Choose a PCM WAV file. Dry run is selected by default.';
   $('#transmit-stop').disabled=status.state!=='running';
   $('#transmit-armed').disabled=$('#transmit-dry-run').checked;
+  const fixtureMode=$('#transmit-source').value==='fixture',offline=fixtureMode&&$('#transmit-dry-run').checked;
+  $('.transmit-audio-field').classList.toggle('hidden',fixtureMode);$('#transmit-fixture-controls').classList.toggle('hidden',!fixtureMode);
+  $('#transmit-device').required=!offline;$('#transmit-audio').required=!fixtureMode;
+  const result=$('#fixture-result'),fixture=status.fixture;
+  result.classList.toggle('hidden',!fixture);
+  if(fixture)result.textContent=`${fixture.kind} · ${fixture.description}\n${fixture.sampleRateHz/1e6} MS/s · ${fixture.durationSeconds.toFixed(2)} s · ${Math.round(fixture.occupiedBandwidthHz)} Hz occupied bandwidth\nEVM ${fixture.measuredEVMPercent.toFixed(2)}% · configured SNR ${fixture.configuredSNRDB} dB\nPayload ${fixture.payloadUTF8||'—'}\nSHA-256 ${fixture.sha256}\n${fixture.decodeStatus}`;
 }
 
 function renderMissingComponents() {
@@ -1415,17 +1421,16 @@ $('#tuner-form').addEventListener('submit', async event => {
   catch(error) { stopLiveAudio(); toast(error.message,true); }
 });
 $('#transmit-dry-run').addEventListener('change', renderTransmit);
+$('#transmit-source').addEventListener('change',renderTransmit);
 $('#transmit-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const file=$('#transmit-audio').files[0];
-  if(!file){toast('Choose a PCM WAV file first',true);return;}
+  const fixtureMode=$('#transmit-source').value==='fixture',file=$('#transmit-audio').files[0];
+  if(!fixtureMode&&!file){toast('Choose a PCM WAV file first',true);return;}
   try{
-    const form=new FormData(); form.append('audio',file,file.name);
-    const headers={}; if(serverToken)headers['X-GP-SDR-Token']=serverToken;
-    const upload=await fetch('/api/transmit/upload',{method:'POST',headers,body:form});
-    if(!upload.ok)throw new Error((await upload.json()).message||'Audio upload failed');
-    const stored=await upload.json();
-    state.transmitStatus=await api('/api/transmit',{method:'POST',body:JSON.stringify({deviceID:$('#transmit-device').value,frequencyHz:Number($('#transmit-frequency').value)*1e6,mode:$('#transmit-mode').value,audioPath:stored.audioPath,durationSeconds:Number($('#transmit-duration').value),txGainDB:Number($('#transmit-gain').value),armed:$('#transmit-armed').checked,dryRun:$('#transmit-dry-run').checked})});
+    let audioPath='',fixture=null;
+    if(fixtureMode){fixture={kind:$('#fixture-kind').value,payload:$('#fixture-payload').value,symbolRate:Number($('#fixture-symbol-rate').value),toneHz:Number($('#fixture-tone').value),snrDB:Number($('#fixture-snr').value),frequencyOffsetHz:Number($('#fixture-offset').value),driftHzPerSecond:Number($('#fixture-drift').value),iqGainError:Number($('#fixture-iq-gain').value),iqPhaseErrorDeg:Number($('#fixture-iq-phase').value),dcOffset:Number($('#fixture-dc').value),clipLevel:Number($('#fixture-clip').value)};}
+    else {const form=new FormData();form.append('audio',file,file.name);const headers={};if(serverToken)headers['X-GP-SDR-Token']=serverToken;const upload=await fetch('/api/transmit/upload',{method:'POST',headers,body:form});if(!upload.ok)throw new Error((await upload.json()).message||'Audio upload failed');audioPath=(await upload.json()).audioPath;}
+    state.transmitStatus=await api('/api/transmit',{method:'POST',body:JSON.stringify({deviceID:$('#transmit-device').value,frequencyHz:Number($('#transmit-frequency').value)*1e6,mode:$('#transmit-mode').value,audioPath,durationSeconds:Number($('#transmit-duration').value),txGainDB:Number($('#transmit-gain').value),armed:$('#transmit-armed').checked,dryRun:$('#transmit-dry-run').checked,fixture})});
     renderTransmit(); toast(state.transmitStatus.note||'Transmit job started'); setTimeout(refreshAll,500);
   }catch(error){toast(error.message,true);}
 });

@@ -18,27 +18,29 @@ import (
 // exposes analog AM/NFM/WFM file playback for now; digital signalling and
 // unattended/continuous transmission remain receive-side features.
 type TransmitRequest struct {
-	DeviceID       string  `json:"deviceID"`
-	FrequencyHz    float64 `json:"frequencyHz"`
-	Mode           string  `json:"mode"`
-	AudioPath      string  `json:"audioPath"`
-	DurationSecond float64 `json:"durationSeconds"`
-	TXGainDB       int     `json:"txGainDB"`
-	Armed          bool    `json:"armed"`
-	DryRun         bool    `json:"dryRun"`
+	DeviceID       string                `json:"deviceID"`
+	FrequencyHz    float64               `json:"frequencyHz"`
+	Mode           string                `json:"mode"`
+	AudioPath      string                `json:"audioPath"`
+	DurationSecond float64               `json:"durationSeconds"`
+	TXGainDB       int                   `json:"txGainDB"`
+	Armed          bool                  `json:"armed"`
+	DryRun         bool                  `json:"dryRun"`
+	Fixture        *SignalFixtureRequest `json:"fixture,omitempty"`
 }
 
 type TransmitStatus struct {
-	State       string     `json:"state"`
-	Note        string     `json:"note"`
-	DeviceID    string     `json:"deviceID,omitempty"`
-	FrequencyHz float64    `json:"frequencyHz,omitempty"`
-	Mode        string     `json:"mode,omitempty"`
-	StartedAt   *time.Time `json:"startedAt,omitempty"`
-	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
-	IQPath      string     `json:"iqPath,omitempty"`
-	Samples     int        `json:"samples,omitempty"`
-	DryRun      bool       `json:"dryRun,omitempty"`
+	State       string                 `json:"state"`
+	Note        string                 `json:"note"`
+	DeviceID    string                 `json:"deviceID,omitempty"`
+	FrequencyHz float64                `json:"frequencyHz,omitempty"`
+	Mode        string                 `json:"mode,omitempty"`
+	StartedAt   *time.Time             `json:"startedAt,omitempty"`
+	FinishedAt  *time.Time             `json:"finishedAt,omitempty"`
+	IQPath      string                 `json:"iqPath,omitempty"`
+	Samples     int                    `json:"samples,omitempty"`
+	DryRun      bool                   `json:"dryRun,omitempty"`
+	Fixture     *SignalFixtureManifest `json:"fixture,omitempty"`
 }
 
 type transmitState struct {
@@ -110,13 +112,6 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if !request.DryRun && !request.Armed {
 		return r.TransmitStatus(), errors.New("Check the local RF safety confirmation before transmitting.")
 	}
-	pcm, audioRate, err := readPCM16WAV(request.AudioPath)
-	if err != nil {
-		return r.TransmitStatus(), fmt.Errorf("read audio: %w", err)
-	}
-	if len(pcm) == 0 || audioRate <= 0 {
-		return r.TransmitStatus(), errors.New("the WAV contains no PCM audio")
-	}
 	r.mu.RLock()
 	var device SDRDevice
 	for _, candidate := range r.devices {
@@ -127,8 +122,9 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	}
 	busy := r.running && r.profileUsesDeviceLocked(device.ID)
 	r.mu.RUnlock()
+	offlineFixture := request.DryRun && request.Fixture != nil
 	transmitCapable := strings.EqualFold(device.Kind, "HackRF") || (strings.EqualFold(device.Kind, "PlutoSDR") && device.TransmitChannels > 0)
-	if device.ID == "" || !device.Connected || !device.Available || !transmitCapable {
+	if !offlineFixture && (device.ID == "" || !device.Connected || !device.Available || !transmitCapable) {
 		return r.TransmitStatus(), errors.New("select a connected HackRF or PlutoSDR with an exposed TX channel; RTL-SDR cannot transmit")
 	}
 	if strings.EqualFold(device.Kind, "HackRF") && request.TXGainDB > 47 {
@@ -140,7 +136,7 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if busy {
 		return r.TransmitStatus(), fmt.Errorf("%s is already in use by Live, Tuner, or P25", device.Name)
 	}
-	if request.AudioPath == "" {
+	if request.AudioPath == "" && request.Fixture == nil {
 		return r.TransmitStatus(), errors.New("choose a WAV audio file")
 	}
 	// Generate a bounded IQ file before starting hardware. The dry-run path is
@@ -150,20 +146,47 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if samples < 1 {
 		samples = transmitRate
 	}
-	iq, err := modulateTransmitAudio(pcm, audioRate, transmitRate, samples, request.Mode)
-	if err != nil {
-		return r.TransmitStatus(), err
+	var iq []byte
+	var fixture *SignalFixtureManifest
+	if request.Fixture != nil {
+		generated, manifest, fixtureErr := generateSignalFixture(*request.Fixture, transmitRate, samples)
+		if fixtureErr != nil {
+			return r.TransmitStatus(), fixtureErr
+		}
+		manifest, fixtureErr = saveSignalFixture(r.dataDirectory, generated, manifest)
+		if fixtureErr != nil {
+			return r.TransmitStatus(), fixtureErr
+		}
+		iq, fixture = generated, &manifest
+	} else {
+		pcm, audioRate, readErr := readPCM16WAV(request.AudioPath)
+		if readErr != nil {
+			return r.TransmitStatus(), fmt.Errorf("read audio: %w", readErr)
+		}
+		if len(pcm) == 0 || audioRate <= 0 {
+			return r.TransmitStatus(), errors.New("the WAV contains no PCM audio")
+		}
+		var modulationErr error
+		iq, modulationErr = modulateTransmitAudio(pcm, audioRate, transmitRate, samples, request.Mode)
+		if modulationErr != nil {
+			return r.TransmitStatus(), modulationErr
+		}
 	}
-	directory := filepath.Join(r.dataDirectory, "Transmit", "iq")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return r.TransmitStatus(), err
-	}
-	iqPath := filepath.Join(directory, fmt.Sprintf("%s-%d.cs8", time.Now().UTC().Format("20060102T150405.000Z"), int64(request.FrequencyHz)))
-	if err := os.WriteFile(iqPath, iq, 0o600); err != nil {
-		return r.TransmitStatus(), err
+	iqPath := ""
+	if fixture != nil {
+		iqPath = fixture.IQPath
+	} else {
+		directory := filepath.Join(r.dataDirectory, "Transmit", "iq")
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return r.TransmitStatus(), err
+		}
+		iqPath = filepath.Join(directory, fmt.Sprintf("%s-%d.cs8", time.Now().UTC().Format("20060102T150405.000Z"), int64(request.FrequencyHz)))
+		if err := os.WriteFile(iqPath, iq, 0o600); err != nil {
+			return r.TransmitStatus(), err
+		}
 	}
 	now := time.Now()
-	status := TransmitStatus{State: "running", Note: "IQ generated; waiting for SDR transmitter.", DeviceID: device.ID, FrequencyHz: request.FrequencyHz, Mode: request.Mode, StartedAt: &now, IQPath: iqPath, Samples: samples, DryRun: request.DryRun}
+	status := TransmitStatus{State: "running", Note: "IQ generated; waiting for SDR transmitter.", DeviceID: device.ID, FrequencyHz: request.FrequencyHz, Mode: request.Mode, StartedAt: &now, IQPath: iqPath, Samples: samples, DryRun: request.DryRun, Fixture: fixture}
 	r.transmit.mu.Lock()
 	if r.transmit.cancel != nil {
 		r.transmit.mu.Unlock()

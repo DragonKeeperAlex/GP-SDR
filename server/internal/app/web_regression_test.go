@@ -17,6 +17,29 @@ func TestMapperSettingsFocusDoesNotSuspendTelemetry(t *testing.T) {
 	}
 }
 
+func TestTransmitLabExposesGroundedFixtureControls(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="transmit-source"`, `value="fixture">Known test fixture`, `id="fixture-kind"`, `value="qpsk"`, `id="fixture-snr"`, `id="fixture-offset"`, `id="fixture-iq-phase"`, `id="fixture-result"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("fixture control %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"fixtureMode", "frequencyOffsetHz", "measuredEVMPercent", "decodeStatus"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("fixture behavior %q is missing", required)
+		}
+	}
+}
+
 func TestHiddenSpectrumCanvasCannotCreateZeroIncrementLoop(t *testing.T) {
 	path := filepath.Join("..", "..", "web", "app.js")
 	data, err := os.ReadFile(path)

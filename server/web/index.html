@@ -55,7 +55,7 @@
           <span class="nav-icon">⌁</span><span>Hardware</span>
         </button>
         <span class="nav-group-label">System</span>
-        <button class="nav-item" data-view="transmit" title="Prepare a guarded SDR audio transmission">
+        <button class="nav-item" data-view="transmit" title="Generate known IQ fixtures or prepare a guarded SDR transmission">
           <span class="nav-icon">TX</span><span>Transmit</span>
         </button>
         <button class="nav-item" data-view="settings" title="Server, storage, and application information">
@@ -266,20 +266,39 @@
 
       <section id="view-transmit" class="view">
         <article class="panel transmit-panel">
-          <div class="panel-head"><div><h2>Transmit</h2><span>Guarded SDR audio playback</span></div><span id="transmit-state" class="chip">Receive-only</span></div>
+          <div class="panel-head"><div><h2>Transmit & test lab</h2><span>Known-signal fixtures and guarded SDR playback</span></div><span id="transmit-state" class="chip">Receive-only</span></div>
           <div class="warning-banner"><strong>Use a dummy load first.</strong> RF output is local-only, limited to 60 seconds, and disabled until you explicitly arm it. Follow your local licensing and interference rules.</div>
           <form id="transmit-form" class="transmit-form">
+            <label>Source<select id="transmit-source"><option value="audio">Audio WAV</option><option value="fixture">Known test fixture</option></select></label>
             <label>Transmitter<select id="transmit-device" required></select></label>
             <label>Frequency · MHz<input id="transmit-frequency" type="number" min="1" max="6000" step="0.000001" value="100.100000" required></label>
             <label>Mode<select id="transmit-mode"><option value="nfm">NFM · 2.5 kHz deviation</option><option value="am">AM</option><option value="wfm">WFM · 75 kHz deviation</option></select></label>
             <label>Duration · seconds<input id="transmit-duration" type="number" min="0.1" max="60" step="0.1" value="5"></label>
             <label>TX gain · dB<input id="transmit-gain" type="number" min="0" max="47" step="1" value="0"></label>
-            <label>Audio WAV<input id="transmit-audio" type="file" accept="audio/wav,.wav" required></label>
+            <label class="transmit-audio-field">Audio WAV<input id="transmit-audio" type="file" accept="audio/wav,.wav"></label>
+            <fieldset id="transmit-fixture-controls" class="transmit-fixture-controls hidden">
+              <legend>Known signal fixture</legend>
+              <label>Signal<select id="fixture-kind"><option value="cw">CW carrier</option><option value="am">AM tone</option><option value="nfm">NFM tone</option><option value="wfm">WFM tone</option><option value="ook">OOK packet</option><option value="2fsk">2-FSK packet</option><option value="gfsk">GFSK packet</option><option value="gmsk">GMSK-like packet</option><option value="bpsk">BPSK packet</option><option value="qpsk">QPSK packet</option></select></label>
+              <label>Payload<input id="fixture-payload" maxlength="4096" value="GP-SDR TEST"></label>
+              <label>Symbol rate<input id="fixture-symbol-rate" type="number" min="1" max="250000" step="1" value="1200"></label>
+              <label>Tone · Hz<input id="fixture-tone" type="number" min="20" max="100000" step="1" value="1000"></label>
+              <details><summary>Channel impairments</summary><div class="fixture-impairment-grid">
+                <label>SNR · dB<input id="fixture-snr" type="number" min="-10" max="100" step="1" value="40"></label>
+                <label>Frequency offset · Hz<input id="fixture-offset" type="number" step="1" value="0"></label>
+                <label>Drift · Hz/s<input id="fixture-drift" type="number" step="0.1" value="0"></label>
+                <label>IQ gain error<input id="fixture-iq-gain" type="number" min="-0.5" max="0.5" step="0.01" value="0"></label>
+                <label>IQ phase · °<input id="fixture-iq-phase" type="number" min="-45" max="45" step="0.1" value="0"></label>
+                <label>DC offset<input id="fixture-dc" type="number" min="-0.5" max="0.5" step="0.01" value="0"></label>
+                <label>Clip level<input id="fixture-clip" type="number" min="0.05" max="1" step="0.05" value="1"></label>
+              </div></details>
+              <p>Every fixture saves deterministic IQ, exact payload/symbol truth, RF settings, EVM, occupied bandwidth, and SHA-256. Synthetic fixtures are kept separate from user-confirmed over-the-air samples.</p>
+            </fieldset>
             <label class="check-line"><input id="transmit-dry-run" type="checkbox" checked> Dry run (generate IQ, no RF)</label>
             <label class="check-line"><input id="transmit-armed" type="checkbox"> I am using a dummy load and understand this transmits RF</label>
             <div class="transmit-actions"><button class="primary" type="submit">Prepare / transmit</button><button id="transmit-stop" type="button">Stop</button></div>
           </form>
-          <p id="transmit-detail" class="transmit-detail">Choose a PCM WAV file. Dry run is selected by default.</p>
+          <p id="transmit-detail" class="transmit-detail">Choose a PCM WAV file or generate a known test fixture. Dry run is selected by default.</p>
+          <div id="fixture-result" class="fixture-result hidden"></div>
         </article>
       </section>
 
@@ -675,7 +694,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc28"></script>
-  <script src="/explore.js?v=1.5.0-rc28"></script>
+  <script src="/app.js?v=1.5.0-rc29"></script>
+  <script src="/explore.js?v=1.5.0-rc29"></script>
 </body>
 </html>

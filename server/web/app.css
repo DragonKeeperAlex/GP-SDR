@@ -402,7 +402,15 @@ dialog header p { margin-top: 3px; font-size: 11px; }dialog footer { justify-con
 .transmit-form .check-line, .transmit-actions, .transmit-detail { grid-column: 1 / -1; }
 .transmit-actions { display: flex; gap: 8px; }
 .transmit-detail { color: var(--muted); }
+.transmit-fixture-controls{grid-column:1/-1;border:1px solid var(--line);padding:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.transmit-fixture-controls.hidden{display:none}
+.transmit-fixture-controls legend{padding:0 8px;font-weight:700}
+.transmit-fixture-controls details,.transmit-fixture-controls>p{grid-column:1/-1}
+.fixture-impairment-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding-top:12px}
+.fixture-result{margin:12px 0 0;padding:12px;border:1px solid var(--line);background:#080c10;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 @media (max-width: 700px) { .transmit-form { grid-template-columns: 1fr; } }
+@media(max-width:900px){.transmit-fixture-controls,.fixture-impairment-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.transmit-fixture-controls,.fixture-impairment-grid{grid-template-columns:1fr}}
 label { color: var(--muted); font-size: 11px; }label input, label select { display: block; width: 100%; margin-top: 5px; }
 .editor-head { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 7px; }
 .editor-head button { padding: 5px 8px; font-size: 11px; }
