@@ -47,6 +47,7 @@ type Runtime struct {
 	spectrum            SpectrumSnapshot
 	deviceSpectra       map[string]SpectrumSnapshot
 	spectrumAnalyzer    *spectrumAnalyzerState
+	fpv                 *fpvReceiverState
 	tuning              bool
 	tunerUpdates        chan TunerRequest
 	tunerHardware       *TunerRequest
@@ -109,6 +110,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
+	runtimeState.fpv = newFPVReceiverState(dataDirectory)
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
 	runtimeState.attachCalibrations()

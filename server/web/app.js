@@ -148,6 +148,7 @@ function setView(view) {
     band: ['Band monitor', 'Whole-band channel audio and tone detection'],
 	rfmonitor: ['RF monitor', 'Live spectrum and waterfall for every active receiver'],
     analyzer: ['Spectrum analyzer', 'Fast full-range sweeps and accumulated RF peaks'],
+    fpv: ['FPV video', 'Low-latency analog NTSC and PAL receiver'],
     tuner: ['Tuner', 'Direct tuning, spectrum, and waterfall'],
     transmit: ['Transmit', 'Guarded SDR audio playback'],
     activity: ['Activity', 'Signals and transmission history'],
@@ -164,6 +165,7 @@ function setView(view) {
   document.title = `${copy[0]} · GP-SDR`;
   if (view === 'tuner' || view === 'mapper') { drawSpectrum(); drawWaterfall(); if(view==='mapper')renderMapperRF(); }
 	if(view==='rfmonitor')renderRFMonitor();
+	if(view==='fpv')refreshFPV();
 }
 
 function setMapperPage(page){
@@ -1588,10 +1590,27 @@ $('#profile-form').addEventListener('submit',async event=>{
 });
 
 window.addEventListener('resize',()=>{drawSpectrum();drawWaterfall();});
+let fpvStatus=null,fpvFrameTimer=null;
+function renderFPV(){
+	const compatible=state.devices.filter(device=>device.connected&&device.available&&(device.kind==='HackRF'||device.kind==='PlutoSDR')),$device=$('#fpv-device'),selected=$device.value;
+	$device.innerHTML=compatible.map(device=>`<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device))}</option>`).join('')||'<option value="">No compatible receiver</option>';
+	if(compatible.some(device=>device.id===selected))$device.value=selected;
+	const running=!!fpvStatus?.running,hasFrame=!!fpvStatus?.frameUpdated;
+	$('#fpv-state').textContent=running?'Receiving':fpvStatus?.lastError?'Stopped':'Idle';$('#fpv-state').className=`chip ${running?'ready':''}`;
+	$('#fpv-detail').textContent=fpvStatus?.lastError||(!fpvStatus?.backendReady?'FPV video backend is not installed':hasFrame?`Frame updated ${new Date(fpvStatus.frameUpdated).toLocaleTimeString()} · ${formatBytes(fpvStatus.frameBytes)}`:running?'Waiting for video synchronization':'Waiting for decoded frames');
+	$('#fpv-form button[type="submit"]').disabled=running||!compatible.length||!fpvStatus?.backendReady;$('#fpv-stop').disabled=!running;
+	if(hasFrame){const suffix=serverToken?`&token=${encodeURIComponent(serverToken)}`:'';$('#fpv-frame').src=`/api/fpv/frame?t=${Date.now()}${suffix}`;$('#fpv-screen').classList.add('live');}
+}
+async function refreshFPV(){try{fpvStatus=await api('/api/fpv');renderFPV();}catch(error){$('#fpv-detail').textContent=error.message;}}
+$('#fpv-channel').addEventListener('change',event=>{if(event.target.value)$('#fpv-frequency').value=event.target.value;});
+$('#fpv-form').addEventListener('submit',async event=>{event.preventDefault();try{fpvStatus=await api('/api/fpv/start',{method:'POST',body:JSON.stringify({deviceID:$('#fpv-device').value,frequencyHz:Number($('#fpv-frequency').value)*1e6,sampleRateHz:Number($('#fpv-rate').value),standard:$('#fpv-standard').value,gainDB:Number($('#fpv-gain').value),lnaGainDB:Number($('#fpv-lna').value),vgaGainDB:Number($('#fpv-vga').value),ampEnabled:$('#fpv-amp').checked,dcRemoval:$('#fpv-dc').checked})});renderFPV();toast('FPV receiver started');}catch(error){toast(error.message,true);await refreshFPV();}});
+$('#fpv-stop').addEventListener('click',async()=>{try{fpvStatus=await api('/api/fpv/stop',{method:'POST',body:'{}'});renderFPV();toast('FPV receiver stopped');}catch(error){toast(error.message,true);}});
+$('#fpv-fullscreen').addEventListener('click',()=>$('#fpv-screen').requestFullscreen?.());
+fpvFrameTimer=setInterval(()=>{if(!document.hidden&&state.view==='fpv')refreshFPV();},250);
 const decoderHash = location.hash.match(/^#decoder\/(.+)$/);
 const savedView = localStorage.getItem('gpsdr-last-view');
 if (decoderHash) { state.selectedDecoderID = decodeURIComponent(decoderHash[1]); setView('decoders'); }
-else if (['live','tuner','band','rfmonitor','analyzer','activity','mapper','profiles','decoders','hardware','settings'].includes(savedView)) setView(savedView);
+else if (['live','tuner','band','rfmonitor','analyzer','fpv','activity','mapper','profiles','decoders','hardware','settings'].includes(savedView)) setView(savedView);
 $('#storage-policy-form').addEventListener('submit',async event=>{event.preventDefault();const gb=1024**3;try{const storage=await api('/api/storage/policy',{method:'PUT',body:JSON.stringify({autoCleanup:$('#storage-auto-cleanup').checked,autoRemoveQuarantine:$('#storage-auto-remove-rejected').checked,quarantineRetentionHours:Number($('#storage-rejected-hours').value),maxCaptureDays:Number($('#storage-max-days').value),recordingCapBytes:Math.round(Number($('#storage-recording-cap').value)*gb),iqCapBytes:Math.round(Number($('#storage-iq-cap').value)*gb)})});state.status.storage=storage;renderStatus();toast('Storage limits saved');}catch(error){toast(error.message,true);}});
 $('#storage-clean-now').addEventListener('click',async()=>{if(!await confirmAction({title:'Clean stored captures?',message:'Remove the oldest GP-SDR recordings and IQ evidence until the saved age and size limits are met? Profiles, Mapper results, and channel data will be kept.',confirmLabel:'Clean captures'}))return;try{$('#storage-clean-now').disabled=true;const storage=await api('/api/storage/cleanup',{method:'POST'});state.status.storage=storage;renderStatus();toast(`Cleanup complete · ${formatBytes(storage.lastCleanup?.bytesFreed||0)} freed`);}catch(error){toast(error.message,true);$('#storage-clean-now').disabled=false;}});
 $('#app-update-button').addEventListener('click',async()=>{const native=window.webkit?.messageHandlers?.gpsdrNative,nativeUpdater=window.gpsdrNativeCapabilities?.includes('appUpdater');if(!native||!nativeUpdater){window.open('https://github.com/DragonKeeperAlex/GP-SDR/releases/latest','_blank','noopener');return;}if(state.appUpdate?.state==='available'){if(!await confirmAction({title:`Install GP-SDR ${state.appUpdate.version}?`,message:'Active receiver, Mapper, and analysis jobs will stop. The verified app will replace this copy and restart; all GP-SDR data remains in place.',confirmLabel:'Install and restart'}))return;await Promise.allSettled([api('/api/control/stop',{method:'POST',body:'{}'}),api('/api/mapper/jobs/stop-all',{method:'POST',body:'{}'}),api('/api/analysis/stop',{method:'POST',body:'{}'})]);native.postMessage({action:'installUpdate'});return;}native.postMessage({action:'checkForUpdates',currentVersion:state.status?.version||''});});

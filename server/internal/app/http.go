@@ -242,6 +242,19 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.StopSpectrumAnalyzer())
 	case r.Method == "POST" && path == "/api/spectrum-analyzer/clear":
 		writeJSON(w, 200, s.runtime.ClearSpectrumAnalyzer())
+	case r.Method == "GET" && path == "/api/fpv":
+		writeJSON(w, 200, s.runtime.FPVStatus())
+	case r.Method == "POST" && path == "/api/fpv/start":
+		var request FPVReceiverRequest
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.StartFPV(request)
+		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "POST" && path == "/api/fpv/stop":
+		writeJSON(w, 200, s.runtime.StopFPV())
+	case r.Method == "GET" && path == "/api/fpv/frame":
+		s.runtime.ServeFPVFrame(w, r)
 	case r.Method == "GET" && path == "/api/storage":
 		writeJSON(w, 200, s.runtime.StorageStatus())
 	case r.Method == "PUT" && path == "/api/storage/policy":

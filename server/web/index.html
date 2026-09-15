@@ -32,6 +32,7 @@
         </button>
 		<button class="nav-item" data-view="rfmonitor" title="Watch every active receiver spectrum and waterfall"><span class="nav-icon">⌁</span><span>RF monitor</span></button>
 		<button class="nav-item" data-view="analyzer" title="Sweep one or every receiver and accumulate a wide spectrum"><span class="nav-icon">⌇</span><span>Spectrum analyzer</span></button>
+		<button class="nav-item" data-view="fpv" title="Receive low-latency analog FPV video"><span class="nav-icon">▻</span><span>FPV video</span></button>
         <span class="nav-group-label">Mapping</span>
         <button class="nav-item" data-view="mapper" data-mapper-page="overview" title="All Mapper jobs and live receiver status"><span class="nav-icon">⌘</span><span>Overview</span></button>
         <button class="nav-item" data-view="mapper" data-mapper-page="discovery" title="Collect activity across a frequency range"><span class="nav-icon">↻</span><span>Discovery</span></button>
@@ -197,6 +198,31 @@
         <div id="analyzer-live-grid" class="hidden"></div>
         <article class="panel analyzer-instrument"><div class="panel-head"><div><h2>Spectrum</h2><span id="analyzer-range-label">No sweep data</span></div><div class="analyzer-actions"><span id="analyzer-hover" class="analyzer-hover">Hover over spectrum</span><button id="analyzer-reset-view" type="button">Full range</button><button id="analyzer-clear" type="button">Clear</button><button id="analyzer-save" type="button">Save CSV</button></div></div><div id="analyzer-graphs" class="analyzer-graphs empty-state compact">Start a sweep to build a live spectrum across the selected range.</div></article>
       </section>
+
+	  <section id="view-fpv" class="view">
+		<div class="fpv-layout">
+		  <article class="panel fpv-controls">
+			<div class="panel-head"><div><h2>Analog FPV receiver</h2><span>Continuous low-latency video · HackRF or PlutoSDR</span></div><span id="fpv-state" class="chip">Idle</span></div>
+			<form id="fpv-form" class="fpv-form">
+			  <label>Receiver<select id="fpv-device"></select></label>
+			  <label>Channel<select id="fpv-channel"><option value="">Manual frequency</option><optgroup label="Raceband"><option value="5658">R1 · 5658</option><option value="5695">R2 · 5695</option><option value="5732">R3 · 5732</option><option value="5769">R4 · 5769</option><option value="5806">R5 · 5806</option><option value="5843">R6 · 5843</option><option value="5880">R7 · 5880</option><option value="5917">R8 · 5917</option></optgroup><optgroup label="Band A"><option value="5865">A1 · 5865</option><option value="5845">A2 · 5845</option><option value="5825">A3 · 5825</option><option value="5805">A4 · 5805</option><option value="5785">A5 · 5785</option><option value="5765">A6 · 5765</option><option value="5745">A7 · 5745</option><option value="5725">A8 · 5725</option></optgroup></select></label>
+			  <label>Frequency · MHz<input id="fpv-frequency" type="number" min="1" max="6000" step="1" value="5917" required></label>
+			  <label>Video standard<select id="fpv-standard"><option value="ntsc">NTSC · 525/60</option><option value="pal">PAL · 625/50</option></select></label>
+			  <label>Capture rate<select id="fpv-rate"><option value="8000000">8 MS/s · light</option><option value="12000000">12 MS/s</option><option value="16000000" selected>16 MS/s · recommended</option><option value="20000000">20 MS/s · widest</option></select></label>
+			  <label>Gain · dB<input id="fpv-gain" type="number" min="0" max="73" step="1" value="32"></label>
+			  <label>HackRF LNA · dB<select id="fpv-lna"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label>
+			  <label>HackRF VGA · dB<input id="fpv-vga" type="number" min="0" max="62" step="2" value="20"></label>
+			  <div class="toggle-grid"><label><input id="fpv-dc" type="checkbox" checked> DC removal</label><label><input id="fpv-amp" type="checkbox"> RF amp</label></div>
+			  <div class="fpv-actions"><button class="primary" type="submit">Start video</button><button id="fpv-stop" type="button">Stop</button></div>
+			</form>
+			<p class="analyzer-note">Analog NTSC/PAL only. The RTL-SDR cannot cover 5.8 GHz. Keep the HackRF amp off unless the signal is weak; overload can destroy picture sync.</p>
+		  </article>
+		  <article class="panel fpv-screen-panel">
+			<div class="panel-head"><div><h2>Live video</h2><span id="fpv-detail">Waiting for decoded frames</span></div><button id="fpv-fullscreen" type="button">Fullscreen</button></div>
+			<div id="fpv-screen" class="fpv-screen"><img id="fpv-frame" alt="Decoded analog FPV video"><div id="fpv-placeholder">Choose a channel and start the receiver.</div></div>
+		  </article>
+		</div>
+	  </section>
 
       <section id="view-tuner" class="view">
         <div class="tuner-layout tuner-console">
@@ -648,7 +674,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc26"></script>
-  <script src="/explore.js?v=1.5.0-rc26"></script>
+  <script src="/app.js?v=1.5.0-rc27"></script>
+  <script src="/explore.js?v=1.5.0-rc27"></script>
 </body>
 </html>
