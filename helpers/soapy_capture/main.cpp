@@ -30,6 +30,7 @@ constexpr int soapyRx = 1;
 constexpr int soapyTx = 0;
 constexpr int soapyTimeout = -1;
 constexpr const char *soapyCF32 = "CF32";
+constexpr const char *soapyCS16 = "CS16";
 std::atomic<bool> running{true};
 
 void stop(int) { running = false; }
@@ -176,7 +177,7 @@ private:
 
 int main(int argc, char **argv) {
     if (argc == 2 && std::string(argv[1]) == "--version") {
-        std::cout << "gpsdr-soapy 2\n";
+        std::cout << "gpsdr-soapy 3\n";
         return 0;
     }
     try {
@@ -210,7 +211,12 @@ int main(int argc, char **argv) {
             if (gain >= 0.0) api.check(api.setGain(device, direction, 0, gain), "set gain");
             if (bandwidth > 0.0) api.check(api.setBandwidth(device, direction, 0, bandwidth), "set filter bandwidth");
             if (ppm != 0.0) api.check(api.setFrequencyCorrection(device, direction, 0, ppm), "set frequency correction");
-            stream = api.setupStream(device, direction, soapyCF32, nullptr, 0, nullptr);
+            // Receive at the common native CS16 boundary, then retain the high
+            // eight bits for GP-SDR's signed interleaved 8-bit pipeline. This
+            // preserves AD936x/Pluto's 12-bit sample resolution; asking its
+            // module for CS8 or scaling normalized CF32 directly reduced weak
+            // captures to only two or three quantization levels.
+            stream = api.setupStream(device, direction, direction == soapyRx ? soapyCS16 : soapyCF32, nullptr, 0, nullptr);
             if (!stream) {
                 const char *message = api.lastError();
                 throw std::runtime_error(message && *message ? message : "SoapySDR did not create a receive stream");
@@ -238,7 +244,7 @@ int main(int argc, char **argv) {
                 }
                 std::fclose(input); api.deactivateStream(device, stream, 0, 0); api.closeStream(device, stream); api.unmake(device); return 0;
             }
-            std::vector<float> iq(mtu * 2);
+            std::vector<std::int16_t> iq(mtu * 2);
             std::vector<std::int8_t> bytes(mtu * 2);
             void *buffers[] = {iq.data()};
             while (running) {
@@ -248,8 +254,8 @@ int main(int argc, char **argv) {
                 if (count == soapyTimeout) continue;
                 if (count < 0) api.check(count, "read stream");
                 for (int i = 0; i < count * 2; ++i) {
-                    const float sample = std::clamp(iq[static_cast<std::size_t>(i)], -1.0f, 1.0f);
-                    bytes[static_cast<std::size_t>(i)] = static_cast<std::int8_t>(std::lrint(sample * 127.0f));
+                    const int sample = static_cast<int>(iq[static_cast<std::size_t>(i)]) / 16;
+                    bytes[static_cast<std::size_t>(i)] = static_cast<std::int8_t>(std::clamp(sample, -128, 127));
                 }
                 if (std::fwrite(bytes.data(), 2, static_cast<std::size_t>(count), stdout) != static_cast<std::size_t>(count)) break;
             }

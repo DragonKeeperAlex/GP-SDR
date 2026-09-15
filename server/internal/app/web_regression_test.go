@@ -40,6 +40,46 @@ func TestTransmitLabExposesGroundedFixtureControls(t *testing.T) {
 	}
 }
 
+func TestExpertTransmitModeRemovesOnlyRepeatedAcknowledgement(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="expert-transmit-toggle"`, `I know what I’m doing`, `does not bypass local-only access`, `60-second transmission ceiling`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("expert-mode disclosure %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{`gpsdr-expert-transmit-v1`, `Enable expert transmit mode?`, `if(expertTransmitMode&&!$('#transmit-dry-run').checked)$('#transmit-armed').checked=true`} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("expert-mode behavior %q is missing", required)
+		}
+	}
+	backendData, err := os.ReadFile("transmit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := string(backendData)
+	for _, required := range []string{`request.DurationSecond > 60`, `!request.DryRun && !request.Armed`, `device.FirmwareSelfTestWarning`} {
+		if !strings.Contains(backend, required) {
+			t.Fatalf("non-bypassable transmit guard %q is missing", required)
+		}
+	}
+	httpData, err := os.ReadFile("http.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(httpData), `if !requestIsLocal(r)`) {
+		t.Fatal("local-computer transmit restriction is missing")
+	}
+}
+
 func TestHiddenSpectrumCanvasCannotCreateZeroIncrementLoop(t *testing.T) {
 	path := filepath.Join("..", "..", "web", "app.js")
 	data, err := os.ReadFile(path)

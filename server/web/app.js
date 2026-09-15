@@ -32,6 +32,7 @@ let mapperResultsCollapsed=localStorage.getItem('gpsdr-mapper-results-collapsed'
 const analyzerSelectedPeaks=new Set();
 let analyzerJobIDs=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-analyzer-jobs')||'[]')}catch(_){return []}})();
 let analyzerIgnoredJobIDs=new Set((()=>{try{return JSON.parse(localStorage.getItem('gpsdr-analyzer-ignored-jobs')||'[]')}catch(_){return []}})());
+let expertTransmitMode=localStorage.getItem('gpsdr-expert-transmit-v1')==='true';
 
 function renderTunerHistory(){const select=$('#tuner-history');if(!select)return;select.innerHTML=tunerHistory.length?tunerHistory.map(item=>`<option value="${item.frequencyHz}">${escapeHTML(item.label)}</option>`).join(''):'<option value="">No recent frequencies</option>';select.value='';}
 function rememberTunerFrequency(request){const label=`${(request.frequencyHz/1e6).toFixed(6)} MHz · ${String(request.mode).toUpperCase()}`;tunerHistory=[{frequencyHz:request.frequencyHz,mode:request.mode,bandwidthHz:request.bandwidthHz,label},...tunerHistory.filter(item=>Math.abs(item.frequencyHz-request.frequencyHz)>1)].slice(0,12);localStorage.setItem('gpsdr-tuner-history',JSON.stringify(tunerHistory));renderTunerHistory();}
@@ -58,11 +59,12 @@ function toast(message, error = false) {
   toastTimer = setTimeout(() => element.className = '', 2600);
 }
 
-function confirmAction({title='Confirm action',message,confirmLabel='Continue'}={}) {
+function confirmAction({title='Confirm action',subtitle='This change cannot be undone.',message,confirmLabel='Continue'}={}) {
   const dialog=$('#confirm-dialog'),accept=$('#confirm-dialog-accept');
   if(!dialog||typeof dialog.showModal!=='function')return Promise.resolve(false);
   if(dialog.open)dialog.close('cancel');
   $('#confirm-dialog-title').textContent=title;
+  $('#confirm-dialog-subtitle').textContent=subtitle;
   $('#confirm-dialog-message').textContent=message||'Continue with this action?';
   accept.textContent=confirmLabel;
   dialog.returnValue='cancel';
@@ -203,7 +205,7 @@ async function refreshAll() {
 
 function render() {
   renderStatus(); renderProfileSelect(); renderLatest(); renderMixer(); renderBandMonitor(); renderSignals();
-  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); renderTransmit(); renderDecoders(); renderMapper(); renderRFMonitor(); renderSpectrumAnalyzer(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
+  renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); renderTransmit(); renderExpertTransmitMode(); renderDecoders(); renderMapper(); renderRFMonitor(); renderSpectrumAnalyzer(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
 }
 
 function drawReceiverSpectrum(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(120,Math.floor(170*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}const ctx=canvas.getContext('2d'),bins=snapshot.binsDBFS||[];ctx.clearRect(0,0,width,height);ctx.fillStyle='#080b0f';ctx.fillRect(0,0,width,height);if(!bins.length)return;ctx.beginPath();bins.forEach((value,index)=>{const x=index/Math.max(1,bins.length-1)*width,y=Math.max(0,Math.min(height,(1-(value+120)/110)*height));index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle='#4dd6aa';ctx.lineWidth=Math.max(1,ratio);ctx.stroke();ctx.lineTo(width,height);ctx.lineTo(0,height);ctx.closePath();ctx.fillStyle='rgba(77,214,170,.10)';ctx.fill();}
@@ -279,7 +281,9 @@ function renderTransmit(){
   badge.className=`chip ${status.state==='running'?'warning':status.state==='complete'?'ready':status.state==='error'?'warning':''}`;
   detail.textContent=status.note||'Choose a PCM WAV file. Dry run is selected by default.';
   $('#transmit-stop').disabled=status.state!=='running';
-  $('#transmit-armed').disabled=$('#transmit-dry-run').checked;
+  $('#transmit-armed').disabled=$('#transmit-dry-run').checked||expertTransmitMode;
+  if(expertTransmitMode&&!$('#transmit-dry-run').checked)$('#transmit-armed').checked=true;
+  $('#transmit-armed').closest('label').classList.toggle('hidden',expertTransmitMode);
   const fixtureMode=$('#transmit-source').value==='fixture',offline=fixtureMode&&$('#transmit-dry-run').checked;
   $('.transmit-audio-field').classList.toggle('hidden',fixtureMode);$('#transmit-fixture-controls').classList.toggle('hidden',!fixtureMode);
   $('#transmit-device').required=!offline;$('#transmit-audio').required=!fixtureMode;
@@ -287,6 +291,8 @@ function renderTransmit(){
   result.classList.toggle('hidden',!fixture);
   if(fixture)result.textContent=`${fixture.kind} · ${fixture.description}\n${fixture.sampleRateHz/1e6} MS/s · ${fixture.durationSeconds.toFixed(2)} s · ${Math.round(fixture.occupiedBandwidthHz)} Hz occupied bandwidth\nEVM ${fixture.measuredEVMPercent.toFixed(2)}% · configured SNR ${fixture.configuredSNRDB} dB\nPayload ${fixture.payloadUTF8||'—'}\nSHA-256 ${fixture.sha256}\n${fixture.decodeStatus}`;
 }
+
+function renderExpertTransmitMode(){const badge=$('#expert-transmit-state'),button=$('#expert-transmit-toggle');if(!badge||!button)return;badge.textContent=expertTransmitMode?'Enabled':'Off';badge.className=`chip ${expertTransmitMode?'warning':''}`;button.textContent=expertTransmitMode?'Disable expert mode':'I know what I’m doing';}
 
 function renderMissingComponents() {
   const dialog=$('#missing-components-dialog'), list=$('#missing-components-list');
@@ -1422,6 +1428,7 @@ $('#tuner-form').addEventListener('submit', async event => {
 });
 $('#transmit-dry-run').addEventListener('change', renderTransmit);
 $('#transmit-source').addEventListener('change',renderTransmit);
+$('#expert-transmit-toggle').addEventListener('click',async()=>{if(expertTransmitMode){expertTransmitMode=false;localStorage.removeItem('gpsdr-expert-transmit-v1');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode disabled');return;}if(!await confirmAction({title:'Enable expert transmit mode?',subtitle:'One acknowledgement, remembered on this Mac.',message:'GP-SDR will remember your transmit acknowledgement on this Mac and stop asking for it before each job. RF can cause interference or damage equipment. Local-only control, device validation, health blocks, emergency stop, and the 60-second ceiling remain enforced.',confirmLabel:'Enable expert mode'}))return;expertTransmitMode=true;localStorage.setItem('gpsdr-expert-transmit-v1','true');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode enabled');});
 $('#transmit-form').addEventListener('submit', async event => {
   event.preventDefault();
   const fixtureMode=$('#transmit-source').value==='fixture',file=$('#transmit-audio').files[0];

@@ -218,6 +218,7 @@ body:not([data-view="live"]):not([data-view="profiles"]) .profile-select-wrap,bo
 .radioreference-card { grid-column:1/-1; }
 .local-ai-card,.display-card { grid-column:1/-1; }
 .system-card,.update-card { grid-column:span 6; }
+.expert-card{grid-column:1/-1;min-height:0}.expert-card button{margin-top:8px}
 .storage-card { grid-column:1/-1; }
 .settings-card { min-width: 0; min-height: 150px; padding: 16px; }
 .settings-card>*{min-width:0;max-width:100%}.settings-card form,.settings-card dl,.settings-card details,.settings-card pre{min-width:0;max-width:100%}.settings-card input,.settings-card select,.settings-card textarea{max-width:100%;min-width:0}.settings-card pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.settings-card dd{min-width:0;overflow-wrap:anywhere}

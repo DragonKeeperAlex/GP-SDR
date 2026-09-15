@@ -2,6 +2,12 @@
 
 GP-SDR normally receives. **Transmit & test lab** is an explicit local-computer workflow for bounded AM, NFM, or WFM playback from a WAV file and controlled known-signal test fixtures. RTL-SDR cannot transmit. Microphone input, standardized digital voice transmission, repeater operation, and unattended/continuous transmission are not implemented.
 
+## Expert transmit mode
+
+Settings includes **I know what I'm doing**. Enabling it requires one explicit local acknowledgement, which GP-SDR remembers on that Mac. It then hides and automatically supplies the repetitive per-job acknowledgement on the Transmit page. Disable it from Settings at any time.
+
+Expert mode is a convenience setting, not an unrestricted transmitter mode. Local-computer-only control, connected-device and frequency validation, the emergency stop, firmware-health blocks, and the 60-second per-job ceiling remain mandatory.
+
 ## Known-signal fixtures
 
 Choose **Known test fixture** to generate deterministic CW, AM, NFM, WFM, OOK, 2-FSK, GFSK, GMSK-like, BPSK, or QPSK IQ. Packet fixtures accept a known payload and symbol rate. Expand **Channel impairments** to control SNR, frequency offset and drift, IQ gain/phase error, DC offset, and clipping.
