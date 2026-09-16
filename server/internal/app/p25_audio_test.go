@@ -32,3 +32,14 @@ func TestOP25AudioStreamsPCMWithoutSoundDevice(t *testing.T) {
 		t.Fatal("missing audio frame")
 	}
 }
+
+func TestOP25AudioPortsCanBeReusedAfterStop(t *testing.T) {
+	manager := &OP25Manager{audioHub: NewAudioHub()}
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := manager.startOP25Audio(1); err != nil {
+			t.Fatal(err)
+		}
+		manager.closeOP25Audio()
+		manager.closeOP25Audio()
+	}
+}

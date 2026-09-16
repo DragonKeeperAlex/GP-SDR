@@ -38,3 +38,13 @@ func (m *OP25Manager) startOP25Audio(count int) error {
 	}
 	return nil
 }
+
+func (m *OP25Manager) closeOP25Audio() {
+	m.mu.Lock()
+	sockets := m.audioSockets
+	m.audioSockets = nil
+	m.mu.Unlock()
+	for _, socket := range sockets {
+		_ = socket.Close()
+	}
+}

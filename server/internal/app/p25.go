@@ -226,6 +226,12 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 }
 
 func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, devices []SDRDevice, dataDirectory string) error {
+	started := false
+	defer func() {
+		if !started {
+			m.closeOP25Audio()
+		}
+	}()
 	m.stopProcess()
 	executable, err := findOP25()
 	if err != nil {
@@ -276,6 +282,11 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		m.mu.Lock()
 		if m.command == command {
 			m.waitError = waitError
+			sockets := m.audioSockets
+			m.audioSockets = nil
+			for _, socket := range sockets {
+				_ = socket.Close()
+			}
 		}
 		m.mu.Unlock()
 		close(done)
@@ -288,6 +299,7 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
 	m.sessionStart = time.Now()
 	m.mu.Unlock()
+	started = true
 	return nil
 }
 
@@ -331,13 +343,6 @@ func (m *OP25Manager) op25Status() P25Status {
 		}
 		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath,
 			Reception: "searching", Note: "OP25 is checking the configured P25 control channels."}
-		if m.configPath != nil {
-			logTail := readFileTail(filepath.Join(filepath.Dir(*m.configPath), "op25.log"), 128*1024)
-			if strings.Contains(logTail, "voice update:") {
-				status.Reception = "locked"
-				status.Note = "P25 control traffic and trunk grants are being decoded; encrypted voice is silenced."
-			}
-		}
 		if frequency, ok := readOP25ControlStatus(); ok {
 			status.Reception = "locked"
 			status.ControlChannelHz = frequency
