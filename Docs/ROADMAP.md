@@ -1,7 +1,9 @@
 # GP-SDR roadmap
 
-The current detailed implementation and acceptance backlog is maintained in
-[FEATURE_GAP_REPORT_1.5.0-rc32.md](FEATURE_GAP_REPORT_1.5.0-rc32.md).
+The authoritative user-approved backlog is
+[MASTER_REMEDIATION_BACKLOG.md](MASTER_REMEDIATION_BACKLOG.md).
+Resolve its issues before adding features outside that list. Older reports and
+checkboxes below are historical and do not override its acceptance requirements.
 
 ## Implemented
 
