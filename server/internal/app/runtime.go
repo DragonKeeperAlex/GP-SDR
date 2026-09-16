@@ -110,6 +110,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
+	runtimeState.op25.audioHub = runtimeState.audioHub
 	runtimeState.fpv = newFPVReceiverState(dataDirectory)
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
 	runtimeState.devices = append(runtimeState.devices, remoteDevices(remoteReceivers.List())...)
@@ -1228,6 +1229,25 @@ func p25CallKey(call P25ActiveCall) string {
 }
 
 func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupState, calls []P25ActiveCall) {
+	r.op25.mu.Lock()
+	streamCount := len(r.op25.audioSockets)
+	r.op25.mu.Unlock()
+	r.mu.Lock()
+	for index := 0; index < streamCount; index++ {
+		id := fmt.Sprintf("p25-stream-%d", index)
+		exists := false
+		for _, item := range r.mixer {
+			if item.ID == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			channel := ChannelDefinition{ID: id, Name: fmt.Sprintf("OP25 receiver audio %d", index+1), Mode: "p25", Enabled: true, BandwidthHz: 12500}
+			r.mixer = append(r.mixer, MixerChannel{ID: id, Kind: "channel", Channel: channel, Volume: .8})
+		}
+	}
+	r.mu.Unlock()
 	type talkgroupHistory struct {
 		count int
 		last  time.Time

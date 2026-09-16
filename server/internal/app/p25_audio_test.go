@@ -1,0 +1,34 @@
+package app
+
+import (
+	"net"
+	"testing"
+	"time"
+)
+
+func TestOP25AudioStreamsPCMWithoutSoundDevice(t *testing.T) {
+	hub := NewAudioHub()
+	frames, cancel := hub.Subscribe()
+	defer cancel()
+	manager := &OP25Manager{audioHub: hub}
+	if err := manager.startOP25Audio(1); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.stopProcess()
+	socket, err := net.Dial("udp", "127.0.0.1:23456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.Close()
+	if _, err = socket.Write([]byte{1, 0, 255, 255}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case frame := <-frames:
+		if frame.SampleRate != 8000 || len(frame.Samples) != 2 || frame.Samples[0] != 1 || frame.Samples[1] != -1 {
+			t.Fatalf("bad PCM: %#v", frame)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing audio frame")
+	}
+}

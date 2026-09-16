@@ -139,7 +139,22 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	m.mu.Unlock()
 	_ = importExistingSDRTrunkTunerConfiguration(applicationRoot)
 	preferred := preferredSDRTrunkTuner(assigned, applicationRoot)
-	playlist, err := BuildSDRTrunkPlaylist(profile, preferred, muted)
+	systemTuners := make(map[string]string)
+	for _, item := range plan {
+		if item.Target == nil || item.DeviceID == nil {
+			continue
+		}
+		for _, assignment := range assigned {
+			if assignment.Device.ID == *item.DeviceID {
+				for _, system := range enabledP25Systems(profile) {
+					if *item.Target == system.ID || *item.Target == system.Name {
+						systemTuners[system.ID] = preferredSDRTrunkTuner([]p25AssignedDevice{assignment}, applicationRoot)
+					}
+				}
+			}
+		}
+	}
+	playlist, err := buildSDRTrunkPlaylistWithTuners(profile, preferred, systemTuners, muted)
 	if err != nil {
 		return err
 	}
@@ -397,6 +412,10 @@ func waitForSDRTrunkReady(logPath string, done <-chan struct{}, timeout time.Dur
 }
 
 func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint32]bool) ([]byte, error) {
+	return buildSDRTrunkPlaylistWithTuners(profile, preferred, nil, muted)
+}
+
+func buildSDRTrunkPlaylistWithTuners(profile ScanProfile, preferred string, tuners map[string]string, muted map[uint32]bool) ([]byte, error) {
 	systems := enabledP25Systems(profile)
 	if len(systems) == 0 {
 		return nil, errors.New("profile has no enabled P25 system")
@@ -404,6 +423,10 @@ func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint
 	var text strings.Builder
 	text.WriteString("<playlist version=\"4\">\n")
 	for _, system := range systems {
+		systemPreferred := preferred
+		if tuner := tuners[system.ID]; tuner != "" {
+			systemPreferred = tuner
+		}
 		listName := system.Name + " Talkgroups"
 		for _, talkgroup := range system.Talkgroups {
 			if talkgroup.ID <= 0 {
@@ -434,8 +457,8 @@ func BuildSDRTrunkPlaylist(profile ScanProfile, preferred string, muted map[uint
 		text.WriteString("    <event_log_configuration><logger>DECODED_MESSAGE</logger><logger>TRAFFIC_DECODED_MESSAGE</logger><logger>CALL_EVENT</logger><logger>TRAFFIC_CALL_EVENT</logger></event_log_configuration>\n")
 		text.WriteString("    <record_configuration/>\n")
 		fmt.Fprintf(&text, "    <source_configuration type=\"sourceConfigTunerMultipleFrequency\" frequency_rotation_delay=\"%d\" source_type=\"TUNER_MULTIPLE_FREQUENCIES\"", sdrTrunkControlRotationDelayMS)
-		if preferred != "" {
-			fmt.Fprintf(&text, " preferred_tuner=\"%s\"", xmlValue(preferred))
+		if systemPreferred != "" {
+			fmt.Fprintf(&text, " preferred_tuner=\"%s\"", xmlValue(systemPreferred))
 		}
 		text.WriteString(">\n")
 		for _, frequency := range system.ControlChannelsHz {

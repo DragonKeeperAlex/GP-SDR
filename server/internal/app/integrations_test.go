@@ -71,6 +71,42 @@ func TestPlutoP25UsesSoapyOP25Input(t *testing.T) {
 	}
 }
 
+func TestOP25HonorsPerSystemReceiverTarget(t *testing.T) {
+	profile := ScanProfile{P25Systems: []P25SystemConfig{{ID: "a", Name: "System A", Enabled: true, ControlChannelsHz: []float64{774456250}}, {ID: "b", Name: "System B", Enabled: true, ControlChannelsHz: []float64{773906250}}}}
+	deviceID, target := "pluto", "b"
+	data, err := buildOP25ConfigurationWithPlan(profile, []SDRDevice{{ID: deviceID, Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr"}}, []ReceiverPlanItem{{DeviceID: &deviceID, Target: &target}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config op25Configuration
+	if err = json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if config.Channels[0].TrunkingSystem != "System B" {
+		t.Fatalf("wrong system: %#v", config.Channels)
+	}
+}
+
+func TestBayAreaP25SiteCandidatesRemainUnverified(t *testing.T) {
+	profiles := bayAreaP25SiteProfiles()
+	if len(profiles) != 76 {
+		t.Fatalf("expected 76 source sites, got %d", len(profiles))
+	}
+	seen := map[string]bool{}
+	for _, profile := range profiles {
+		if seen[profile.ID] {
+			t.Fatal("duplicate site identity")
+		}
+		seen[profile.ID] = true
+		if !strings.Contains(profile.Summary, "candidates") {
+			t.Fatal("unverified control candidates mislabeled")
+		}
+		if profile.P25Systems[0].NAC != "" {
+			t.Fatal("invented NAC")
+		}
+	}
+}
+
 func TestRadioReferenceSOAPEscapesCredentials(t *testing.T) {
 	client := &radioReferenceClient{username: "a&b", password: "<secret>", appKey: "key", endpoint: radioReferenceEndpoint}
 	body := soapEnvelope("getZipcodeInfo", []soapValue{{"zipcode", "94107", "xsd:int"}}, client)

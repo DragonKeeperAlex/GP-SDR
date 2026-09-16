@@ -51,6 +51,8 @@ type OP25Manager struct {
 	restartTimer *time.Timer
 	sessionStart time.Time
 	rateFallback bool
+	audioHub     *AudioHub
+	audioSockets []io.Closer
 }
 
 type op25Configuration struct {
@@ -156,6 +158,10 @@ func assignedDevices(plan []ReceiverPlanItem, devices []SDRDevice) []SDRDevice {
 }
 
 func BuildOP25Configuration(profile ScanProfile, devices []SDRDevice, directory string) ([]byte, error) {
+	return buildOP25ConfigurationWithPlan(profile, devices, nil, directory)
+}
+
+func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, plan []ReceiverPlanItem, directory string) ([]byte, error) {
 	systems := enabledP25Systems(profile)
 	if len(systems) == 0 {
 		return nil, errors.New("profile has no enabled P25 system")
@@ -178,9 +184,24 @@ func BuildOP25Configuration(profile ScanProfile, devices []SDRDevice, directory 
 	}
 	for index, device := range devices {
 		name := fmt.Sprintf("sdr%d", index)
+		rate := 1_000_000
+		if profile.Settings.P25SampleRateHz > 0 && (device.SampleRateLimit == nil || float64(profile.Settings.P25SampleRateHz) <= *device.SampleRateLimit) {
+			rate = profile.Settings.P25SampleRateHz
+		}
 		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25Gains(device),
-			Name: name, Rate: 1_000_000, UsablePercent: .85, Tunable: true})
+			Name: name, Rate: rate, UsablePercent: .85, Tunable: true})
 		system := systems[index%len(systems)]
+		for _, item := range plan {
+			if item.DeviceID == nil || *item.DeviceID != device.ID || item.Target == nil {
+				continue
+			}
+			for _, candidate := range systems {
+				if *item.Target == candidate.ID || *item.Target == candidate.Name {
+					system = candidate
+					break
+				}
+			}
+		}
 		whitelist, tags, err := writeTalkgroupFiles(directory, system)
 		if err != nil {
 			return nil, err
@@ -211,9 +232,23 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		return errors.New("OP25 multi_rx.py is not installed")
 	}
 	runtimeDirectory := filepath.Join(dataDirectory, "Runtime", "OP25", profile.ID)
-	configuration, err := BuildOP25Configuration(profile, assignedDevices(plan, devices), runtimeDirectory)
+	configuration, err := buildOP25ConfigurationWithPlan(profile, assignedDevices(plan, devices), plan, runtimeDirectory)
 	if err != nil {
 		return err
+	}
+	if m.audioHub != nil {
+		var config op25Configuration
+		if err := json.Unmarshal(configuration, &config); err != nil {
+			return err
+		}
+		config.Audio.Instances = []op25AudioInstance{}
+		configuration, err = json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := m.startOP25Audio(len(config.Channels)); err != nil {
+			return err
+		}
 	}
 	configPath := filepath.Join(runtimeDirectory, "gpsdr-op25.json")
 	if err := os.WriteFile(configPath, configuration, 0o600); err != nil {
@@ -232,6 +267,7 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	command.Stdout, command.Stderr = logFile, logFile
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()
+		m.stopProcess()
 		return err
 	}
 	done := make(chan struct{})
@@ -258,8 +294,13 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 func (m *OP25Manager) stopProcess() {
 	m.mu.Lock()
 	command, done, logFile := m.command, m.done, m.log
+	sockets := m.audioSockets
+	m.audioSockets = nil
 	m.command, m.done, m.log, m.profileID, m.configPath = nil, nil, nil, nil, nil
 	m.mu.Unlock()
+	for _, socket := range sockets {
+		_ = socket.Close()
+	}
 	if command == nil || command.Process == nil {
 		return
 	}

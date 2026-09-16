@@ -517,6 +517,7 @@ func builtInProfiles() []ScanProfile {
 	profiles = append(profiles, handheldProfiles()...)
 	profiles = append(profiles, regionalConventionalProfiles()...)
 	profiles = append(profiles, regionalP25Profiles()...)
+	profiles = append(profiles, bayAreaP25SiteProfiles()...)
 	return profiles
 }
 

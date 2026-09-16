@@ -3,6 +3,10 @@
 button,input,select,.panel,.metric,.chip,.profile-card,.hardware-card,details,dialog,.banner,.master-audio,.segmented,.mapper-job-card { border-radius:2px; }
 button { padding:5px 9px; min-height:28px; }
 button:active:not(:disabled) { transform:none; }
+button { position:relative; touch-action:manipulation; }
+button > span,button > svg,button > i { pointer-events:none; }
+input,select { min-width:0; }
+label,summary { overflow-wrap:anywhere; }
 input,select { min-height:28px; padding:4px 7px; background:#171a1e; }
 input[type=checkbox],input[type=radio],input[type=range] { min-height:0; }
 h1 { font-size:16px; } h2 { font-size:13px; } h3 { font-size:12px; }
