@@ -27,6 +27,22 @@ func TestAudioHubPublishesIndependentFrames(t *testing.T) {
 	}
 }
 
+func TestAudioHubOverflowKeepsNewestFrames(t *testing.T) {
+	hub := NewAudioHub()
+	frames, unsubscribe := hub.Subscribe()
+	defer unsubscribe()
+	for index := 0; index < 80; index++ {
+		hub.Publish(AudioFrame{ChannelID: "test", SampleRate: 48_000, Samples: []int16{int16(index)}})
+	}
+	if queued := len(frames); queued != 64 {
+		t.Fatalf("unexpected bounded audio queue length: %d", queued)
+	}
+	first := <-frames
+	if first.Samples[0] != 16 {
+		t.Fatalf("old audio was retained after overflow: got %d want 16", first.Samples[0])
+	}
+}
+
 func TestTranscriberRunsConfiguredOfflineCommand(t *testing.T) {
 	directory := t.TempDir()
 	executable := filepath.Join(directory, "fake-whisper")

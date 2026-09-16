@@ -995,7 +995,10 @@ function scheduleAudioFrame(channelID, sampleRate, pcm) {
   for (let index=0; index<pcm.length; index++) output[index] = pcm[index] / 32768;
   const source = liveAudio.context.createBufferSource(); source.buffer = buffer; source.connect(channelGain(channelID));
   const now = liveAudio.context.currentTime, previous = liveAudio.nextTimes.get(channelID) || now;
-	const start = previous < now - .02 || previous > now + .12 ? now + .015 : previous;
+	// A small lead absorbs LAN/browser jitter. Preserve queued continuity through
+	// ordinary bursts, but discard a genuinely stale or runaway backlog.
+	const minimumLead=.06, maximumBacklog=.75;
+	const start = previous < now - .08 || previous > now + maximumBacklog ? now + minimumLead : (previous <= now ? now + minimumLead : previous);
   source.start(start); liveAudio.nextTimes.set(channelID, start + buffer.duration);
 }
 
@@ -1017,25 +1020,36 @@ async function startLiveAudio() {
 
 async function pumpLiveAudio(controller) {
   const headers = serverToken ? {'X-GP-SDR-Token':serverToken} : {};
+  let failures=0;
   try {
-    const response = await fetch('/api/live-audio', {headers, signal:controller.signal});
-    if (!response.ok || !response.body) throw new Error('Live audio stream is unavailable');
-    const reader = response.body.getReader(); let pending = new Uint8Array(0);
-    while (true) {
-      const {value,done} = await reader.read(); if (done) break;
-      const joined = new Uint8Array(pending.length + value.length); joined.set(pending); joined.set(value,pending.length); pending=joined;
-      while (pending.length >= 10) {
-        const header = new DataView(pending.buffer,pending.byteOffset,pending.byteLength);
-        const idLength=header.getUint16(0,true), sampleRate=header.getUint32(2,true), count=header.getUint32(6,true);
-        const packetLength=10+idLength+count*2; if(count>10000000) throw new Error('Invalid live audio frame'); if(pending.length<packetLength) break;
-        const channelID=new TextDecoder().decode(pending.slice(10,10+idLength)); const pcm=new Int16Array(count);
-        const samples=new DataView(pending.buffer,pending.byteOffset+10+idLength,count*2);
-        for(let index=0;index<count;index++) pcm[index]=samples.getInt16(index*2,true);
-        scheduleAudioFrame(channelID,sampleRate,pcm); pending=pending.slice(packetLength);
+    while(!controller.signal.aborted){
+      try{
+        const response = await fetch('/api/live-audio', {headers, signal:controller.signal});
+        if (!response.ok || !response.body) throw new Error('Live audio stream is unavailable');
+        let receivedAudio=false; const audioState=$('#audio-state'); if(audioState)audioState.textContent='Audio ready';
+        const reader = response.body.getReader(); let pending = new Uint8Array(0);
+        while (true) {
+          const {value,done} = await reader.read(); if (done) throw new Error('Live audio stream ended');
+          const joined = new Uint8Array(pending.length + value.length); joined.set(pending); joined.set(value,pending.length); pending=joined;
+          while (pending.length >= 10) {
+            const header = new DataView(pending.buffer,pending.byteOffset,pending.byteLength);
+            const idLength=header.getUint16(0,true), sampleRate=header.getUint32(2,true), count=header.getUint32(6,true);
+            const packetLength=10+idLength+count*2; if(count>10000000) throw new Error('Invalid live audio frame'); if(pending.length<packetLength) break;
+            const channelID=new TextDecoder().decode(pending.slice(10,10+idLength)); const pcm=new Int16Array(count);
+            const samples=new DataView(pending.buffer,pending.byteOffset+10+idLength,count*2);
+            for(let index=0;index<count;index++) pcm[index]=samples.getInt16(index*2,true);
+            scheduleAudioFrame(channelID,sampleRate,pcm); pending=pending.slice(packetLength);
+            if(!receivedAudio){receivedAudio=true;failures=0;}
+          }
+        }
+      }catch(error){
+        if(error.name==='AbortError'||controller.signal.aborted)break;
+        failures++; const audioState=$('#audio-state'); if(audioState)audioState.textContent='Audio reconnecting…';
+        if(failures===1)toast('Live audio interrupted; reconnecting…',true);
+        await new Promise(resolve=>setTimeout(resolve,Math.min(2000,400*failures)));
       }
     }
-  } catch (error) { if (error.name !== 'AbortError') toast(error.message,true); }
-  finally { if (liveAudio.controller === controller) liveAudio.controller = null; }
+  } finally { if (liveAudio.controller === controller) liveAudio.controller = null; }
 }
 
 function stopLiveAudio() {

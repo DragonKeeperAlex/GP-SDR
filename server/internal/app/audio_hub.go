@@ -18,7 +18,9 @@ func NewAudioHub() *AudioHub {
 }
 
 func (hub *AudioHub) Subscribe() (<-chan AudioFrame, func()) {
-	channel := make(chan AudioFrame, 16)
+	// Keep enough real-time audio to absorb normal LAN and browser scheduling
+	// jitter without letting a slow client grow memory without bound.
+	channel := make(chan AudioFrame, 64)
 	hub.mu.Lock()
 	hub.subscribers[channel] = struct{}{}
 	hub.mu.Unlock()
@@ -43,8 +45,18 @@ func (hub *AudioHub) Publish(frame AudioFrame) {
 		select {
 		case subscriber <- frame:
 		default:
-			// Audio is real-time data. A slow browser drops an old frame rather
-			// than blocking RF capture, logging, or other listeners.
+			// Audio is real-time data. Discard the oldest queued frame, then offer
+			// the newest one. The previous implementation dropped new audio here,
+			// which made a briefly delayed browser play stale data followed by a
+			// gap and sounded like packet loss.
+			select {
+			case <-subscriber:
+			default:
+			}
+			select {
+			case subscriber <- frame:
+			default:
+			}
 		}
 	}
 }

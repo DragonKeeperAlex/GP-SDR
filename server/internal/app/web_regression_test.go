@@ -413,7 +413,7 @@ func TestTopBarHasPersistentMasterAudioControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := string(appData)
-	for _, required := range []string{"gpsdr-master-audio-v1", "liveAudio.masterGain", "recordingPlayer.muted", "applyMasterAudio", "void pumpLiveAudio(controller)"} {
+	for _, required := range []string{"gpsdr-master-audio-v1", "liveAudio.masterGain", "recordingPlayer.muted", "applyMasterAudio", "void pumpLiveAudio(controller)", "maximumBacklog=.75", "Audio reconnecting", "Live audio interrupted; reconnecting"} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("master audio behavior %q is missing", required)
 		}
