@@ -201,6 +201,8 @@ make_deb() {
     cp "$linux_helper" "$package_root/usr/bin/gpsdr-soapy"
     chmod 755 "$package_root/usr/bin/gpsdr-soapy"
   fi
+  cp "$PROJECT_ROOT/packaging/linux/multi_rx.py" "$package_root/usr/bin/multi_rx.py"
+  chmod 755 "$package_root/usr/bin/multi_rx.py"
   sed -e "s/@VERSION@/$VERSION/g" -e "s/@ARCH@/$architecture/g" "$PROJECT_ROOT/packaging/linux/control.in" > "$control_root/control"
   package_file="$DIST_ROOT/gp-sdr_${VERSION}_${architecture}.deb"
   if command -v dpkg-deb >/dev/null 2>&1; then

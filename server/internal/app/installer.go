@@ -95,7 +95,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs rtl_433 for compatible weather stations, TPMS devices, and ISM-band sensors.",
 			GuideURL: "https://github.com/merbanan/rtl_433"}, tools: []string{"rtl_433"}, formulae: []string{"rtl_433"}},
 		{component: SetupComponent{ID: "p25", Name: "P25 Phase 1/2", Category: "decoder",
-			Guide:    "SDRTrunk is the GP-SDR P25 engine and is included in complete packages. It provides tested HackRF and RTL-SDR input, Phase 1/2 control decoding, trunk following, call logging, and audio. JMBE must be created once to decode voice; GP-SDR detects an existing SDRTrunk JMBE library.",
+			Guide:    "Complete packages include SDRTrunk for native HackRF and RTL-SDR P25 input. On Linux, GP-SDR uses OP25 for PlutoSDR and other Soapy receivers when OP25 is installed. JMBE must be created once for SDRTrunk voice; GP-SDR detects an existing library.",
 			GuideURL: "https://github.com/DSheirer/sdrtrunk"}, tools: []string{"sdr-trunk"}},
 		{component: SetupComponent{ID: "p25-voice", Name: "P25 voice codec", Category: "decoder",
 			Guide:    "Creates the open-source JMBE voice library locally. The creator downloads and compiles the codec after showing the upstream patent notice; check the rules that apply where you use it.",

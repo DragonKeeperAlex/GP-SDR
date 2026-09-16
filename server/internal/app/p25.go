@@ -219,12 +219,15 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		return err
 	}
 	logPath := filepath.Join(runtimeDirectory, "op25.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	command := exec.Command(executable, "-c", configPath, "-v", "2")
-	command.Dir = filepath.Dir(executable)
+	// OP25 keeps talkgroup whitelist and tag paths relative to its working
+	// directory. Run it beside the generated configuration so those files are
+	// found without weakening the profile's portable JSON format.
+	command.Dir = runtimeDirectory
 	command.Stdout, command.Stderr = logFile, logFile
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()
@@ -245,6 +248,8 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	m.command, m.done, m.log = command, done, logFile
 	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
 	m.engine, m.apiURL = "OP25", nil
+	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
+	m.sessionStart = time.Now()
 	m.mu.Unlock()
 	return nil
 }
@@ -282,8 +287,16 @@ func (m *OP25Manager) op25Status() P25Status {
 			return P25Status{State: "error", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath, Note: note}
 		default:
 		}
-		return P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath,
-			Note: "OP25 is following trunk grants; encrypted voice is silenced."}
+		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath,
+			Reception: "searching", Note: "OP25 is checking the configured P25 control channels."}
+		if m.configPath != nil {
+			logTail := readFileTail(filepath.Join(filepath.Dir(*m.configPath), "op25.log"), 128*1024)
+			if strings.Contains(logTail, "voice update:") {
+				status.Reception = "locked"
+				status.Note = "P25 control traffic and trunk grants are being decoded; encrypted voice is silenced."
+			}
+		}
+		return status
 	}
 	if executable, err := findOP25(); err == nil {
 		note := "OP25 is ready."
@@ -293,6 +306,28 @@ func (m *OP25Manager) op25Status() P25Status {
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
 	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+}
+
+func readFileTail(path string, limit int64) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	if info.Size() > limit {
+		if _, err := file.Seek(info.Size()-limit, io.SeekStart); err != nil {
+			return ""
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit))
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func op25DeviceArguments(device SDRDevice) string {

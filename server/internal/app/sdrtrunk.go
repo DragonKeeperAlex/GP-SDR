@@ -113,13 +113,19 @@ func (m *OP25Manager) Start(profile ScanProfile, plan []ReceiverPlanItem, device
 
 func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, devices []SDRDevice, dataDirectory string) error {
 	m.stop(false)
-	executable, err := findSDRTrunk()
-	if err != nil {
-		return errors.New("the SDRTrunk P25 engine is missing; reinstall the complete GP-SDR package")
-	}
 	assigned := p25DeviceAssignments(plan, devices)
 	if len(assigned) == 0 {
 		return errors.New("P25 trunk following needs at least one assigned SDR")
+	}
+	if p25AssignmentsNeedOP25(assigned) {
+		if _, err := findOP25(); err != nil {
+			return errors.New("PlutoSDR and other Soapy receivers require the OP25 component; install OP25, then refresh Hardware")
+		}
+		return m.startOP25(profile, plan, devices, dataDirectory)
+	}
+	executable, err := findSDRTrunk()
+	if err != nil {
+		return errors.New("the SDRTrunk P25 engine is missing; reinstall the complete GP-SDR package")
 	}
 	runtimeDirectory := filepath.Join(dataDirectory, "Runtime", "P25", profile.ID)
 	applicationRoot := filepath.Join(runtimeDirectory, "home", "SDRTrunk")
@@ -310,6 +316,9 @@ func (m *OP25Manager) Status() P25Status {
 	profileID, configPath, sessionStart, profile, rateFallback := m.profileID, m.configPath, m.sessionStart, m.profile, m.rateFallback
 	plan, devices := append([]ReceiverPlanItem(nil), m.plan...), append([]SDRDevice(nil), m.devices...)
 	m.mu.Unlock()
+	if engine == "OP25" {
+		return m.op25Status()
+	}
 	if engine == "SDRTrunk" && command != nil {
 		select {
 		case <-done:
@@ -359,6 +368,15 @@ func (m *OP25Manager) Status() P25Status {
 		return P25Status{State: "ready", Engine: "SDRTrunk", Executable: &executable, Note: "SDRTrunk P25 Phase 1/2 trunk following is ready."}
 	}
 	return P25Status{State: "setup", Engine: "none", Note: "The SDRTrunk component is not present in this package."}
+}
+
+func p25AssignmentsNeedOP25(assignments []p25AssignedDevice) bool {
+	for _, assignment := range assignments {
+		if strings.HasPrefix(assignment.Device.Driver, "SoapySDR:") {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForSDRTrunkReady(logPath string, done <-chan struct{}, timeout time.Duration) error {

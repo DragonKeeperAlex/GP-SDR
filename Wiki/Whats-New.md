@@ -1,4 +1,13 @@
-# What’s new through GP-SDR 1.5.0-rc31
+# What’s new through GP-SDR 1.5.0-rc32
+
+## 1.5.0-rc32: Pluto P25 routing and non-blocking Pi telemetry
+
+- PlutoSDR and other Soapy receivers now use OP25 for P25 trunk following;
+  native HackRF and RTL-SDR receivers continue to use SDRTrunk.
+- The Hardware page reports both P25 engines when installed.
+- PiPower5 polling runs in the background so slow HAT reads cannot delay the
+  console or receiver status.
+- Linux packages include the corrected OP25 application launcher.
 
 ## 1.5.0-rc31: working Band Monitor and Pi power telemetry
 

@@ -15,6 +15,7 @@ installing anything outside the app.
 | --- | --- | --- |
 | AM, NFM, WFM DSP | Included | Connect a supported receiver. |
 | SDRTrunk P25 Phase 1/2 | Included in complete packages | Create JMBE once for unencrypted voice. |
+| OP25 | Install on Linux for PlutoSDR/Soapy P25 | GP-SDR includes its launcher and selects OP25 automatically for Soapy-backed receivers. |
 | JMBE Creator | Included | Run the in-app creation action and accept its upstream notice. |
 | Native HackRF/RTL capture | GP-SDR bridge included | Install user-space tools/USB driver when the OS requires them. |
 | SoapySDR bridge | Included where built | Install SoapySDR and the module for the exact radio. |

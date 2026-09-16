@@ -15,23 +15,31 @@ import (
 
 var piPowerHatCache struct {
 	sync.Mutex
-	status    PiPowerHatStatus
-	checkedAt time.Time
+	status     PiPowerHatStatus
+	checkedAt  time.Time
+	refreshing bool
 }
 
 func readPiPowerHat() PiPowerHatStatus {
 	piPowerHatCache.Lock()
-	defer piPowerHatCache.Unlock()
 	cacheFor := 30 * time.Second
 	if piPowerHatCache.status.Available {
 		cacheFor = 3 * time.Second
 	}
-	if time.Since(piPowerHatCache.checkedAt) < cacheFor {
-		return piPowerHatCache.status
+	if time.Since(piPowerHatCache.checkedAt) >= cacheFor && !piPowerHatCache.refreshing {
+		piPowerHatCache.refreshing = true
+		go func() {
+			status := queryPiPowerHat()
+			piPowerHatCache.Lock()
+			piPowerHatCache.status = status
+			piPowerHatCache.checkedAt = time.Now()
+			piPowerHatCache.refreshing = false
+			piPowerHatCache.Unlock()
+		}()
 	}
-	piPowerHatCache.status = queryPiPowerHat()
-	piPowerHatCache.checkedAt = time.Now()
-	return piPowerHatCache.status
+	status := piPowerHatCache.status
+	piPowerHatCache.Unlock()
+	return status
 }
 
 func queryPiPowerHat() PiPowerHatStatus {

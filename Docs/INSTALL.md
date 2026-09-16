@@ -87,9 +87,9 @@ server guide](https://github.com/DragonKeeperAlex/GP-SDR/wiki/Server-Setup-Linux
 Choose the package matching the computer:
 
 ```bash
-sudo apt install ./gp-sdr_1.5.0-rc31_amd64.deb
+sudo apt install ./gp-sdr_1.5.0-rc32_amd64.deb
 # or, on 64-bit ARM:
-sudo apt install ./gp-sdr_1.5.0-rc31_arm64.deb
+sudo apt install ./gp-sdr_1.5.0-rc32_arm64.deb
 sudo systemctl enable --now gp-sdr
 ```
 
@@ -222,7 +222,7 @@ On Windows PowerShell, compare this result with the matching line in
 `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\GP-SDR-1.5.0-rc31-windows-x86_64.zip -Algorithm SHA256
+Get-FileHash .\GP-SDR-1.5.0-rc32-windows-x86_64.zip -Algorithm SHA256
 ```
 
 ## Build from source
@@ -240,7 +240,7 @@ To create all release packages on macOS:
 
 ```bash
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
-Scripts/build_release.sh 1.5.0-rc31
+Scripts/build_release.sh 1.5.0-rc32
 ```
 
 Do not build a source checkout from a cloud-synced folder while it is resolving

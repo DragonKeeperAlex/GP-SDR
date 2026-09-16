@@ -9,6 +9,12 @@ Creator for unencrypted voice codec support. GP-SDR creates an isolated
 SDRTrunk playlist, starts and supervises the headless engine, and normalizes
 system, grant, call, talkgroup, encryption, and audio state into the app.
 
+On Linux, a PlutoSDR or other Soapy-backed receiver is routed to OP25 instead,
+because SDRTrunk does not expose a native Pluto tuner. Install OP25 on the
+receiver host; the Linux GP-SDR package supplies the `multi_rx.py` launcher and
+detects the installed GNU Radio bindings. The status panel names the selected
+engine and reports **searching** until actual control/grant evidence appears.
+
 ## Configure a P25 system
 
 1. Import a verified location profile or create a profile under **Profiles**.
