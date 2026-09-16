@@ -190,6 +190,25 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 		}
 		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25Gains(device),
 			Name: name, Rate: rate, UsablePercent: .85, Tunable: true})
+		if device.Calibration != nil {
+			configuration.Devices[len(configuration.Devices)-1].PPM = float64(device.Calibration.PPMCorrection)
+		}
+		if device.Kind == "HackRF" {
+			configuration.Devices[len(configuration.Devices)-1].Offset = 100_000
+			lna, vga := 24, 24
+			if profile.Settings.P25LNAGainDB != nil {
+				lna = *profile.Settings.P25LNAGainDB
+			}
+			if profile.Settings.P25VGAGainDB != nil {
+				vga = *profile.Settings.P25VGAGainDB
+			}
+			configuration.Devices[len(configuration.Devices)-1].Gains = fmt.Sprintf("LNA:%d,VGA:%d,AMP:%d", lna, vga, func() int {
+				if profile.Settings.P25AmpMode == "on" {
+					return 14
+				}
+				return 0
+			}())
+		}
 		system := systems[index%len(systems)]
 		for _, item := range plan {
 			if item.DeviceID == nil || *item.DeviceID != device.ID || item.Target == nil {

@@ -87,6 +87,26 @@ func TestOP25HonorsPerSystemReceiverTarget(t *testing.T) {
 	}
 }
 
+func TestOP25HackRFUsesOffsetCalibrationAndGainOverrides(t *testing.T) {
+	lna, vga := 32, 24
+	profile := ScanProfile{P25Systems: []P25SystemConfig{{ID: "site", Name: "Site", Enabled: true, ControlChannelsHz: []float64{774456250}}}}
+	profile.Settings.P25LNAGainDB = &lna
+	profile.Settings.P25VGAGainDB = &vga
+	profile.Settings.P25AmpMode = "off"
+	data, err := BuildOP25Configuration(profile, []SDRDevice{{ID: "hackrf", Kind: "HackRF", Calibration: &DeviceCalibration{PPMCorrection: -3}}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config op25Configuration
+	if err = json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	device := config.Devices[0]
+	if device.Offset != 100000 || device.PPM != -3 || device.Gains != "LNA:32,VGA:24,AMP:0" {
+		t.Fatalf("wrong applied receiver controls: %#v", device)
+	}
+}
+
 func TestBayAreaP25SiteCandidatesRemainUnverified(t *testing.T) {
 	profiles := bayAreaP25SiteProfiles()
 	if len(profiles) != 76 {

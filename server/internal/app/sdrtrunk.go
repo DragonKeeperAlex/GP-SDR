@@ -117,7 +117,14 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	if len(assigned) == 0 {
 		return errors.New("P25 trunk following needs at least one assigned SDR")
 	}
-	if p25AssignmentsNeedOP25(assigned) {
+	engine := strings.ToLower(strings.TrimSpace(os.Getenv("GPSDR_P25_ENGINE")))
+	if engine != "" && engine != "auto" && engine != "op25" && engine != "sdrtrunk" {
+		return errors.New("GPSDR_P25_ENGINE must be auto, op25, or sdrtrunk")
+	}
+	if engine == "sdrtrunk" && p25AssignmentsNeedOP25(assigned) {
+		return errors.New("SDRTrunk does not support the selected Soapy receiver; select OP25")
+	}
+	if engine == "op25" || p25AssignmentsNeedOP25(assigned) {
 		if _, err := findOP25(); err != nil {
 			return errors.New("PlutoSDR and other Soapy receivers require the OP25 component; install OP25, then refresh Hardware")
 		}

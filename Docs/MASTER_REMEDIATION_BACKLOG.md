@@ -10,6 +10,8 @@ Keep stable item IDs. Do not remove an item because it is difficult or blocked. 
 
 Current installation scope: Pi only. No new public release or Mac replacement unless requested. Preserve recordings, results, profiles, calibration, credentials, and recovery paths. Keep test audio out of the user's headphones. RF transmit acceptance requires an appropriate authorized, attenuated/dummy-load bench setup; user permission alone does not establish lawful operation.
 
+Platform priority confirmed September 16, 2026: Raspberry Pi is the primary development and acceptance target. Android and iOS/iPadOS ports (PLAT-01/02) are ON HOLD until the main app is fully functional. Retain their backlog entries; do not spend implementation time on them meanwhile. Keep other desktop platforms compatible but focus active testing/configuration on Pi.
+
 ## Acceptance states
 
 `OPEN`, `IN PROGRESS`, `FAILED — reproducible`, `BLOCKED — named requirement`, `PASSED — software/API only`, `PASSED — physically verified`. Checkboxes represent complete acceptance for the stated scope, not code presence. Append dated evidence below; broader platform acceptance remains open if only Pi testing passes.
@@ -93,6 +95,8 @@ Current installation scope: Pi only. No new public release or Mac replacement un
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-09-16: Pi made primary platform; PLAT-01/02 mobile implementation on hold. MAP-09/DIST-01: installed mount/writable-directory startup guard without replacing private base service. RF-02/03/UI-04: explicit Pi-only OP25 backend configuration, forwarded HackRF gain/amp and saved PPM calibration, 100 kHz HackRF DC-avoidance offset; software regression tests pass. Isolated OP25 HackRF initially still searched before offset change. Full hardware/audio/long-soak gates remain OPEN. See `PI_REMEDIATION_STATUS.md`.
 
 - 2026-09-16: Backlog saved on explicit user request. No item marked complete merely by saving it. Current Pi-only test build includes OP25 audio/site/targeting changes and decoder refresh/selection/audio-port cleanup. Entire app is not yet accepted.
 
