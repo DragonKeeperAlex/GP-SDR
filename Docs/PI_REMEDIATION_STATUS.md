@@ -30,3 +30,7 @@ Install as `/etc/systemd/system/gp-sdr.service.d/p25.conf`, reload systemd and r
 - Current isolated HackRF SDRTrunk P25 test remains searching; no new HackRF lock claim.
 - Pluto previously independently locked EBRCS with OP25 and delivered decoded PCM. Subjective audio acceptance remains open.
 - MAP-09, MAP-11 and DIST-01 remain open despite startup-guard work.
+
+## Post-install verification
+
+September 16: storage-guard service restart succeeded and API accepted the isolated HackRF `c5cb` OP25 run with 10 MS/s, gain overrides, calibration forwarding and 100 kHz offset. A subsequent 20-second silent live-audio check produced no audio file/frames; P25 remained searching. This is NOT a HackRF lock/audio pass. Unit suite, vet and race checks passed locally. Pluto/RTL control comparisons and raw IQ diagnosis are the next RF-02 steps. No mobile port, public release or Mac install was changed.
