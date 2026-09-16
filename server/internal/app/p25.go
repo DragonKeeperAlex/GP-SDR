@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -296,6 +297,12 @@ func (m *OP25Manager) op25Status() P25Status {
 				status.Note = "P25 control traffic and trunk grants are being decoded; encrypted voice is silenced."
 			}
 		}
+		if frequency, ok := readOP25ControlStatus(); ok {
+			status.Reception = "locked"
+			status.ControlChannelHz = frequency
+			status.ControlSource = "OP25 decoded control messages"
+			status.Note = "P25 control channel locked; waiting for an enabled, unencrypted call."
+		}
 		return status
 	}
 	if executable, err := findOP25(); err == nil {
@@ -306,6 +313,43 @@ func (m *OP25Manager) op25Status() P25Status {
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
 	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+}
+
+// OP25 can decode control traffic without an enabled talkgroup receiving a
+// voice grant. Use its local decoded state rather than a voice-only log marker.
+func readOP25ControlStatus() (float64, bool) {
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	response, err := client.Post("http://127.0.0.1:8081/", "application/json", strings.NewReader(`[{"command":"update","arg1":0,"arg2":0}]`))
+	if err != nil {
+		return 0, false
+	}
+	defer response.Body.Close()
+	var updates []map[string]json.RawMessage
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&updates); err != nil {
+		return 0, false
+	}
+	for _, update := range updates {
+		var kind string
+		_ = json.Unmarshal(update["json_type"], &kind)
+		if kind != "trunk_update" {
+			continue
+		}
+		for key, raw := range update {
+			if _, err := strconv.Atoi(key); err != nil {
+				continue
+			}
+			var state struct {
+				Frequency float64 `json:"rxchan"`
+				Active    int     `json:"network_active"`
+				TopLine   string  `json:"top_line"`
+				LastTSBK  float64 `json:"last_tsbk"`
+			}
+			if json.Unmarshal(raw, &state) == nil && state.Active == 1 && state.Frequency > 0 && state.LastTSBK > float64(time.Now().Unix()-10) && strings.Contains(state.TopLine, "tsbks ") {
+				return state.Frequency, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func readFileTail(path string, limit int64) string {
@@ -332,7 +376,7 @@ func readFileTail(path string, limit int64) string {
 
 func op25DeviceArguments(device SDRDevice) string {
 	if strings.HasPrefix(device.Driver, "SoapySDR:") {
-		return "soapy=" + soapyDeviceArguments(device)
+		return "soapy=0," + soapyDeviceArguments(device)
 	}
 	switch device.Kind {
 	case "RTL-SDR":
@@ -355,6 +399,9 @@ func op25DeviceArguments(device SDRDevice) string {
 func op25Gains(device SDRDevice) string {
 	if device.Kind == "HackRF" {
 		return "LNA:24,VGA:24"
+	}
+	if device.Kind == "PlutoSDR" {
+		return "PGA:45"
 	}
 	return "LNA:36"
 }

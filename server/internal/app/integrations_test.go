@@ -57,10 +57,13 @@ func TestPlutoP25UsesSoapyOP25Input(t *testing.T) {
 	serial := "PLUTO123"
 	device := SDRDevice{ID: "pluto-1", Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", Serial: &serial, DeviceArguments: "driver=plutosdr,uri=usb:1.2.3"}
 	assignment := p25AssignedDevice{Device: device, Role: "control"}
+	if got := op25Gains(device); got != "PGA:45" {
+		t.Fatalf("Pluto must use its PGA gain stage, got %q", got)
+	}
 	if !p25AssignmentsNeedOP25([]p25AssignedDevice{assignment}) {
 		t.Fatal("a Soapy-backed Pluto must be routed to OP25 instead of unsupported SDRTrunk input")
 	}
-	if got := op25DeviceArguments(device); got != "soapy=driver=plutosdr,uri=usb:1.2.3" {
+	if got := op25DeviceArguments(device); got != "soapy=0,driver=plutosdr,uri=usb:1.2.3" {
 		t.Fatalf("unexpected OP25 Pluto arguments: %q", got)
 	}
 	if p25AssignmentsNeedOP25([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Driver: "/usr/bin/hackrf_info"}}}) {
