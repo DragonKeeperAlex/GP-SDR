@@ -1566,7 +1566,11 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 					Label: &label, DeviceID: device.ID, Confidence: decoded.messages[0].Confidence, DecoderMessages: decoded.messages}
 				_ = r.Events.Append(event)
 				if r.mapper != nil {
-					r.mapper.SetDecodedMessages(request.FrequencyHz, firstNonEmpty(request.Decoder, decoderForMode(request.Mode)), decoded.messages)
+					decoderID := strings.TrimSpace(request.Decoder)
+					if decoderID == "" {
+						decoderID = decoderForMode(request.Mode)
+					}
+					r.mapper.SetDecodedMessages(request.FrequencyHz, decoderID, decoded.messages)
 				}
 			}
 			if math.Abs(decoded.frequencyHz-request.FrequencyHz) <= 1 && len(decoded.audio) > 0 && decoded.audioRate > 0 && r.audioHub != nil {
@@ -1580,7 +1584,14 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 			case <-stop:
 				return
 			default:
-				r.setRuntimeError("Tuner: " + err.Error())
+				// The pipe error alone is commonly just "unexpected EOF". Closing the
+				// helper also collects its exit status and stderr, which contains the
+				// actionable USB/device failure reported by hackrf_transfer or SoapySDR.
+				if closeErr := stream.Close(); closeErr != nil {
+					r.setRuntimeError("Tuner: " + closeErr.Error())
+				} else {
+					r.setRuntimeError("Tuner: " + err.Error())
+				}
 				return
 			}
 		}
@@ -1592,7 +1603,10 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 			latestAnalysis = AnalyzeSignalIQ(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), request.BandwidthHz)
 			analysisFrames = 1
 		}
-		decoderID := firstNonEmpty(request.Decoder, decoderForMode(request.Mode))
+		decoderID := strings.TrimSpace(request.Decoder)
+		if decoderID == "" {
+			decoderID = decoderForMode(request.Mode)
+		}
 		demodulationMode := demodulationModeForDecoder(request.Mode, decoderID)
 		if demodulationMode == "auto" {
 			demodulationMode = strings.ToLower(latestAnalysis.Modulation)

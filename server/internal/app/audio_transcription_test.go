@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -41,6 +42,46 @@ func TestAudioHubOverflowKeepsNewestFrames(t *testing.T) {
 	if first.Samples[0] != 16 {
 		t.Fatalf("old audio was retained after overflow: got %d want 16", first.Samples[0])
 	}
+}
+
+func TestTunerPublishesAnalogAudio(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell capture fixture")
+	}
+	directory := t.TempDir()
+	iqPath := filepath.Join(directory, "iq.raw")
+	if err := os.WriteFile(iqPath, syntheticFM(2_000_000, .025, -450_000, 1_000, 75_000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(directory, "hackrf_transfer")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat \"$GPSDR_TEST_IQ\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GPSDR_HELPERS", directory)
+	t.Setenv("GPSDR_TEST_IQ", iqPath)
+	runtimeState, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames, unsubscribe := runtimeState.audioHub.Subscribe()
+	defer unsubscribe()
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		runtimeState.tunerLoop(stop, ScanProfile{Settings: SurveySettings{NoiseMarginDB: 6}}, SDRDevice{ID: "test", Kind: "HackRF"},
+			TunerRequest{FrequencyHz: 98_100_000, Mode: "wfm", BandwidthHz: 180_000, SampleRateHz: 2_000_000, MonitorOpen: true}, nil)
+	}()
+	select {
+	case frame := <-frames:
+		if frame.ChannelID != "quick-tune-channel" || frame.SampleRate < 40_000 || len(frame.Samples) == 0 {
+			t.Fatalf("unexpected tuner audio frame: %#v", frame)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("tuner did not publish analog audio: %+v", runtimeState.Status())
+	}
+	close(stop)
+	<-done
 }
 
 func TestTranscriberRunsConfiguredOfflineCommand(t *testing.T) {
