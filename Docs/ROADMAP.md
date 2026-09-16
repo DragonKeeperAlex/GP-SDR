@@ -1,5 +1,8 @@
 # GP-SDR roadmap
 
+The current detailed implementation and acceptance backlog is maintained in
+[FEATURE_GAP_REPORT_1.5.0-rc32.md](FEATURE_GAP_REPORT_1.5.0-rc32.md).
+
 ## Implemented
 
 - [x] Native macOS app with all seven primary workspaces
