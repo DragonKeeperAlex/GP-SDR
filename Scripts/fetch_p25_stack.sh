@@ -13,7 +13,14 @@ mkdir -p "$COMPONENT_ROOT"
 mkdir -p "$LICENSE_ROOT"
 
 component_ready() {
-  test -d "$1/bin" && test -d "$1/lib"
+  test -d "$1/bin" && test -d "$1/lib" || return 1
+  # Cloud-sync conflict copies can break Java security-policy loading and also
+  # duplicate jars on the launcher classpath. Never package that cache as valid.
+  if find "$1" -type f | LC_ALL=C grep -Eq ' [0-9]+(\.[^/]*)?$|\.icloud-conflict'; then
+    printf 'Replacing contaminated component cache: %s\n' "$1" >&2
+    return 1
+  fi
+  return 0
 }
 
 fetch_component() {
