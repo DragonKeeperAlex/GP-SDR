@@ -6,10 +6,37 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 	"time"
 )
+
+func TestP25MP3RecordingPlayback(t *testing.T) {
+	root := t.TempDir()
+	runtimeState, err := NewRuntime(root, "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "Recordings", "call.mp3")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("mp3-fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeState.Events.Append(TransmissionEvent{ID: "p25-mp3", StartedAt: time.Now(), AudioPath: &path}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(runtimeState, fstest.MapFS{}, "127.0.0.1", 8073, "secret")
+	request := httptest.NewRequest(http.MethodGet, "/api/audio?id=p25-mp3", nil)
+	response := httptest.NewRecorder()
+	server.serveEventAudio(response, request)
+	if response.Code != 200 || response.Header().Get("Content-Type") != "audio/mpeg" || response.Body.String() != "mp3-fixture" {
+		t.Fatalf("MP3 playback rejected: %d %s", response.Code, response.Body.String())
+	}
+}
 
 func TestAPIToken(t *testing.T) {
 	runtime, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)

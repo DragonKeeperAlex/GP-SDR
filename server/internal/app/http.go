@@ -668,7 +668,11 @@ func (s *Server) serveLiveAudio(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveEventAudio(w http.ResponseWriter, r *http.Request) {
 	event, ok := s.runtime.Events.Get(r.URL.Query().Get("id"))
-	if !ok || event.AudioPath == nil || filepath.Ext(*event.AudioPath) != ".wav" {
+	extension := ""
+	if event.AudioPath != nil {
+		extension = strings.ToLower(filepath.Ext(*event.AudioPath))
+	}
+	if !ok || event.AudioPath == nil || (extension != ".wav" && extension != ".mp3") {
 		writeError(w, 404, "Recording not found.")
 		return
 	}
@@ -689,7 +693,11 @@ func (s *Server) serveEventAudio(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "Recording not found.")
 		return
 	}
-	w.Header().Set("Content-Type", "audio/wav")
+	if extension == ".mp3" {
+		w.Header().Set("Content-Type", "audio/mpeg")
+	} else {
+		w.Header().Set("Content-Type", "audio/wav")
+	}
 	http.ServeContent(w, r, filepath.Base(*event.AudioPath), info.ModTime(), file)
 }
 

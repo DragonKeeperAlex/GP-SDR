@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,7 +39,7 @@ func restrictP25Tuners(root string, assigned []p25AssignedDevice, devices []SDRD
 	path := filepath.Join(root, "configuration", "tuner_configuration.json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil
+		data, err = []byte("{}"), nil
 	}
 	if err != nil {
 		return err
@@ -54,7 +55,7 @@ func restrictP25Tuners(root string, assigned []p25AssignedDevice, devices []SDRD
 		}
 	}
 	if len(allowed) == 0 {
-		return nil
+		return fmt.Errorf("cannot establish USB identity for the assigned P25 receiver; refresh Hardware before starting")
 	}
 	disabled := []map[string]string{}
 	for _, device := range devices {
@@ -77,15 +78,56 @@ func restrictP25Tuners(root string, assigned []p25AssignedDevice, devices []SDRD
 
 // Match by the physical serial, never the order of historical tuner settings.
 func applyUSBIdentities(devices []SDRDevice) {
+	output, err := readUSBInventory()
+	if err == nil {
+		applyUSBInventory(devices, output)
+	}
+}
+
+func readUSBInventory() (string, error) {
+	if runtime.GOOS == "linux" {
+		return readLinuxUSBInventory("/sys/bus/usb/devices")
+	}
 	helper, err := findTool("gpsdr-usb")
 	if err != nil {
-		return
+		return "", err
 	}
-	output, err := runTool(helper, nil, 3*time.Second)
+	return runTool(helper, nil, 3*time.Second)
+}
+
+// Sysfs exposes physical USB identities without opening or resetting a radio.
+func readLinuxUSBInventory(root string) (string, error) {
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return
+		return "", err
 	}
-	applyUSBInventory(devices, output)
+	var output strings.Builder
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		read := func(name string) string {
+			data, _ := os.ReadFile(filepath.Join(path, name))
+			return strings.TrimSpace(string(data))
+		}
+		vendor, product := read("idVendor"), read("idProduct")
+		kind := ""
+		if vendor == "1d50" && product == "6089" {
+			kind = "HackRF"
+		}
+		if vendor == "0bda" && (product == "2838" || product == "2832") {
+			kind = "RTL-SDR"
+		}
+		if kind == "" {
+			continue
+		}
+		bus, err := strconv.Atoi(read("busnum"))
+		port := read("devpath")
+		if err != nil || port == "" {
+			continue
+		}
+		serial := strings.NewReplacer("\t", " ", "\n", " ", "\r", " ").Replace(read("serial"))
+		fmt.Fprintf(&output, "%s\t%s\t%d\t%s\n", kind, serial, bus, port)
+	}
+	return output.String(), nil
 }
 
 func applyUSBInventory(devices []SDRDevice, output string) {

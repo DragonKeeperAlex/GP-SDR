@@ -199,10 +199,8 @@ func discoverRTLSDR() []SDRDevice {
 	// Enumeration must not run rtl_test's tuner benchmark or claim a device
 	// merely to populate a menu. A successful USB inventory is authoritative,
 	// including an empty result after a dongle disconnects.
-	if helper, helperErr := findTool("gpsdr-usb"); helperErr == nil {
-		if output, inventoryErr := runTool(helper, nil, 3*time.Second); inventoryErr == nil {
-			return rtlDevicesFromUSBInventory(output, tool)
-		}
+	if output, inventoryErr := readUSBInventory(); inventoryErr == nil {
+		return rtlDevicesFromUSBInventory(output, tool)
 	}
 	output, _ := runTool(tool, []string{"-t"}, 4*time.Second)
 	re := regexp.MustCompile(`(?i)found\s+(\d+)\s+device`)

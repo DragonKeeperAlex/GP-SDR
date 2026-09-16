@@ -4,8 +4,29 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestLinuxUSBInventoryReadsPhysicalIdentityWithoutClaiming(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "1-1.3")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{"idVendor": "1d50", "idProduct": "6089", "busnum": "001", "devpath": "1.3", "serial": "abcdef"} {
+		if err := os.WriteFile(filepath.Join(path, name), []byte(value+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	output, err := readLinuxUSBInventory(root)
+	if err != nil || !strings.Contains(output, "HackRF\tabcdef\t1\t1.3\n") {
+		t.Fatalf("wrong inventory %q: %v", output, err)
+	}
+	if err := restrictP25Tuners(t.TempDir(), []p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF"}}}, nil); err == nil {
+		t.Fatal("unknown identity must not silently allow fallback")
+	}
+}
 
 func TestRTLInventoryDoesNotInventDisconnectedReceiver(t *testing.T) {
 	devices := rtlDevicesFromUSBInventory("HackRF\tserial\t2\t1.1\n", "rtl_test")
