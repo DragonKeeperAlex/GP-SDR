@@ -66,6 +66,12 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 Fixed in this work tranche (bounded software scope only):
 
+- [x] September 17 profile-name error: bundled P25 names exceeded the old 80-byte limit. Editor/backend now allow 160 Unicode characters; duplicate names fit that bound. Regression includes long EBRCS names, multibyte names, duplicate/resave and blank/over-limit rejection.
+- [x] Profile disk failures: Save/Import/Duplicate commit in-memory state only after persistence; failed deletion keeps the profile visible. No phantom success or duplicate after failed write.
+- [x] September 17 VPN restored; test5 deployed and a 127-character bundled P25 profile saved/duplicated/resaved through the installed API. Two expendable copies deleted afterward; original profiles and Mapper records compare unchanged against backup. Pluto P25 reacquired 774.45625 MHz lock.
+- [x] Profile filename confinement: Save/Import/persist reject path traversal, slash/backslash, NUL, absolute paths and dot entries. Unit/race tests cover unsafe IDs; installed API returns 400.
+- [x] Transmit upload total-body limit: capped at 51 MiB including multipart overhead, alongside the existing 50 MiB audio-file cap.
+
 - [x] Malformed WAV uploads are rejected before persistent storage; truncated chunks/incomplete PCM frames are rejected. Shared parser regression passes. Multipart temporary upload cleanup is explicit.
 
 - [x] Concurrent/repeated transmit preparation is rejected before allocating IQ or saving files; active-job rejection also moved before generation. This does not establish cross-workflow atomic receiver reservations.
@@ -93,6 +99,8 @@ Fixed in this work tranche (bounded software scope only):
 - [ ] AI-04 Lab review/export: corrected labels, real/synthetic separation, capture provenance, independent decoder evidence and dataset split controls.
 
 ## This session's evidence and limits
+
+- September 17 final deployment: `1.5.0-rc34-pi-test6`, binary SHA-256 `f377bdaec0f4ba8e11a77ef3efd2af5531dd3bd9a19c1d54046a0d611fa4e6df`. Rollback binary plus Data/Profiles snapshot `/home/sdr/gpsdr-before-pi-test6-QGzqfx`. Local unit/race/vet and JavaScript syntax pass. Initial health script omitted the token and rolled back on expected HTTP 401; corrected authenticated health check then passed on reinstall. No user data restored/replaced and no RF transmitted.
 
 - Post-deploy `/api/p25/status`: OP25 `reception=locked`, control channel `774456250`, source decoded control messages. Saved Profiles directory and mapper-records.json compare unchanged against the rollback snapshot; service restart counter remains zero. This confirms control reacquisition, not fresh voice intelligibility.
 

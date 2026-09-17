@@ -102,6 +102,10 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-17 batch UI-02/DIST-01/03/TX-01: profile Unicode name/copy bounds and failed Save/Import/Duplicate/Delete state fixed; safe filename IDs block store escape; total WAV multipart body bounded. Unit/race/vet and JS syntax pass. VPN/node1 access restored, Pi test6 deployed with authenticated health check and rollback snapshot. Installed test5 long-profile save/duplicate/resave and artifact cleanup succeeded; test6 unsafe-ID API rejection succeeded. Broader GUI/physical acceptance remains open.
+
+- 2026-09-17 UI-02/DIST-01: fixed bundled P25 name versus 80-byte validation mismatch using 160-character Unicode-aware backend/editor limit and bounded copy names. Profile Save/Import/Duplicate/Delete no longer publish in-memory success on disk failure. Regression added. Remote test5 deployment blocked by node1 SSH timeout; keep Pi acceptance open until actual install/lock/GUI checks succeed.
+
 - 2026-09-16 TX-01/DIST-01 Pi test4 deployment: validate WAV before saving and reject truncated chunks/partial PCM frames; unit/race/vet and JS regressions passed. Accumulated lab/provenance/ownership fixes installed as `1.5.0-rc34-pi-test4`; rollback binary/Data/Profiles snapshot retained at `/home/sdr/gpsdr-before-pi-test4-H6JZiN`. Existing Pluto P25 profile restored, DSD-FME discovery ready, benchmark UI/API served. No RF TX. End-to-end GUI/listening/TX acceptance remains open.
 
 - 2026-09-16 TX-01/AI-04 continuation: user deferred physical TX testing. Added Transmit benchmark manifest library/API and rejected parallel/busy waveform generation before allocation/file writes. Library and busy-path regression tests added. No production receiver interrupted and no RF emitted. Physical RF acceptance, paired orchestration and training remain open.

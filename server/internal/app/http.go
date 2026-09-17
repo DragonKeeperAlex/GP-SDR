@@ -567,6 +567,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "Transmit audio can only be uploaded from the GP-SDR computer.")
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 51<<20)
 		if err := r.ParseMultipartForm(50 << 20); err != nil {
 			writeError(w, 400, "Choose a WAV file to upload.")
 			return

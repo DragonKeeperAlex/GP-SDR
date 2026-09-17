@@ -11,7 +11,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
+
+const maximumProfileNameCharacters = 160
 
 var (
 	ErrNotFound = errors.New("requested item was not found")
@@ -102,8 +105,11 @@ func (s *ProfileStore) Save(profile ScanProfile) (ScanProfile, error) {
 	}
 	profile = normalizeProfile(profile)
 	profile.BuiltIn = false
+	if err := s.persist(profile); err != nil {
+		return ScanProfile{}, err
+	}
 	s.profiles[profile.ID] = profile
-	return profile, s.persist(profile)
+	return profile, nil
 }
 
 func (s *ProfileStore) Import(data []byte) (ScanProfile, error) {
@@ -124,8 +130,11 @@ func (s *ProfileStore) Import(data []byte) (ScanProfile, error) {
 	}
 	profile = normalizeProfile(profile)
 	profile.BuiltIn = false
+	if err := s.persist(profile); err != nil {
+		return ScanProfile{}, err
+	}
 	s.profiles[profile.ID] = profile
-	return profile, s.persist(profile)
+	return profile, nil
 }
 
 func (s *ProfileStore) Duplicate(id string) (ScanProfile, error) {
@@ -135,9 +144,16 @@ func (s *ProfileStore) Duplicate(id string) (ScanProfile, error) {
 	if !ok {
 		return ScanProfile{}, ErrNotFound
 	}
-	profile.ID, profile.Name, profile.BuiltIn = NewID(), profile.Name+" Copy", false
+	name := []rune(profile.Name)
+	if len(name) > maximumProfileNameCharacters-5 {
+		name = name[:maximumProfileNameCharacters-5]
+	}
+	profile.ID, profile.Name, profile.BuiltIn = NewID(), string(name)+" Copy", false
+	if err := s.persist(profile); err != nil {
+		return ScanProfile{}, err
+	}
 	s.profiles[profile.ID] = profile
-	return profile, s.persist(profile)
+	return profile, nil
 }
 
 func (s *ProfileStore) Export(id string) ([]byte, error) {
@@ -160,11 +176,17 @@ func (s *ProfileStore) Delete(id string) error {
 	if profile.BuiltIn {
 		return ErrBuiltIn
 	}
+	if err := os.Remove(filepath.Join(s.dir, id+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	delete(s.profiles, id)
-	return os.Remove(filepath.Join(s.dir, id+".json"))
+	return nil
 }
 
 func (s *ProfileStore) persist(profile ScanProfile) error {
+	if err := validateProfileID(profile.ID); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(profile, "", "  ")
 	if err != nil {
 		return err
@@ -177,11 +199,16 @@ func (s *ProfileStore) persist(profile ScanProfile) error {
 }
 
 func validateProfile(profile ScanProfile) error {
+	if profile.ID != "" {
+		if err := validateProfileID(profile.ID); err != nil {
+			return err
+		}
+	}
 	if profile.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported profile version %d", profile.SchemaVersion)
 	}
-	if strings.TrimSpace(profile.Name) == "" || len(profile.Name) > 80 {
-		return errors.New("profile name is required and must be 80 characters or fewer")
+	if strings.TrimSpace(profile.Name) == "" || utf8.RuneCountInString(profile.Name) > maximumProfileNameCharacters {
+		return fmt.Errorf("profile name is required and must be %d characters or fewer", maximumProfileNameCharacters)
 	}
 	if len(profile.Ranges) > 100 || len(profile.Channels) > 5000 || len(profile.P25Systems) > 20 {
 		return errors.New("profile contains too many ranges or channels")
@@ -229,6 +256,13 @@ func validateProfile(profile ScanProfile) error {
 				return fmt.Errorf("P25 system %q has an invalid control channel", system.Name)
 			}
 		}
+	}
+	return nil
+}
+
+func validateProfileID(id string) error {
+	if id == "" || id == "." || id == ".." || len(id) > 200 || strings.ContainsAny(id, "/\\\x00") || filepath.IsAbs(id) {
+		return errors.New("profile ID must be a safe filename, not a path")
 	}
 	return nil
 }

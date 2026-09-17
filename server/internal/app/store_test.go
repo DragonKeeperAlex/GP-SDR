@@ -29,6 +29,90 @@ func TestProfileImportAndDuplicate(t *testing.T) {
 	}
 }
 
+func TestLongP25ProfileNamesCanBeSavedAndDuplicated(t *testing.T) {
+	store, err := NewProfileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := ScanProfile{SchemaVersion: 1, ID: NewID(), Name: "East Bay Regional Communications System (EBRCS) · Contra Costa · Site: 006 CCCO East Simulcast", Settings: defaultSettings()}
+	if _, err := store.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	profile.Name = strings.Repeat("é", 160)
+	if _, err := store.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := store.Duplicate(profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Save(duplicate); err != nil {
+		t.Fatal(err)
+	}
+	profile.Name = strings.Repeat("x", 161)
+	if _, err := store.Save(profile); err == nil {
+		t.Fatal("over-limit name accepted")
+	}
+	profile.Name = "   "
+	if _, err := store.Save(profile); err == nil {
+		t.Fatal("blank name accepted")
+	}
+}
+
+func TestFailedProfileSavePreservesMemory(t *testing.T) {
+	store, err := NewProfileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := ScanProfile{SchemaVersion: 1, ID: NewID(), Name: "Before", Settings: defaultSettings()}
+	if _, err := store.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	badDirectory := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badDirectory, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store.dir = badDirectory
+	profile.Name = "After"
+	if _, err := store.Save(profile); err == nil {
+		t.Fatal("save should fail")
+	}
+	saved, _ := store.Get(profile.ID)
+	if saved.Name != "Before" {
+		t.Fatal("failed save changed in-memory profile")
+	}
+	count := len(store.All())
+	if _, err := store.Duplicate(profile.ID); err == nil {
+		t.Fatal("duplicate should fail")
+	}
+	if len(store.All()) != count {
+		t.Fatal("failed duplicate created phantom profile")
+	}
+	if err := store.Delete(profile.ID); err == nil {
+		t.Fatal("delete should fail")
+	}
+	if _, exists := store.Get(profile.ID); !exists {
+		t.Fatal("failed delete hid profile")
+	}
+}
+
+func TestProfilePathsCannotEscapeStore(t *testing.T) {
+	store, err := NewProfileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../escape", "/tmp/escape", `..\escape`, ".", "..", "bad\x00id"} {
+		profile := ScanProfile{SchemaVersion: 1, ID: id, Name: "Test", Settings: defaultSettings()}
+		if _, err := store.Save(profile); err == nil {
+			t.Fatalf("unsafe save ID accepted: %q", id)
+		}
+		data, _ := json.Marshal(profile)
+		if _, err := store.Import(data); err == nil {
+			t.Fatalf("unsafe import ID accepted: %q", id)
+		}
+	}
+}
+
 func TestProfileValidationRejectsBadRange(t *testing.T) {
 	profile := ScanProfile{SchemaVersion: 1, ID: NewID(), Name: "Bad", Ranges: []ScanRange{{ID: NewID(), Name: "Backwards", StartHz: 200, EndHz: 100, StepHz: 1, DwellMilliseconds: 100}}}
 	if validateProfile(profile) == nil {
