@@ -1168,7 +1168,7 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 					label = call.Talkgroup.AlphaTag
 				}
 				protocol := "P25"
-				if strings.Contains(strings.ToLower(call.Grant.Protocol), "phase2") {
+				if strings.Contains(strings.ReplaceAll(strings.ToLower(call.Grant.Protocol), " ", ""), "phase2") {
 					protocol = "P25 Phase 2"
 				}
 				duration := call.LastHeardAt.Sub(call.StartedAt).Seconds()
@@ -1181,12 +1181,15 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 					source := call.Grant.SourceID
 					sourceRadioID = &source
 				}
+				r.op25.mu.Lock()
+				decoderEngine := r.op25.engine
+				r.op25.mu.Unlock()
 				event := TransmissionEvent{ID: NewID(), StartedAt: call.StartedAt, DurationSeconds: duration,
 					FrequencyHz: float64(call.Grant.FrequencyHz), BandwidthHz: 12_500, SignalDBFS: -30, NoiseDBFS: -80,
 					Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99,
 					SystemName: &systemName, TalkgroupID: &talkgroupID, SourceRadioID: sourceRadioID, Encrypted: call.Grant.Encrypted,
-					Analysis: &SignalIntelligence{Engine: "SDRTrunk frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
-						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: "SDRTrunk confirmed a framed " + protocol + " call."}}
+					Analysis: &SignalIntelligence{Engine: decoderEngine + " frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
+						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: decoderEngine + " reported a " + protocol + " voice call."}}
 				_ = r.Events.Append(event)
 				if !call.Grant.Encrypted {
 					go r.attachP25Recording(stop, profile, call, event.ID)
@@ -1288,6 +1291,8 @@ func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupSta
 	byID := make(map[uint32]int)
 	for index := range r.mixer {
 		if r.mixer[index].TalkgroupID != nil {
+			r.mixer[index].Active = false
+			r.mixer[index].Level = 0
 			byID[*r.mixer[index].TalkgroupID] = index
 		}
 	}
