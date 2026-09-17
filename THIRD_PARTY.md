@@ -40,6 +40,14 @@ encryption and marks or excludes encrypted calls.
 | [DSD-FME](https://github.com/lwvmobile/dsd-fme) by lwvmobile and contributors | Conventional DMR/P25/NXDN/D-STAR/YSF/M17 frame metadata and unencrypted voice through a separate executable | GPL-3.0 | Installed by the macOS decoder-suite action; not copied into the repository |
 
 Optional independent decoders detected by GP-SDR include DSD-FME, rtl_433,
+Pi installation provenance: [FlightAware dump1090](https://github.com/flightaware/dump1090)
+commit `0339a57b89cd6e61856cbb13ae342c31ae7be5ac` is installed as a separate
+executable, not linked into GP-SDR. Retain its upstream COPYING/LICENSE and
+source for any future redistribution. [mbelib](https://github.com/lwvmobile/mbelib)
+source was downloaded but not compiled; its README patent notice must be reviewed
+before use. DSD-FME's checked-out COPYRIGHT describes mixed ISC/GPL-2.0 portions;
+the shorthand license table above is not a complete component-license audit.
+
 dump1090, multimon-ng, acarsdec, and AIS-catcher. Each remains under its
 upstream license and must be installed separately unless a package explicitly
 states otherwise.
