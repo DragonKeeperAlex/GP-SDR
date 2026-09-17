@@ -9,9 +9,15 @@ Decoder installation follow-up: FlightAware dump1090 commit
 `/usr/local/bin/dump1090`; help command runs. Existing rtl_433, multimon-ng,
 acarsdec, AIS-catcher and OP25 executables remain installed. No ADS-B physical
 acceptance claimed. DSD-FME source `fa4a33258209d2b02c1b9331340869f189582740`
-still lacks mbelib. Downloaded mbelib `34adf9f054bc5650ace162a4917dcbc2cfa6102e`
-README advises patent/licensing review before compilation; not compiled pending
-user acknowledgement. The RF lab plan is in `RF_LAB_PLAN.md`.
+and mbelib `34adf9f054bc5650ace162a4917dcbc2cfa6102e` were compiled and
+installed after the user's explicit upstream-notice acknowledgement. DSD-FME
+is at `/usr/local/bin/dsd-fme`; its help command runs, and `ldd` resolves
+`libmbe.so.1` without missing libraries. GP-SDR's device refresh now reports
+DSD-FME ready. No service restart, RF transmission or audio playback was used.
+This is installation acceptance only: real DMR/conventional P25 decoding remains
+open under DEC-01. Upstream compilation emitted an array-bounds warning in
+`crypt-rc4.c` (an encrypted-mode path); this build is not warning-free or audited
+for those paths. The RF lab plan is in `RF_LAB_PLAN.md`.
 
 The current Pi uses `/mnt/gp-sdr-data/GP-SDR` on an exFAT data drive. Without a mount dependency, the service could start against the underlying internal-card directory. The site-specific `Scripts/pi/gp-sdr-storage.conf` drop-in requires the mount and checks the data directory is writable before launch. It preserves the base service and its private access settings.
 
