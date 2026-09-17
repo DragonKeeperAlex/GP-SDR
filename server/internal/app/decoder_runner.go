@@ -403,6 +403,9 @@ func parseTextDecoderOutput(decoderID, output string) []DecoderMessage {
 }
 
 func decoderLineIsEvidence(decoderID, line string) bool {
+	if strings.TrimSpace(line) == "" {
+		return false
+	}
 	if canonicalDecoderID(decoderID) != "dsd-fme" {
 		return true
 	}
@@ -419,7 +422,7 @@ func decoderLineIsEvidence(decoderID, line string) bool {
 func validDecoderMessages(messages []DecoderMessage) []DecoderMessage {
 	valid := make([]DecoderMessage, 0, len(messages))
 	for _, message := range messages {
-		if decoderLineIsEvidence(message.DecoderID, firstNonEmpty(message.RawText, message.Summary)) {
+		if strings.TrimSpace(message.Protocol) != "" && decoderLineIsEvidence(message.DecoderID, firstNonEmpty(message.RawText, message.Summary)) {
 			valid = append(valid, message)
 		}
 	}

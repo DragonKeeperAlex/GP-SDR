@@ -98,6 +98,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-16 decoder evidence follow-up MAP-01/02: reject empty decoder text and messages with blank protocol before live/deferred verification. Regression exercises empty ADS-B/rtl_433/DSD/paging evidence while retaining a nonempty frame. This is false-positive filtering, not physical protocol acceptance.
+
 - 2026-09-16 post-rc34 work: RF-01 OP25 two-byte DRAIN/DROP control packets are no longer published as single-sample PCM. Test sends drain/drop/malformed packets before valid PCM and requires only the real audio frame. Full DROP queue semantics and per-talkgroup routing remain OPEN. MAP-01/AI-06 authoritative identification source/reason now survive subsequent unverified model/band guesses instead of allowing new provenance to inherit an old verification badge; regression added. No findings or media deleted.
 
 - 2026-09-16 next-release start: Band Monitor automatic receiver/control updates now require its own active profile, including a second ownership check after debounce; Stop is disabled for unrelated sessions. Non-HackRF requests no longer send RF amp/LNA/VGA values. Receiver rate controls enforce reported minimum as well as maximum, and missing limits no longer disable all explicit rates. Regression script `Scripts/test_band_controls.cjs` covers ownership and control serialization; full physical GUI acceptance remains OPEN.
