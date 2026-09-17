@@ -79,6 +79,7 @@ Platform priority confirmed September 16, 2026: Raspberry Pi is the primary deve
 - [ ] AI-04 Complete confirmed-sample dataset workflow: label correction, provenance, review, evaluation splits, actual training pipeline.
 - [ ] AI-05 Complete scalable Explorer aggregation, checked/unobserved occupancy, hourly/day/week patterns, location/time playback, shared filters, evidence drill-down/bookmarks/views.
 - [ ] AI-06 Regression-test RadioReference/offline import and Sheets: geographic verification, verified-only uploads, duplicates, source evidence and failure handling.
+- [ ] AI-07 Tiered local→remote deep analysis: run basic DSP/decoders and lightweight model analysis on-device; optionally queue promising captures for a separately configured larger-model Ollama server when available. Persist queue across restarts/outages, allow configurable eligibility and manual review, deduplicate submissions, bound concurrency/storage and show progress/retry/cancel controls. Retain queued IQ until deep analysis succeeds or explicit discard; preserve both first-pass and deep results with model/server provenance. Current Ollama identification consumes derived metadata, not raw IQ: any IQ/audio upload or RF-model preprocessing must be explicit and capability-validated, with opt-in transfer/location controls. Accept with unavailable→available server, interruption/retry, restart and retention tests. Deferred until existing core reliability work is accepted.
 
 ## Additional decoders, transmit, video, calibration
 
@@ -112,6 +113,8 @@ Next release ordering requested September 16: start with tuner, Band Monitor and
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-09-17 AI-07: user requested local lightweight first-pass analysis plus queued notable samples for a larger remote Ollama server. Requirements saved only; no implementation, server configuration, transfers or running-session changes.
 
 - 2026-09-17 MAP-05/09/AI-02 analysis failure handling: enabled local-model errors now fail the capture before retention cleanup instead of being ignored; disabled AI remains optional. Corrupt saved WAV now returns an explicit read failure. Regression verifies HTTP 503 preserves IQ and corrupt audio fails. Local full race suite/vet passed. Deployment and Pi acceptance pending; transcription/decoder error propagation and group-level model failures remain open.
 

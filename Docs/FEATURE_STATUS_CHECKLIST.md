@@ -96,6 +96,7 @@ Fixed in this work tranche (bounded software scope only):
 
 ## Missing implementations
 
+- [ ] AI-07 Local-first / remote deep-analysis queue: configurable promising-sample selection, second Ollama endpoint/model, availability-aware persistent retry queue, protected IQ retention, bounded resources, opt-in transfers and separate first-pass/deep provenance. Current metadata-only LLM input is not direct IQ decoding. Deferred behind existing reliability work; requirements recorded, not implemented.
 - [ ] RF-03 Headless live SDRTrunk PCM bridge.
 - [ ] RF-10 Validated direct-IIO Pluto RX1/RX2 and TX1/TX2 support with shared constraints.
 - [ ] UI-08 DCS decoding/confidence/age with vectors and real radios.
