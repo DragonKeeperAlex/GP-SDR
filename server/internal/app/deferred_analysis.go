@@ -429,9 +429,11 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 	}
 	if event.AudioPath != nil {
 		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "reading audio")
-		if decoded, rate, err := readPCM16WAV(*event.AudioPath); err == nil {
-			audio, audioRate = decoded, rate
+		decoded, rate, err := readPCM16WAV(*event.AudioPath)
+		if err != nil {
+			return fmt.Errorf("read saved audio: %w", err)
 		}
+		audio, audioRate = decoded, rate
 	}
 	spec := CaptureSpec{CenterFrequencyHz: int64(event.FrequencyHz), SampleRateHz: 250_000}
 	if event.IQPath != nil {
@@ -462,9 +464,16 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 		}
 	}
 	if ctx.Err() == nil && r.localAI != nil {
-		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "local model")
-		if current, ok := r.Events.Get(event.ID); ok {
-			if analysis, err := r.localAI.Analyze(ctx, current); err == nil {
+		r.localAI.mu.RLock()
+		enabled := r.localAI.config.Enabled
+		r.localAI.mu.RUnlock()
+		if enabled {
+			r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "local model")
+			if current, ok := r.Events.Get(event.ID); ok {
+				analysis, err := r.localAI.Analyze(ctx, current)
+				if err != nil {
+					return fmt.Errorf("local model analysis: %w", err)
+				}
 				_ = r.Events.UpdateAnalysis(event.ID, analysis)
 				if r.mapper != nil {
 					r.mapper.SetSignalIntelligence(event.FrequencyHz, analysis)

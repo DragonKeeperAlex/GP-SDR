@@ -113,6 +113,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-17 MAP-05/09/AI-02 analysis failure handling: enabled local-model errors now fail the capture before retention cleanup instead of being ignored; disabled AI remains optional. Corrupt saved WAV now returns an explicit read failure. Regression verifies HTTP 503 preserves IQ and corrupt audio fails. Local full race suite/vet passed. Deployment and Pi acceptance pending; transcription/decoder error propagation and group-level model failures remain open.
+
 - 2026-09-17 MAP-05/09/UI-02 persistence continuation: Mapper Save/Create/Delete now persist proposed job state before committing in-memory changes, returning disk errors rather than phantom success. Background jobs/results snapshot failures populate Mapper error status. Local race suite/vet passed; deterministic write-failure regressions passed on actual Pi exFAT with disposable fixtures. Full offline-media recovery and GUI acceptance remain open; no user data removed.
 
 - 2026-09-17 UI-03/PLAT-04/RF-02/11: Pi test7 installed. Native HackRF/RTL channel metadata corrected; Pluto remains driver-reported 1/1, not assumed dual-channel. Three fresh PiPower5 physical readings and watts conversion verified; signed battery current preserved, isolated Python import tested from shadowing directory. HAT failure/recovery UI regression passes, as do unit/race/vet and audio/Band Monitor regressions. c5cb still corrupt; a447 centered IQ; RTL 20-second transfer lost 28 bytes but stayed connected. Pluto restored/locked 774.45625 MHz. No TX/audio playback. Full battery-source switching, long RTL soak and GUI/listening acceptance remain OPEN. See Pi status/checklist for exact evidence.
