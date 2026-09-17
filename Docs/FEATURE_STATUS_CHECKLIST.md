@@ -94,6 +94,8 @@ Fixed in this work tranche (bounded software scope only):
 
 ## This session's evidence and limits
 
+- Post-deploy `/api/p25/status`: OP25 `reception=locked`, control channel `774456250`, source decoded control messages. Saved Profiles directory and mapper-records.json compare unchanged against the rollback snapshot; service restart counter remains zero. This confirms control reacquisition, not fresh voice intelligibility.
+
 - Pi deployment: `1.5.0-rc34-pi-test4`, SHA-256 `9ad24e45eefc264664cf8319087ebe7133d8bc0a346c05bc33d538e7ceba0c0e`. Rollback binary plus Data/Profiles snapshot: `/home/sdr/gpsdr-before-pi-test4-H6JZiN`. Existing service/configuration retained. Service active; DSD-FME ready; benchmark library endpoint and served UI present. Restored existing `pluto-p25-hardware-test` profile on its prior Pluto. No TX started. An empty production fixture library is expected: isolated test fixtures were not copied into user data or promoted to training samples.
 
 - Local Go unit suite, race suite and vet passed after fixture changes.
