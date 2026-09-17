@@ -2,6 +2,28 @@
 
 Primary platform: Raspberry Pi/Linux ARM64. Mobile ports paused until main-app acceptance. Authoritative scope: [master backlog](MASTER_REMEDIATION_BACKLOG.md).
 
+## September 17 hardware and HAT batch
+
+Installed `1.5.0-rc34-pi-test7`; rollback binary/Data/Profiles snapshot at
+`/home/sdr/gpsdr-before-pi-test7-2tAJvK`. Existing service settings retained.
+Unit/race/vet and audio/Band Monitor/HAT JavaScript regressions pass.
+
+PiPower5 reads through `/opt/pipower5/venv/bin/python3` and SunFounder's SDK.
+Three fresh installed-API timestamps showed ~15 V input, 5.29–5.31 V output,
+97–98% battery, External source. Watts match volts × amps; battery current
+remains signed. Isolated Python import prevents shadowing. HAT errors now stay
+visible and recover. Charging, GPIO, fan and shutdown settings were not changed.
+Supervised battery-source transition testing remains open.
+
+All four radios enumerate. Native HackRF channel metadata now reports 1/1
+half-duplex, RTL 1/0, Pluto driver reports 1/1 full-duplex. c5cb still has
+pinned-negative corrupt IQ; a447 IQ is centered. RTL stayed connected during
+20 seconds at 2.4 MS/s, with 28 lost bytes; historic long-run disappearance is
+not resolved. Exact metrics/evidence are in the feature checklist. Pluto P25
+restored and locked 774.45625 MHz. No TX or audio playback was performed.
+Pi ~50°C, `get_throttled=0x0`; unrelated failed InfluxDB service left untouched.
+No complete GUI/audio/decoder acceptance claim.
+
 ## Storage startup guard
 
 Decoder installation follow-up: FlightAware dump1090 commit

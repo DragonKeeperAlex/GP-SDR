@@ -1,0 +1,12 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const script=fs.readFileSync(require('node:path').join(__dirname,'../server/web/app.js'),'utf8');
+const begin=script.indexOf('function piPowerHatHTML('),end=script.indexOf('function setCapabilityVisibility(',begin);
+let card={dataset:{},remove(){this.removed=true;}},rerenders=0;
+const state={view:'hardware',status:{powerHat:{available:false,error:'I2C <failure>'}}};
+const sandbox={state,$:()=>card,renderHardware:()=>rerenders++,timeAgo:()=> '1s',escapeHTML:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')};
+vm.createContext(sandbox);vm.runInContext(script.slice(begin,end),sandbox);
+sandbox.renderPiPowerHatStatus();assert.match(card.outerHTML,/I2C &lt;failure&gt;/);assert.match(card.outerHTML,/retrying automatically/);assert.ok(!card.removed);
+card.dataset.powerError='true';state.status.powerHat={available:true,batteryPercentage:98,powerSource:'External',inputVoltage:15,inputCurrent:.3,inputPower:4.5,outputVoltage:5.2,outputCurrent:1,outputPower:5.2,batteryVoltage:8.2,batteryCurrent:0};
+sandbox.renderPiPowerHatStatus();assert.match(card.outerHTML,/98%/);assert.match(card.outerHTML,/15.00 V/);assert.ok(!card.outerHTML.includes('data-power-error'));
+state.status.powerHat={available:false};sandbox.renderPiPowerHatStatus();assert.ok(card.removed);
+console.log('Pi power HAT error visibility, escaping and recovery: PASS');

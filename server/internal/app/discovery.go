@@ -157,7 +157,7 @@ func hackRFDevice(probe hackRFProbe, index int, tool string, limit float64) SDRD
 	if serial != "" {
 		id, serialPointer = "hackrf-"+serial, &s
 	}
-	device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
+	device := SDRDevice{ID: id, Name: fmt.Sprintf("HackRF One %d", index+1), Kind: "HackRF", Serial: serialPointer, Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, ReceiveChannels: 1, TransmitChannels: 1, FullDuplex: false, HelperArchitecture: ptr(runtime.GOARCH)}
 	// Some third-party HackRF/PortaPack firmware reports an advisory self-test
 	// result even while sustained receive streaming is healthy. Do not turn that
 	// firmware diagnostic into a permanent receiver warning. Keep it internally
@@ -218,7 +218,7 @@ func discoverRTLSDR() []SDRDevice {
 		if serial != "" {
 			serialPointer = &serial
 		}
-		items = append(items, SDRDevice{ID: fmt.Sprintf("rtlsdr-%d", i), Name: fmt.Sprintf("RTL-SDR %d", i+1), Kind: "RTL-SDR", Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)})
+		items = append(items, SDRDevice{ID: fmt.Sprintf("rtlsdr-%d", i), Name: fmt.Sprintf("RTL-SDR %d", i+1), Kind: "RTL-SDR", Driver: tool, Connected: true, Available: true, SampleRateLimit: &limit, ReceiveChannels: 1, HelperArchitecture: ptr(runtime.GOARCH)})
 		items[len(items)-1].Serial = serialPointer
 	}
 	return items

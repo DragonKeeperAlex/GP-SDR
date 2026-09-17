@@ -25,6 +25,8 @@ encryption and marks or excludes encrypted calls.
 
 ## Separate runtime integrations
 
+Pi power telemetry uses the separately installed [SunFounder PiPower5 SDK](https://github.com/sunfounder/pipower5), GPL-3.0. Pi acceptance used revision `ab90a9499e3be7acc3a2e4a2734082be3ba9013b`. GP-SDR reads the SDK through an isolated Python subprocess, does not bundle it, and does not write charging/shutdown settings. Upstream copyright and license remain applicable.
+
 | Project or service | How GP-SDR uses it | Upstream license or terms | Bundled |
 |---|---|---|---|
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | Device discovery and streaming through the original, dynamically loaded `gpsdr-soapy` bridge | Boost Software License 1.0 | The GP-SDR bridge is bundled on macOS; upstream SoapySDR/modules are not |

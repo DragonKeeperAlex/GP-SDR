@@ -62,7 +62,9 @@ source="Battery" if int(n("power_source")) == 1 else "External"
 print(json.dumps({"available":True,"inputVoltage":n("input_voltage")/1000,"inputCurrent":n("input_current")/1000,"inputPower":n("input_voltage")*n("input_current")/1000000,"outputVoltage":n("output_voltage")/1000,"outputCurrent":n("output_current")/1000,"outputPower":n("output_voltage")*n("output_current")/1000000,"batteryVoltage":n("battery_voltage")/1000,"batteryCurrent":n("battery_current")/1000,"batteryPower":n("battery_voltage")*n("battery_current")/1000000,"batteryPercentage":n("battery_percentage"),"powerSource":source,"inputPluggedIn":bool(d.get("is_input_plugged_in",False)),"charging":bool(d.get("is_charging",False))}))`
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, python, "-c", script).Output()
+	// Isolate the installed SDK from a same-named directory or PYTHONPATH on
+	// the host. This still uses the selected virtual environment's packages.
+	data, err := exec.CommandContext(ctx, python, "-I", "-c", script).Output()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return PiPowerHatStatus{Error: "PiPower5 telemetry timed out"}
 	}

@@ -66,6 +66,10 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 Fixed in this work tranche (bounded software scope only):
 
+- [x] Native channel metadata repaired: HackRF 1 RX/1 TX half-duplex; RTL 1 RX/0 TX. Pluto remains reported 1/1, not fictional dual-channel support.
+- [x] HAT read errors no longer silently remove the Hardware card; escaped error feedback and automatic recovery tested in JS.
+- [x] PiPower5 isolated subprocess import prevents CWD/PYTHONPATH shadowing; installed SDK read verified from conflicting home directory.
+
 - [x] September 17 profile-name error: bundled P25 names exceeded the old 80-byte limit. Editor/backend now allow 160 Unicode characters; duplicate names fit that bound. Regression includes long EBRCS names, multibyte names, duplicate/resave and blank/over-limit rejection.
 - [x] Profile disk failures: Save/Import/Duplicate commit in-memory state only after persistence; failed deletion keeps the profile visible. No phantom success or duplicate after failed write.
 - [x] September 17 VPN restored; test5 deployed and a 127-character bundled P25 profile saved/duplicated/resaved through the installed API. Two expendable copies deleted afterward; original profiles and Mapper records compare unchanged against backup. Pluto P25 reacquired 774.45625 MHz lock.
@@ -99,6 +103,9 @@ Fixed in this work tranche (bounded software scope only):
 - [ ] AI-04 Lab review/export: corrected labels, real/synthetic separation, capture provenance, independent decoder evidence and dataset split controls.
 
 ## This session's evidence and limits
+
+- September 17 batch installed as `1.5.0-rc34-pi-test7`, SHA-256 `9adb0c9ea31eaf8211b0d04f188d4e30a4b5df45c4268c2506159a97da1cbf00`; rollback snapshot `/home/sdr/gpsdr-before-pi-test7-2tAJvK`. Three fresh physical HAT samples (~15 V external, 5.29–5.31 V output, 97–98% battery), power arithmetic and radio channel metadata verified through installed API. Pluto regained 774.45625 MHz control lock. Battery-source switching and exhaustive GUI acceptance remain open.
+- Real RX hardware: c5cb 200,000 complex samples at 10 MS/s/98.1 MHz, mean I/Q -125.85/-124.27, 100% negative, 8 values; a447 same test mean 0.17/1.34, 175 values. Evidence `/tmp/gpsdr-{c5cb,a447}-sept17.cs8` and logs on Pi. RTL log `/tmp/gpsdr-rtl-sept17.log`: 20 seconds at 2.4 MS/s, 28 bytes lost, no disconnection; not long-run acceptance.
 
 - September 17 final deployment: `1.5.0-rc34-pi-test6`, binary SHA-256 `f377bdaec0f4ba8e11a77ef3efd2af5531dd3bd9a19c1d54046a0d611fa4e6df`. Rollback binary plus Data/Profiles snapshot `/home/sdr/gpsdr-before-pi-test6-QGzqfx`. Local unit/race/vet and JavaScript syntax pass. Initial health script omitted the token and rolled back on expected HTTP 401; corrected authenticated health check then passed on reinstall. No user data restored/replaced and no RF transmitted.
 

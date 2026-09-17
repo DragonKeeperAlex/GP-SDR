@@ -20,7 +20,7 @@ func rtlDevicesFromUSBInventory(output, driver string) []SDRDevice {
 			continue
 		}
 		index := len(devices)
-		device := SDRDevice{ID: fmt.Sprintf("rtlsdr-%d", index), Name: fmt.Sprintf("RTL-SDR %d", index+1), Kind: "RTL-SDR", Driver: driver, Connected: true, Available: true, SampleRateLimit: &limit, HelperArchitecture: ptr(runtime.GOARCH)}
+		device := SDRDevice{ID: fmt.Sprintf("rtlsdr-%d", index), Name: fmt.Sprintf("RTL-SDR %d", index+1), Kind: "RTL-SDR", Driver: driver, Connected: true, Available: true, SampleRateLimit: &limit, ReceiveChannels: 1, HelperArchitecture: ptr(runtime.GOARCH)}
 		if fields[1] != "" {
 			device.Serial = ptr(fields[1])
 		}

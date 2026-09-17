@@ -104,6 +104,9 @@ Mixer: RFFC5072, ID: 4544, Rev: 2, Locks: 111 (PASS)
 		t.Fatalf("self-test result was not kept with the correct radio: %#v", probes)
 	}
 	device := hackRFDevice(probes[1], 1, "hackrf_info", 20e6)
+	if device.ReceiveChannels != 1 || device.TransmitChannels != 1 || device.FullDuplex {
+		t.Fatalf("HackRF native capabilities are incorrect: %+v", device)
+	}
 	if !device.Connected || !device.Available || device.HealthWarning != "" || !device.FirmwareSelfTestWarning {
 		t.Fatalf("firmware diagnostic should be hidden from receive status but retained internally: %+v", device)
 	}

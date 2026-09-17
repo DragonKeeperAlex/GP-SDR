@@ -4,6 +4,12 @@ Approved by the user September 16, 2026. Saved from the complete outstanding-wor
 
 ## Mandatory working rule
 
+September 17 instruction: prioritize hardware compatibility and the existing Pi
+power-HAT integration, then acceptance of all currently implemented functionality.
+Do not implement additional missing features (even those already backlogged)
+until existing functionality is adequately repaired and tested. Retain missing
+items below, but defer feature expansion.
+
 Also read [categorized feature status](FEATURE_STATUS_CHECKLIST.md) at the start
 of every work session until the user says otherwise. Update both documents when
 evidence changes; check off only the specifically accepted scope.
@@ -101,6 +107,8 @@ Next release ordering requested September 16: start with tuner, Band Monitor and
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-09-17 UI-03/PLAT-04/RF-02/11: Pi test7 installed. Native HackRF/RTL channel metadata corrected; Pluto remains driver-reported 1/1, not assumed dual-channel. Three fresh PiPower5 physical readings and watts conversion verified; signed battery current preserved, isolated Python import tested from shadowing directory. HAT failure/recovery UI regression passes, as do unit/race/vet and audio/Band Monitor regressions. c5cb still corrupt; a447 centered IQ; RTL 20-second transfer lost 28 bytes but stayed connected. Pluto restored/locked 774.45625 MHz. No TX/audio playback. Full battery-source switching, long RTL soak and GUI/listening acceptance remain OPEN. See Pi status/checklist for exact evidence.
 
 - 2026-09-17 batch UI-02/DIST-01/03/TX-01: profile Unicode name/copy bounds and failed Save/Import/Duplicate/Delete state fixed; safe filename IDs block store escape; total WAV multipart body bounded. Unit/race/vet and JS syntax pass. VPN/node1 access restored, Pi test6 deployed with authenticated health check and rollback snapshot. Installed test5 long-profile save/duplicate/resave and artifact cleanup succeeded; test6 unsafe-ID API rejection succeeded. Broader GUI/physical acceptance remains open.
 
