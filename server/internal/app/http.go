@@ -559,6 +559,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Plan())
 	case r.Method == "GET" && path == "/api/transmit/status":
 		writeJSON(w, 200, s.runtime.TransmitStatus())
+	case r.Method == "GET" && path == "/api/transmit/fixtures":
+		library, err := s.runtime.FixtureLibrary()
+		writeResult(w, library, err, 200)
 	case r.Method == "POST" && path == "/api/transmit/upload":
 		if !requestIsLocal(r) {
 			writeError(w, http.StatusForbidden, "Transmit audio can only be uploaded from the GP-SDR computer.")

@@ -66,6 +66,9 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 Fixed in this work tranche (bounded software scope only):
 
+- [x] Concurrent/repeated transmit preparation is rejected before allocating IQ or saving files; active-job rejection also moved before generation. This does not establish cross-workflow atomic receiver reservations.
+- [x] Saved benchmark library added to Transmit: bounded metadata listing, invalid-manifest counts and synthetic eligibility/paths/checksums. Listing never starts RF, loads IQ, promotes verification or trains a model. Label review/export/replay remain open.
+
 - [x] TX fixture memory amplification: removed two full float64 ideal-sample arrays; 60 seconds at 2 MS/s now requires ~240 MB output rather than ~2.16 GB waveform buffers. Waveform math preserved.
 - [x] TX same-time fixture file collision: unique output filenames prevent overwriting an earlier benchmark.
 - [x] TX nonfinite duration/fixture parameters: reject NaN/Infinity before generation.

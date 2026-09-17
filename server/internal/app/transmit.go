@@ -44,9 +44,10 @@ type TransmitStatus struct {
 }
 
 type transmitState struct {
-	mu     sync.Mutex
-	status TransmitStatus
-	cancel context.CancelFunc
+	generation sync.Mutex
+	mu         sync.Mutex
+	status     TransmitStatus
+	cancel     context.CancelFunc
 }
 
 func newTransmitState() *transmitState {
@@ -89,6 +90,16 @@ func (r *Runtime) SaveTransmitAudio(name string, data []byte) (string, error) {
 func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if r.transmit == nil {
 		r.transmit = newTransmitState()
+	}
+	if !r.transmit.generation.TryLock() {
+		return r.TransmitStatus(), errors.New("a transmit waveform is already being prepared")
+	}
+	defer r.transmit.generation.Unlock()
+	r.transmit.mu.Lock()
+	alreadyRunning := r.transmit.cancel != nil
+	r.transmit.mu.Unlock()
+	if alreadyRunning {
+		return r.TransmitStatus(), errors.New("a transmit job is already running")
 	}
 	request.Mode = strings.ToLower(strings.TrimSpace(request.Mode))
 	if request.Mode == "fm" {

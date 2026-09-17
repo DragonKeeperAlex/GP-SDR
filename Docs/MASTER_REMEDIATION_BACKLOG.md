@@ -102,6 +102,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-16 TX-01/AI-04 continuation: user deferred physical TX testing. Added Transmit benchmark manifest library/API and rejected parallel/busy waveform generation before allocation/file writes. Library and busy-path regression tests added. No production receiver interrupted and no RF emitted. Physical RF acceptance, paired orchestration and training remain open.
+
 - 2026-09-16 TX-01/AI-04 lab foundation: fixture generation now avoids full ideal-I/Q float arrays, rejects nonfinite parameters/duration, avoids output collisions and stores schema/generator/seed/synthetic eligibility. Local unit/race/vet and audio/Band Monitor JS regressions pass. Isolated Pi ARM64 lab-test3 API generated all ten fixture families without RF, stored evidence on the mounted data disk, and exited without changing production. Paired TX/RX orchestration, independent decode/spectral comparison, dataset training and physical bench acceptance remain OPEN. See `FEATURE_STATUS_CHECKLIST.md` for mandatory categorized inventory.
 
 - 2026-09-16 decoder evidence follow-up MAP-01/02: reject empty decoder text and messages with blank protocol before live/deferred verification. Regression exercises empty ADS-B/rtl_433/DSD/paging evidence while retaining a nonempty frame. This is false-positive filtering, not physical protocol acceptance.
