@@ -8,8 +8,8 @@ requires a separately validated driver path.
 ## Implementation sequence
 
 1. Install missing decoder executables and verify app discovery. Installation
-   alone is not successful decoding. dump1090 is now installed; DSD-FME needs
-   mbelib and user review of its upstream patent notice before compilation.
+   alone is not successful decoding. dump1090 and DSD-FME/mbelib are now installed
+   after upstream-notice acknowledgement; real protocol acceptance remains open.
 2. Enforce ownership across Mapper, tuner, P25, transmit and diagnostic tools.
    The new TX check prevents taking an actively collecting Mapper receiver.
    This is not yet a universal atomic reservation manager.

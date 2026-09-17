@@ -4,6 +4,10 @@ Approved by the user September 16, 2026. Saved from the complete outstanding-wor
 
 ## Mandatory working rule
 
+Also read [categorized feature status](FEATURE_STATUS_CHECKLIST.md) at the start
+of every work session until the user says otherwise. Update both documents when
+evidence changes; check off only the specifically accepted scope.
+
 **Resolve this backlog before implementing any new features outside it.** Missing features already listed here are in scope; unrelated feature expansion is frozen. Reference this file at the start of each GP-SDR work session and when handing work between tasks. It supersedes older roadmap completion claims and feature-gap reports where they disagree.
 
 Keep stable item IDs. Do not remove an item because it is difficult or blocked. Record evidence, source revision, installed version/host, and remaining limitations before checking it off. A build, menu, running process, RF energy, or valid PCM alone is not end-to-end acceptance. Distinguish software/API tests from physical RF tests and subjective audio/video acceptance. User-dependent items remain open until their requirements are met; never silently waive them.
@@ -97,6 +101,8 @@ Next release ordering requested September 16: start with tuner, Band Monitor and
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-09-16 TX-01/AI-04 lab foundation: fixture generation now avoids full ideal-I/Q float arrays, rejects nonfinite parameters/duration, avoids output collisions and stores schema/generator/seed/synthetic eligibility. Local unit/race/vet and audio/Band Monitor JS regressions pass. Isolated Pi ARM64 lab-test3 API generated all ten fixture families without RF, stored evidence on the mounted data disk, and exited without changing production. Paired TX/RX orchestration, independent decode/spectral comparison, dataset training and physical bench acceptance remain OPEN. See `FEATURE_STATUS_CHECKLIST.md` for mandatory categorized inventory.
 
 - 2026-09-16 decoder evidence follow-up MAP-01/02: reject empty decoder text and messages with blank protocol before live/deferred verification. Regression exercises empty ADS-B/rtl_433/DSD/paging evidence while retaining a nonempty frame. This is false-positive filtering, not physical protocol acceptance.
 

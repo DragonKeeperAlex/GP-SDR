@@ -29,6 +29,10 @@ type SignalFixtureRequest struct {
 }
 
 type SignalFixtureManifest struct {
+	SchemaVersion       int                 `json:"schemaVersion"`
+	GeneratorVersion    string              `json:"generatorVersion"`
+	NoiseSeed           int64               `json:"noiseSeed"`
+	TrainingEligibility string              `json:"trainingEligibility"`
 	ID                  string              `json:"id"`
 	CreatedAt           time.Time           `json:"createdAt"`
 	Kind                string              `json:"kind"`
@@ -68,6 +72,11 @@ type FixtureMeasurement struct {
 }
 
 func normalizeFixtureRequest(request SignalFixtureRequest) (SignalFixtureRequest, error) {
+	for _, value := range []float64{request.SymbolRate, request.ToneHz, request.SNRDB, request.FrequencyOffsetHz, request.DriftHzPerSecond, request.IQGainError, request.IQPhaseErrorDeg, request.DCOffset, request.ClipLevel} {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return request, errors.New("fixture parameters must be finite numbers")
+		}
+	}
 	request.Kind = strings.ToLower(strings.TrimSpace(request.Kind))
 	valid := map[string]bool{"cw": true, "am": true, "nfm": true, "wfm": true, "ook": true, "2fsk": true, "gfsk": true, "gmsk": true, "bpsk": true, "qpsk": true}
 	if !valid[request.Kind] {
@@ -121,32 +130,37 @@ func generateSignalFixture(request SignalFixtureRequest, sampleRate, sampleCount
 	if len(bits) == 0 {
 		bits = []byte{0, 1}
 	}
-	idealI, idealQ := make([]float64, sampleCount), make([]float64, sampleCount)
+	rng := rand.New(rand.NewSource(0x4750534452))
+	noiseSigma := math.Pow(10, -request.SNRDB/20) * .78 / math.Sqrt2
+	phaseError := request.IQPhaseErrorDeg * math.Pi / 180
+	output := make([]byte, sampleCount*2)
+	errorPower, referencePower := 0.0, 0.0
 	phase, symbolPhase := 0.0, 0.0
 	samplesPerSymbol := max(1, int(math.Round(float64(sampleRate)/request.SymbolRate)))
 	for i := 0; i < sampleCount; i++ {
+		idealI, idealQ := 0.0, 0.0
 		t := float64(i) / float64(sampleRate)
 		symbol := i / samplesPerSymbol
 		bit := bits[symbol%len(bits)]
 		switch request.Kind {
 		case "cw":
-			idealI[i], idealQ[i] = .78, 0
+			idealI, idealQ = .78, 0
 		case "am":
 			amplitude := .52 + .25*math.Sin(2*math.Pi*request.ToneHz*t)
-			idealI[i], idealQ[i] = amplitude, 0
+			idealI, idealQ = amplitude, 0
 		case "nfm", "wfm":
 			deviation := 2500.0
 			if request.Kind == "wfm" {
 				deviation = 75_000
 			}
 			phase += 2 * math.Pi * deviation * math.Sin(2*math.Pi*request.ToneHz*t) / float64(sampleRate)
-			idealI[i], idealQ[i] = .78*math.Cos(phase), .78*math.Sin(phase)
+			idealI, idealQ = .78*math.Cos(phase), .78*math.Sin(phase)
 		case "ook":
 			amplitude := .05
 			if bit == 1 {
 				amplitude = .78
 			}
-			idealI[i], idealQ[i] = amplitude, 0
+			idealI, idealQ = amplitude, 0
 		case "2fsk", "gfsk", "gmsk":
 			level := -1.0
 			if bit == 1 {
@@ -158,31 +172,23 @@ func generateSignalFixture(request SignalFixtureRequest, sampleRate, sampleCount
 			}
 			deviation := request.SymbolRate * .5
 			phase += 2 * math.Pi * deviation * level / float64(sampleRate)
-			idealI[i], idealQ[i] = .78*math.Cos(phase), .78*math.Sin(phase)
+			idealI, idealQ = .78*math.Cos(phase), .78*math.Sin(phase)
 		case "bpsk":
 			if bit == 1 {
 				symbolPhase = math.Pi
 			} else {
 				symbolPhase = 0
 			}
-			idealI[i], idealQ[i] = .78*math.Cos(symbolPhase), .78*math.Sin(symbolPhase)
+			idealI, idealQ = .78*math.Cos(symbolPhase), .78*math.Sin(symbolPhase)
 		case "qpsk":
 			second := bits[(symbol*2+1)%len(bits)]
 			first := bits[(symbol*2)%len(bits)]
 			symbolPhase = (float64(first*2+second) * math.Pi / 2) + math.Pi/4
-			idealI[i], idealQ[i] = .78*math.Cos(symbolPhase), .78*math.Sin(symbolPhase)
+			idealI, idealQ = .78*math.Cos(symbolPhase), .78*math.Sin(symbolPhase)
 		}
-	}
-	rng := rand.New(rand.NewSource(0x4750534452))
-	noiseSigma := math.Pow(10, -request.SNRDB/20) * .78 / math.Sqrt2
-	phaseError := request.IQPhaseErrorDeg * math.Pi / 180
-	output := make([]byte, sampleCount*2)
-	errorPower, referencePower := 0.0, 0.0
-	for i := range idealI {
-		t := float64(i) / float64(sampleRate)
 		rotation := 2 * math.Pi * (request.FrequencyOffsetHz*t + .5*request.DriftHzPerSecond*t*t)
-		iValue := idealI[i]*(1+request.IQGainError) + request.DCOffset
-		qValue := idealQ[i]*(1-request.IQGainError) + request.DCOffset
+		iValue := idealI*(1+request.IQGainError) + request.DCOffset
+		qValue := idealQ*(1-request.IQGainError) + request.DCOffset
 		qValue = qValue*math.Cos(phaseError) + iValue*math.Sin(phaseError)
 		rotI := iValue*math.Cos(rotation) - qValue*math.Sin(rotation)
 		rotQ := iValue*math.Sin(rotation) + qValue*math.Cos(rotation)
@@ -191,11 +197,11 @@ func generateSignalFixture(request SignalFixtureRequest, sampleRate, sampleCount
 		rotI = max(-request.ClipLevel, min(request.ClipLevel, rotI))
 		rotQ = max(-request.ClipLevel, min(request.ClipLevel, rotQ))
 		output[2*i], output[2*i+1] = signedIQByte(rotI*127), signedIQByte(rotQ*127)
-		errorPower += (rotI-idealI[i])*(rotI-idealI[i]) + (rotQ-idealQ[i])*(rotQ-idealQ[i])
-		referencePower += idealI[i]*idealI[i] + idealQ[i]*idealQ[i]
+		errorPower += (rotI-idealI)*(rotI-idealI) + (rotQ-idealQ)*(rotQ-idealQ)
+		referencePower += idealI*idealI + idealQ*idealQ
 	}
 	description, bandwidth := fixtureDescription(request.Kind), fixtureBandwidth(request)
-	manifest := SignalFixtureManifest{ID: NewID(), CreatedAt: time.Now(), Kind: strings.ToUpper(request.Kind), Description: description,
+	manifest := SignalFixtureManifest{SchemaVersion: 1, GeneratorVersion: "gpsdr-fixture-v1", NoiseSeed: 0x4750534452, TrainingEligibility: "synthetic-only; independent decoder and receiver validation required", ID: NewID(), CreatedAt: time.Now(), Kind: strings.ToUpper(request.Kind), Description: description,
 		SampleRateHz: sampleRate, SampleCount: sampleCount, DurationSeconds: float64(sampleCount) / float64(sampleRate), SymbolRate: request.SymbolRate,
 		PayloadUTF8: request.Payload, PayloadHex: hex.EncodeToString(payload), ExpectedSymbols: int(math.Ceil(float64(sampleCount) / float64(samplesPerSymbol))),
 		OccupiedBandwidthHz: bandwidth, ConfiguredSNRDB: request.SNRDB, MeasuredEVMPercent: 100 * math.Sqrt(errorPower/maxFloat(referencePower, 1e-12)),
@@ -233,7 +239,8 @@ func saveSignalFixture(dataDirectory string, iq []byte, manifest SignalFixtureMa
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return manifest, err
 	}
-	base := fmt.Sprintf("%s-%s", manifest.CreatedAt.UTC().Format("20060102T150405.000Z"), strings.ToLower(manifest.Kind))
+	// IDs prevent simultaneous same-kind benchmarks from overwriting each other.
+	base := fmt.Sprintf("%s-%s-%s", manifest.CreatedAt.UTC().Format("20060102T150405.000Z"), strings.ToLower(manifest.Kind), NewID())
 	manifest.IQPath = filepath.Join(directory, base+".cs8")
 	digest := sha256.Sum256(iq)
 	manifest.SHA256 = hex.EncodeToString(digest[:])

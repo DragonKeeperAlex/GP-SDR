@@ -2,10 +2,51 @@ package app
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestFixtureRejectsNonfiniteParameters(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if _, err := normalizeFixtureRequest(SignalFixtureRequest{Kind: "nfm", FrequencyOffsetHz: value}); err == nil {
+			t.Fatal("nonfinite fixture accepted")
+		}
+	}
+}
+
+func BenchmarkSignalFixture(b *testing.B) {
+	b.ReportAllocs()
+	b.SetBytes(400000)
+	for i := 0; i < b.N; i++ {
+		if _, _, err := generateSignalFixture(SignalFixtureRequest{Kind: "qpsk", SymbolRate: 4800}, 2000000, 200000); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestFixtureFilesDoNotOverwriteAndCarryProvenance(t *testing.T) {
+	iq, manifest, err := generateSignalFixture(SignalFixtureRequest{Kind: "am"}, 100000, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	first, err := saveSignalFixture(directory, iq, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := saveSignalFixture(directory, iq, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.IQPath == second.IQPath || first.SHA256 != second.SHA256 {
+		t.Fatal("benchmark collision or unstable checksum")
+	}
+	if first.SchemaVersion != 1 || first.GeneratorVersion == "" || first.NoiseSeed == 0 || first.TrainingEligibility == "" {
+		t.Fatal("missing dataset provenance")
+	}
+}
 
 func TestSignalFixtureIsDeterministicAndStoresTruth(t *testing.T) {
 	request := SignalFixtureRequest{Kind: "qpsk", Payload: "GP-SDR", SymbolRate: 4800, SNRDB: 30, FrequencyOffsetHz: 125, IQGainError: .03}

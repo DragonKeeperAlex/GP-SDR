@@ -100,6 +100,9 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	if !isFinitePositive(request.FrequencyHz) || request.FrequencyHz < 1e6 || request.FrequencyHz > 6e9 {
 		return r.TransmitStatus(), errors.New("Enter a frequency from 1 MHz to 6 GHz.")
 	}
+	if math.IsNaN(request.DurationSecond) || math.IsInf(request.DurationSecond, 0) {
+		return r.TransmitStatus(), errors.New("transmit duration must be finite")
+	}
 	if request.DurationSecond <= 0 {
 		request.DurationSecond = 5
 	}
