@@ -1,0 +1,13 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const script = fs.readFileSync(require('node:path').join(__dirname, '../server/web/app.js'), 'utf8');
+const begin = script.indexOf('function bandMonitorIsRunning('), end = script.indexOf('async function startBandMonitor(', begin);
+const fields = {'band-profile':{value:'gmrs'},'band-device':{value:'rtl'},'band-rate':{value:'0'},'band-gain':{value:'30'},'band-lna':{value:'40'},'band-vga':{value:'62'},'band-amp':{checked:true},'band-auto-gain':{checked:true},'band-squelch':{value:'6'},'band-dc':{checked:true}};
+const state = {status:{running:true,activeProfileID:'p25'},devices:[{id:'rtl',kind:'RTL-SDR'},{id:'hackrf',kind:'HackRF'}]};
+const sandbox = {state,$:id=>fields[id.slice(1)],bandProfiles:()=>[{id:'gmrs'}]};
+vm.createContext(sandbox);vm.runInContext(script.slice(begin,end),sandbox);
+assert.equal(sandbox.bandMonitorIsRunning(),false,'unrelated P25 must not auto-restart');
+state.status.activeProfileID='gmrs';assert.equal(sandbox.bandMonitorIsRunning(),true);
+state.status.running=false;assert.equal(sandbox.bandMonitorIsRunning(),false);
+let controls=sandbox.bandReceiverSettings();assert.equal(controls.ampEnabled,false);assert.equal(controls.lnaGainDB,0);assert.equal(controls.vgaGainDB,0);
+fields['band-device'].value='hackrf';controls=sandbox.bandReceiverSettings();assert.equal(controls.ampEnabled,true);assert.equal(controls.lnaGainDB,40);
+console.log('Band ownership and receiver-specific control serialization: PASS');

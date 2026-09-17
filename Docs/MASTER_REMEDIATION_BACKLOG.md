@@ -92,9 +92,13 @@ Platform priority confirmed September 16, 2026: Raspberry Pi is the primary deve
 
 ## Execution order and dependencies
 
+Next release ordering requested September 16: start with tuner, Band Monitor and interface reliability (UI-01 through UI-07), then hardware support, decoders/AI, clear audio/P25, and Mapper completion. Prioritize broken major features over small enhancements. Pi remains the active deployment target; mobile ports remain paused. All acceptance gates below still apply.
+
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-09-16 next-release start: Band Monitor automatic receiver/control updates now require its own active profile, including a second ownership check after debounce; Stop is disabled for unrelated sessions. Non-HackRF requests no longer send RF amp/LNA/VGA values. Receiver rate controls enforce reported minimum as well as maximum, and missing limits no longer disable all explicit rates. Regression script `Scripts/test_band_controls.cjs` covers ownership and control serialization; full physical GUI acceptance remains OPEN.
 
 - 2026-09-16 transition follow-up, RF-01/UI-05: real RTL WFM→Pluto P25 test exposed stopped tuner audio bleed due to persistent-reader close semantics. Explicit cancellation fixes installed on Pi; fresh 12-second capture contains only OP25 8 kHz stream (211 frames, 3.803 seconds intermittent voice), control lock 774.45625 MHz, no stopped WFM audio. Unit/race/vet pass; broader all-mode listening acceptance remains OPEN. Evidence `/tmp/gpsdr-p25-clean-transition.bin`; implementation revision `b1ed5b8`.
 
