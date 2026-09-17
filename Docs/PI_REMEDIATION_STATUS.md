@@ -57,6 +57,8 @@ This does not restart GP-SDR. Test a subsequent normal restart before acceptance
 
 ## September 17 persistence and combined-load follow-up
 
+Continuation: installed `1.5.0-rc34-pi-test10`, SHA-256 `f87fbc4ec74bdaf0bde916ee859df8ab335df3504baf000d1729813567ae04f0`; rollback binary/Data/Profiles `/home/sdr/gpsdr-before-pi-test10-gM7xSQ`. Mapper job Save/Create/Delete write errors now preserve previous state and return failure; background snapshot errors exposed. Two write-failure tests passed on Pi exFAT; local race suite/vet passed. Authenticated startup health passed. No user recordings/results deleted.
+
 Installed `1.5.0-rc34-pi-test8`; rollback `/home/sdr/gpsdr-before-pi-test8-nDmAcr`. Mapper jobs/results now use serialized atomic snapshot replacement with unique temporary files. Local race suite and vet passed; concurrent replacement and failed marshal preservation tests passed on actual Pi exFAT. Twelve isolated retention tests passed, including results preservation. No original captures/results removed.
 
 Authenticated health check passed; existing Pluto P25 profile restored and decoded control lock reacquired at 774.45625 MHz. RTL 120-second 2.4 MS/s transfer alongside Pluto reported 80 bytes lost, no disconnect. Twenty-second OP25 endpoint capture delivered 158 complete frames / 3.16 seconds intermittent voice, not a listening-quality pass. Twenty-six status endpoints returned valid JSON. Damaged c5cb excluded; long soak, exhaustive GUI, battery-source switching and subjective audio acceptance remain open.

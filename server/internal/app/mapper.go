@@ -617,6 +617,8 @@ func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
 	}
 	job.Config = config
 	job.UpdatedAt = now
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
 	m.mu.Lock()
 	if existing, exists := m.jobs[job.ID]; exists {
 		if existing.State == "running" {
@@ -628,13 +630,23 @@ func (m *MapperManager) SaveJob(job MapperJob) (MapperJob, error) {
 	job.State = "idle"
 	job.LastError = ""
 	job.Progress = MapperProgress{Mode: config.Mode, CurrentIndex: -1}
+	jobs := make(map[string]MapperJob, len(m.jobs)+1)
+	for id, existing := range m.jobs {
+		jobs[id] = existing
+	}
+	jobs[job.ID] = job
+	if err := writeMapperJobs(m.jobsPath, jobs); err != nil {
+		m.mu.Unlock()
+		return MapperJob{}, fmt.Errorf("save Mapper job: %w", err)
+	}
 	m.jobs[job.ID] = job
 	m.mu.Unlock()
-	m.persistJobs()
 	return job, nil
 }
 
 func (m *MapperManager) DeleteJob(id string) error {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
 	m.mu.Lock()
 	job, exists := m.jobs[id]
 	if !exists {
@@ -645,11 +657,30 @@ func (m *MapperManager) DeleteJob(id string) error {
 		m.mu.Unlock()
 		return errors.New("stop this Mapper job before deleting it")
 	}
+	jobs := make(map[string]MapperJob, len(m.jobs))
+	for key, existing := range m.jobs {
+		if key != id {
+			jobs[key] = existing
+		}
+	}
+	if err := writeMapperJobs(m.jobsPath, jobs); err != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("delete Mapper job: %w", err)
+	}
 	delete(m.jobs, id)
 	delete(m.jobSessions, id)
 	m.mu.Unlock()
-	m.persistJobs()
 	return nil
+}
+
+func writeMapperJobs(path string, jobs map[string]MapperJob) error {
+	// Never persist upload credentials inside shared job definitions.
+	safe := make(map[string]MapperJob, len(jobs))
+	for id, job := range jobs {
+		job.Config.Secret = ""
+		safe[id] = job
+	}
+	return writeJSONAtomic(path, safe)
 }
 
 func (m *MapperManager) SetJobError(id, message string) {
@@ -1323,7 +1354,12 @@ func (m *MapperManager) persistRecords() {
 	data, err := json.MarshalIndent(m.records, "", "  ")
 	m.mu.RUnlock()
 	if err == nil {
-		_ = writeBytesAtomic(m.recordsPath, data)
+		err = writeBytesAtomic(m.recordsPath, data)
+	}
+	if err != nil {
+		m.mu.Lock()
+		m.lastError = fmt.Sprintf("save Mapper results: %v", err)
+		m.mu.Unlock()
 	}
 }
 
@@ -1341,7 +1377,12 @@ func (m *MapperManager) persistJobs() {
 	path := m.jobsPath
 	m.mu.RUnlock()
 	if err == nil && path != "" {
-		_ = writeBytesAtomic(path, data)
+		err = writeBytesAtomic(path, data)
+	}
+	if err != nil {
+		m.mu.Lock()
+		m.lastError = fmt.Sprintf("save Mapper job state: %v", err)
+		m.mu.Unlock()
 	}
 }
 
