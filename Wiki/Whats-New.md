@@ -1,4 +1,13 @@
-# What’s new through GP-SDR 1.5.0-rc32
+# What’s new through GP-SDR 1.5.0-rc34
+
+## 1.5.0-rc34: Pi audio and receiver maintenance
+
+Continuous analog DSP, browser queue cleanup, RTL mode-switch cancellation,
+OP25 call metadata and Band Monitor ownership/capability fixes. The configured
+Pi uses OP25; other platforms retain their existing backend selection. This is
+a Linux ARM64 maintenance candidate, not full all-mode RF/audio acceptance.
+Optional drivers/decoders remain separately installed. See the source release
+notes and master remediation backlog for verification limits and outstanding work.
 
 ## 1.5.0-rc32: Pluto P25 routing and non-blocking Pi telemetry
 

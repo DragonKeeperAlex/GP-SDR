@@ -578,7 +578,7 @@ function bandProfiles(){ return state.profiles.filter(profile => profile.channel
 function latestEventForFrequency(frequencyHz){ return state.events.find(event => Math.abs(Number(event.frequencyHz)-Number(frequencyHz)) < 1000); }
 function bandMonitorIsRunning(){return Boolean(state.status?.running&&state.status.activeProfileID===$('#band-profile')?.value&&bandProfiles().some(profile=>profile.id===state.status.activeProfileID));}
 function bandReceiverSettings(){const device=state.devices.find(item=>item.id===$('#band-device').value),hackrf=device?.kind==='HackRF';return {sampleRateHz:Number($('#band-rate').value),gainDB:Number($('#band-gain').value),lnaGainDB:hackrf?Number($('#band-lna').value):0,vgaGainDB:hackrf?Number($('#band-vga').value):0,ampEnabled:hackrf&&$('#band-amp').checked,autoGain:$('#band-auto-gain').checked,squelchDB:Number($('#band-squelch').value),dcRemoval:$('#band-dc').checked};}
-async function startBandMonitor(){const profileID=$('#band-profile').value,deviceID=$('#band-device').value;if(!profileID)return;state.selectedProfileID=profileID;void startLiveAudio();await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});await refreshAll();setView('band');}
+async function startBandMonitor(){const profileID=$('#band-profile').value,deviceID=$('#band-device').value;if(!profileID)return;const button=$('#band-start');button.disabled=true;button.textContent='Starting…';try{await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});state.selectedProfileID=profileID;await startLiveAudio();await refreshAll();setView('band');}finally{button.textContent='Monitor band';button.disabled=bandMonitorIsRunning();}}
 function renderBandMonitor(){
   const profileSelect=$('#band-profile'),deviceSelect=$('#band-device');if(!profileSelect||!deviceSelect)return;
   const profiles=bandProfiles(),prior=profileSelect.value;
@@ -1003,7 +1003,7 @@ function clearScheduledAudio(channelID) {
     for (const source of sources || []) {
       source.onended = null;
       try { source.stop(); } catch (_) {}
-      source.disconnect();
+    source.disconnect();
     }
   }
 }
@@ -1455,14 +1455,14 @@ $('#tuner-mode').addEventListener('change', event => {
 });
 
 async function applyReceiverControls() {
-	if(receiverApplying) return;
+	if(receiverApplying) { clearTimeout(receiverApplyTimer); receiverApplyTimer=setTimeout(()=>{if(state.status?.running&&state.status.activeProfileID==='quick-tune')applyReceiverControls();},150); return; }
 	receiverApplying=true; const panel=$('.receiver-controls-panel'), button=$('#live-apply-radio'); panel?.classList.add('applying'); panel?.classList.remove('applied'); button.disabled=true; button.textContent='Applying…'; $('#audio-state').textContent='Applying settings';
 	try { await startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(tunerRequest())}); delete $('#tuner-frequency').dataset.pending; button.textContent='Applied'; panel?.classList.add('applied'); $('#audio-state').textContent='Settings applied'; $('#tuner-status').textContent='Settings applied'; }
 	catch(error) { delete $('#tuner-frequency').dataset.pending; button.textContent='Retry'; $('#audio-state').textContent='Apply failed'; $('#tuner-status').textContent='Apply failed'; toast(error.message,true); }
 	finally { receiverApplying=false; button.disabled=false; panel?.classList.remove('applying'); }
 }
 
-function queueReceiverControls() { if(!state.status?.running || state.status?.activeProfileID!=='quick-tune') return; clearTimeout(receiverApplyTimer); $('#live-apply-radio').textContent='Pending…'; $('#audio-state').textContent='Settings pending'; $('#tuner-status').textContent='Applying settings…'; receiverApplyTimer=setTimeout(applyReceiverControls,250); }
+function queueReceiverControls() { if(!state.status?.running || state.status?.activeProfileID!=='quick-tune') return; clearTimeout(receiverApplyTimer); $('#live-apply-radio').textContent='Pending…'; $('#audio-state').textContent='Settings pending'; $('#tuner-status').textContent='Applying settings…'; receiverApplyTimer=setTimeout(()=>{if(state.status?.running&&state.status.activeProfileID==='quick-tune')applyReceiverControls();},250); }
 
 $$('#view-live .receiver-control-grid input, #view-live .receiver-control-grid select').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',()=>{
 	const map={'live-radio-device':'tuner-device','live-mode':'tuner-mode','live-bandwidth':'tuner-bandwidth','live-lna':'tuner-lna','live-vga':'tuner-vga','live-ppm':'tuner-ppm','live-iq-gain':'tuner-iq-gain','live-iq-phase':'tuner-iq-phase','live-squelch':'tuner-squelch','live-amp':'tuner-amp','live-bias':'tuner-bias','live-dc':'tuner-dc','live-iq-swap':'tuner-iq-swap','live-agc':'tuner-agc','live-monitor-open':'tuner-monitor-open','live-use-calibration':'tuner-use-calibration'};
@@ -1510,7 +1510,7 @@ $('#event-search').addEventListener('input', searchEvents);
 $('#mixer-search').addEventListener('input', renderMixer);
 $('#band-search').addEventListener('input', renderBandMonitor);
 $('#band-profile').addEventListener('change', renderBandMonitor);
-$('#band-start').addEventListener('click',async()=>{try{await startBandMonitor();}catch(error){stopLiveAudio();toast(error.message,true);}});
+$('#band-start').addEventListener('click',async()=>{try{await startBandMonitor();}catch(error){toast(error.message,true);}});
 $('#band-device').addEventListener('change',event=>{const device=state.devices.find(item=>item.id===event.target.value);$('#band-rate').value=device?.kind==='HackRF'?'20000000':'0';updateReceiverCapabilityControls();if(bandMonitorIsRunning()){clearTimeout(bandApplyTimer);bandApplyTimer=setTimeout(()=>{if(bandMonitorIsRunning())startBandMonitor().then(()=>toast('Band receiver changed')).catch(error=>toast(error.message,true));},250);}});
 $$('.band-radio-controls input,.band-radio-controls select').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',()=>{if(!bandMonitorIsRunning()||state.view!=='band')return;clearTimeout(bandApplyTimer);bandApplyTimer=setTimeout(()=>{if(bandMonitorIsRunning())startBandMonitor().then(()=>toast('Band receiver settings applied')).catch(error=>toast(error.message,true));},300);}));
 $('#band-stop').addEventListener('click',async()=>{try{await api('/api/control/stop',{method:'POST',body:'{}'});stopLiveAudio();await refreshAll();}catch(error){toast(error.message,true);}});

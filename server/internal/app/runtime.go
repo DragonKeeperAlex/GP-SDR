@@ -577,6 +577,22 @@ func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiv
 		profile.Settings.DCRemoval = ptr(controls.DCRemoval)
 		profile.Settings.NoiseMarginDB = controls.SquelchDB
 	}
+	enabledChannels := 0
+	for _, channel := range profile.Channels {
+		if channel.Enabled {
+			enabledChannels++
+		}
+	}
+	if enabledChannels > 1 && hasReceiverRole(profile, "channelBank") {
+		for _, device := range r.devices {
+			if device.ID == deviceID {
+				if _, _, fits := widebandSpec(profile, device); !fits {
+					return fmt.Errorf("%s cannot monitor this entire channel bank simultaneously. Select a narrower band or a receiver with more usable bandwidth", device.Name)
+				}
+				break
+			}
+		}
+	}
 	return r.startProfile(profile, nil)
 }
 
