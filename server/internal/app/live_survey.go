@@ -1430,6 +1430,11 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 	}
 	defer finishAll()
 	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
 		data := make([]byte, frameBytes)
 		if _, err := io.ReadFull(stream.Reader, data); err != nil {
 			select {
@@ -1555,6 +1560,8 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 	decoderBusy := false
 	for {
 		select {
+		case <-stop:
+			return
 		case next := <-updates:
 			request.FrequencyHz, request.Mode, request.Decoder, request.BandwidthHz = next.FrequencyHz, next.Mode, next.Decoder, next.BandwidthHz
 			request.SquelchDB, request.MonitorOpen, request.AutoGain = next.SquelchDB, next.MonitorOpen, next.AutoGain
@@ -1602,6 +1609,11 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 				}
 				return
 			}
+		}
+		select {
+		case <-stop:
+			return
+		default:
 		}
 		format := DetectSampleFormat(data, stream.Format)
 		ApplyIQCorrection(data, format, request.IQDCRemoval, request.IQGain, request.IQPhase, request.IQSwap)
