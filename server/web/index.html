@@ -75,6 +75,10 @@
           <p id="view-subtitle">Receiver and channel mixer</p>
         </div>
         <div class="top-actions">
+          <details id="power-status" class="power-status" hidden>
+            <summary title="Pi power source, battery and live electrical readings"><span id="power-status-label">Power</span></summary>
+            <div id="power-status-readings" class="power-status-readings"></div>
+          </details>
           <div class="master-audio" title="Master volume for GP-SDR live audio and recordings">
             <button id="master-mute" class="icon-button" type="button" aria-label="Mute all GP-SDR audio" aria-pressed="false" title="Mute all GP-SDR audio">🔊</button>
             <input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="GP-SDR master volume" title="Whole-app volume">

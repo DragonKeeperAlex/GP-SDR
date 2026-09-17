@@ -18,6 +18,14 @@ h1 { font-size:16px; } h2 { font-size:13px; } h3 { font-size:12px; }
 .nav-item.active { box-shadow:inset 3px 0 var(--accent); }
 .topbar { height:48px; padding:0 12px; background:var(--sidebar); backdrop-filter:none; }
 .topbar p { display:none; } .top-actions { gap:7px; }
+.power-status { position:relative; flex-shrink:0; padding:0; font-size:12px; background:var(--panel); }
+.power-status[hidden] { display:none; }
+.power-status summary { padding:8px; cursor:pointer; white-space:nowrap; }
+.power-status.warning summary { color:var(--warning); }
+.power-status-readings { position:absolute; right:0; top:100%; z-index:30; width:min(320px,85vw); padding:12px; background:var(--sidebar); border:1px solid var(--line); box-shadow:0 5px 18px #0008; }
+.power-status-readings dl { display:grid; grid-template-columns:auto 1fr; gap:8px; }
+.power-status-readings dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
+.power-status-readings p,.power-status-readings dt,.power-status-readings small { color:var(--muted); }
 .view { padding:10px 12px 22px; }
 .panel-head { min-height:36px; padding:7px 9px; gap:8px; flex-wrap:wrap; }
 .panel-head h2+span { margin-top:2px; }

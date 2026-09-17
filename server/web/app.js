@@ -504,6 +504,7 @@ function renderStatus() {
   toggle.title = status.running ? 'Stop the active survey' : 'Start the selected scan profile';
   $('#spectrum-label').textContent = status.running ? status.activeProfileName : 'Waiting for receiver';
   renderPiPowerHatStatus();
+  renderGlobalPowerStatus();
 }
 
 function renderAppUpdate(){const native=window.gpsdrNativeCapabilities?.includes('appUpdater'),update=state.appUpdate||{},badge=$('#app-update-state'),button=$('#app-update-button'),detail=$('#app-update-detail'),release=$('#app-update-release'),notes=$('#app-update-notes'),notesBody=$('#app-update-notes-body');if(!badge)return;const labels={checking:'Checking',available:'Available',current:'Up to date',downloading:'Downloading',installing:'Installing',error:'Error'};badge.textContent=labels[update.state]||(native?'Not checked':'Native app only');badge.className=`chip ${update.state==='current'?'ready':update.state==='error'?'warning':''}`;button.disabled=['checking','downloading','installing'].includes(update.state);button.textContent=update.state==='available'?`Install ${update.version}`:update.state==='error'?'Try again':'Check for updates';detail.textContent=update.message||(native?'Downloads are SHA-256 checked and code-signature verified before GP-SDR restarts. Your data directory is never replaced.':'Automatic installation is available in the native macOS app.');release.classList.toggle('hidden',!update.releaseURL);if(update.releaseURL)release.href=update.releaseURL;notes.classList.toggle('hidden',!update.notes);notesBody.textContent=update.notes||'';}
@@ -646,6 +647,19 @@ function renderProfiles() {
         <button class="export-profile" title="Download this profile for sharing">Export</button>
       </div>
     </article>`).join('') : '<div class="empty-state">No profiles yet. Create one or import a shared channel bank.</div>';
+}
+
+function renderGlobalPowerStatus() {
+  const power=state.status?.powerHat, bar=$('#power-status');
+  if(!bar)return;
+  bar.hidden=!(power?.available||power?.error);
+  if(bar.hidden)return;
+  const label=$('#power-status-label'), readings=$('#power-status-readings');
+  bar.classList.toggle('warning',!power.available);
+  if(!power.available){label.textContent='⚠ Power unavailable';readings.textContent=power.error||'Telemetry unavailable · retrying';return;}
+  const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0));
+  label.textContent=`${power.charging?'⚡ ':''}${battery.toFixed(0)}% · ${power.powerSource||'Unknown'} · ${Number(power.outputPower).toFixed(1)} W`;
+  readings.innerHTML=`<strong>PiPower5</strong><p>${escapeHTML(power.charging?'Charging':power.inputPluggedIn?'External input connected':'Battery operation')}</p><dl><dt>Input</dt><dd>${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W</dd><dt>Output</dt><dd>${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W</dd><dt>Battery</dt><dd>${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A</dd></dl><small>${power.updatedAt?`Updated ${escapeHTML(timeAgo(power.updatedAt))} ago`:'Live telemetry'}</small>`;
 }
 
 function renderHardware() {
