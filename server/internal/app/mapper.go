@@ -1026,6 +1026,12 @@ func (m *MapperManager) SetIdentificationEvidence(frequencyHz float64, source st
 	m.mu.Lock()
 	record, exists := m.records[key]
 	if exists {
+		// Keep authoritative provenance attached to verified findings. A later
+		// band/model guess must not inherit the old verification badge.
+		if record.IdentificationVerified && !verified {
+			m.mu.Unlock()
+			return
+		}
 		record.IdentificationSource = strings.TrimSpace(source)
 		record.Confidence = math.Max(record.Confidence, confidence)
 		if verified {

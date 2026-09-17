@@ -25,7 +25,9 @@ func (m *OP25Manager) startOP25Audio(count int) error {
 				if err != nil {
 					return
 				}
-				if n < 2 || n%2 != 0 {
+				// OP25 reserves two-byte UDP packets for DRAIN/DROP flags.
+				// They are not one-sample PCM frames (sockaudio.py agrees).
+				if n <= 2 || n%2 != 0 {
 					continue
 				}
 				samples := make([]int16, n/2)

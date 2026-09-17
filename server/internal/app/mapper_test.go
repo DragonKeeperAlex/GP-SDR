@@ -173,6 +173,11 @@ func TestMapperVerifiedStatusRequiresAuthoritativeEvidence(t *testing.T) {
 	if status.VerifiedRecords != 1 || !mapperRecordFullyIdentified(status.Records[0]) {
 		t.Fatalf("authoritative match should count as fully identified: %+v", status)
 	}
+	manager.SetIdentification(155_250_000, "AI band guess", .99)
+	status = manager.Status()
+	if status.Records[0].IdentificationSource != "RadioReference import · Local" || status.Records[0].VerificationReason != "nearby reference match" {
+		t.Fatal("unverified guess inherited or replaced authoritative provenance")
+	}
 }
 
 func TestMapperStatusDoesNotHideVerifiedLowerFrequencyAfterCap(t *testing.T) {

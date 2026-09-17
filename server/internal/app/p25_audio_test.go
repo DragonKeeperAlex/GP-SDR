@@ -20,6 +20,12 @@ func TestOP25AudioStreamsPCMWithoutSoundDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer socket.Close()
+	// Drain/drop control flags and malformed packets must not become PCM.
+	for _, packet := range [][]byte{{0, 0}, {1, 0}, {1, 2, 3}} {
+		if _, err = socket.Write(packet); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err = socket.Write([]byte{1, 0, 255, 255}); err != nil {
 		t.Fatal(err)
 	}
