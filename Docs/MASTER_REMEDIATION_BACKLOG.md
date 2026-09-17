@@ -20,6 +20,11 @@ Keep stable item IDs. Do not remove an item because it is difficult or blocked. 
 
 Current installation scope: Pi only. No new public release or Mac replacement unless requested. Preserve recordings, results, profiles, calibration, credentials, and recovery paths. Keep test audio out of the user's headphones. RF transmit acceptance requires an appropriate authorized, attenuated/dummy-load bench setup; user permission alone does not establish lawful operation.
 
+September 17 hardware exclusion: damaged HackRF serial ending `c5cb` is excluded
+from all testing and acceptance until the user independently retests it and
+explicitly returns it to the pool. Do not spend remediation effort on that unit.
+Keep its hardware issue deferred; use `a447`, RTL-SDR and Pluto for current work.
+
 Platform priority confirmed September 16, 2026: Raspberry Pi is the primary development and acceptance target. Android and iOS/iPadOS ports (PLAT-01/02) are ON HOLD until the main app is fully functional. Retain their backlog entries; do not spend implementation time on them meanwhile. Keep other desktop platforms compatible but focus active testing/configuration on Pi.
 
 ## Acceptance states

@@ -55,6 +55,12 @@ This does not restart GP-SDR. Test a subsequent normal restart before acceptance
 
 ## September 16, 2026 baseline
 
+## September 17 persistence and combined-load follow-up
+
+Installed `1.5.0-rc34-pi-test8`; rollback `/home/sdr/gpsdr-before-pi-test8-nDmAcr`. Mapper jobs/results now use serialized atomic snapshot replacement with unique temporary files. Local race suite and vet passed; concurrent replacement and failed marshal preservation tests passed on actual Pi exFAT. Twelve isolated retention tests passed, including results preservation. No original captures/results removed.
+
+Authenticated health check passed; existing Pluto P25 profile restored and decoded control lock reacquired at 774.45625 MHz. RTL 120-second 2.4 MS/s transfer alongside Pluto reported 80 bytes lost, no disconnect. Twenty-second OP25 endpoint capture delivered 158 complete frames / 3.16 seconds intermittent voice, not a listening-quality pass. Twenty-six status endpoints returned valid JSON. Damaged c5cb excluded; long soak, exhaustive GUI, battery-source switching and subjective audio acceptance remain open.
+
 ## Headless P25 backend selection
 
 `Scripts/pi/gp-sdr-p25.conf` sets `GPSDR_P25_ENGINE=op25` on this Pi only. The application also accepts `auto` (default) or `sdrtrunk`; invalid values fail clearly, and explicitly selecting SDRTrunk for Pluto fails rather than silently choosing another engine. OP25 must already be installed. This configuration uses the existing direct UDP PCM bridge rather than nonexistent native sound hardware. It does not complete the separate SDRTrunk PCM bridge backlog item.

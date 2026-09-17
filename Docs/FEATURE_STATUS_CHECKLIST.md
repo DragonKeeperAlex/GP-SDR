@@ -59,6 +59,10 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 ## Broken or previously reproduced faults requiring closure
 
+User-deferred hardware: HackRF `c5cb` is excluded from tests/acceptance until the
+user confirms independent retesting and returns it. Retain the fault record
+below but do not treat that unit as an active application-remediation blocker.
+
 - [ ] RF-11 RTL USB disappearance/dropouts: prior -110/-62, direct/hub longevity remains unresolved.
 - [ ] RF-02 Hardware prerequisite: c5cb produced pinned-negative/corrupt IQ; exclude from RF acceptance until repaired and retested. This is not proof of a GP-SDR decoder bug.
 - [ ] AI-01 Prior non-speech hallucinations: suppression changes exist, but latest batch must demonstrate closure.
@@ -103,6 +107,10 @@ Fixed in this work tranche (bounded software scope only):
 - [ ] AI-04 Lab review/export: corrected labels, real/synthetic separation, capture provenance, independent decoder evidence and dataset split controls.
 
 ## This session's evidence and limits
+
+- September 17 persistence follow-up installed as `1.5.0-rc34-pi-test8`, SHA-256 `77a83ab8d96e782b7d3fade40e1856e97d6e82e788d6215f1bf48b1ec24b8318`; rollback `/home/sdr/gpsdr-before-pi-test8-nDmAcr`. Mapper job/results snapshots now serialize writers and use synced same-directory atomic replacement instead of truncating the previous file. Shared JSON writes use unique temporary names. Concurrent replacement and failed marshal preservation tests pass locally and on Pi exFAT. Persistence error reporting and filesystem crash durability remain open.
+- 26 installed status GET endpoints returned valid JSON. Twelve isolated storage/retention tests passed on the Pi data drive, including media cleanup preserving results/event history. No user captures/results deleted. RTL transferred for 120 seconds at 2.4 MS/s alongside Pluto P25 with 80 bytes lost and no disconnect; long-run dropout acceptance remains open.
+- Ten combined status/HAT samples showed fresh HAT readings and Pluto control lock. A 20-second live-audio capture contained 158 complete OP25 frames / 3.16 seconds intermittent voice PCM, no trailing bytes. This is delivery evidence, not subjective intelligibility or continuous-call loss measurement. Damaged c5cb was not retested in this follow-up.
 
 - September 17 batch installed as `1.5.0-rc34-pi-test7`, SHA-256 `9adb0c9ea31eaf8211b0d04f188d4e30a4b5df45c4268c2506159a97da1cbf00`; rollback snapshot `/home/sdr/gpsdr-before-pi-test7-2tAJvK`. Three fresh physical HAT samples (~15 V external, 5.29–5.31 V output, 97–98% battery), power arithmetic and radio channel metadata verified through installed API. Pluto regained 774.45625 MHz control lock. Battery-source switching and exhaustive GUI acceptance remain open.
 - Real RX hardware: c5cb 200,000 complex samples at 10 MS/s/98.1 MHz, mean I/Q -125.85/-124.27, 100% negative, 8 values; a447 same test mean 0.17/1.34, 175 values. Evidence `/tmp/gpsdr-{c5cb,a447}-sept17.cs8` and logs on Pi. RTL log `/tmp/gpsdr-rtl-sept17.log`: 20 seconds at 2.4 MS/s, 28 bytes lost, no disconnection; not long-run acceptance.

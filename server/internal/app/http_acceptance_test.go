@@ -62,6 +62,7 @@ func TestHTTPFeatureSurfaceAcceptance(t *testing.T) {
 		"/api/p25/status", "/api/spectrum?bins=64", "/api/storage", "/api/calibrations", "/api/calibrations/characterization", "/api/remote-receivers",
 		"/api/range-sync", "/api/local-database", "/api/local-ai", "/api/mapper", "/api/mapper/progress", "/api/mapper/jobs", "/api/profiles",
 		"/api/events?limit=10", "/api/signals?limit=10", "/api/mixer", "/api/receiver-plan",
+		"/api/transmit/status", "/api/transmit/fixtures", "/api/spectrum-analyzer", "/api/fpv",
 	} {
 		acceptanceRequest(t, server, http.MethodGet, endpoint, nil, http.StatusOK)
 	}

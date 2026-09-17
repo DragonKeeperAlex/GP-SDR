@@ -506,9 +506,5 @@ func writeJSONAtomic(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	temporary := path + ".tmp"
-	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(temporary, path)
+	return writeBytesAtomic(path, data)
 }

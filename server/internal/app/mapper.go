@@ -180,6 +180,7 @@ type MapperExportResult struct {
 }
 
 type MapperManager struct {
+	persistMu    sync.Mutex
 	mu           sync.RWMutex
 	path         string
 	config       MapperConfig
@@ -1316,16 +1317,19 @@ func (m *MapperManager) loop() {
 }
 
 func (m *MapperManager) persistRecords() {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
 	m.mu.RLock()
 	data, err := json.MarshalIndent(m.records, "", "  ")
 	m.mu.RUnlock()
 	if err == nil {
-		_ = os.MkdirAll(filepath.Dir(m.recordsPath), 0o700)
-		_ = os.WriteFile(m.recordsPath, data, 0o600)
+		_ = writeBytesAtomic(m.recordsPath, data)
 	}
 }
 
 func (m *MapperManager) persistJobs() {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
 	m.mu.RLock()
 	jobs := make(map[string]MapperJob, len(m.jobs))
 	for id, job := range m.jobs {
@@ -1337,8 +1341,7 @@ func (m *MapperManager) persistJobs() {
 	path := m.jobsPath
 	m.mu.RUnlock()
 	if err == nil && path != "" {
-		_ = os.MkdirAll(filepath.Dir(path), 0o700)
-		_ = os.WriteFile(path, data, 0o600)
+		_ = writeBytesAtomic(path, data)
 	}
 }
 
