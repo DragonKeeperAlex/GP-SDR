@@ -21,10 +21,28 @@ type DemodulationResult struct {
 	DroppedBytes int
 }
 
+// Continuous listening must retain filter/discriminator state across pipe
+// reads. Reset only when the channel configuration changes, not every frame.
+type streamingDemodulator struct {
+	mode                                                           string
+	rate                                                           int
+	offset                                                         float64
+	format                                                         SampleFormat
+	initialized                                                    bool
+	oscillatorI, oscillatorQ, previousI, previousQ                 float64
+	havePrevious                                                   bool
+	dc, filtered, iqAccumulatorI, iqAccumulatorQ, audioAccumulator float64
+	iqCount, audioCount                                            int
+}
+
 // DemodulateIQ converts an interleaved 8-bit complex capture into mono PCM.
 // AM and phase-discriminator FM are deliberately implemented in the service so
 // basic analog reception never depends on a third-party decoder process.
 func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz float64, mode string) (DemodulationResult, error) {
+	return (&streamingDemodulator{}).Demodulate(data, format, inputRate, offsetHz, mode)
+}
+
+func (state *streamingDemodulator) Demodulate(data []byte, format SampleFormat, inputRate int, offsetHz float64, mode string) (DemodulationResult, error) {
 	if inputRate < narrowbandAudioRate || len(data) < 4 {
 		return DemodulationResult{}, errors.New("IQ capture is too small or has an invalid sample rate")
 	}
@@ -41,6 +59,9 @@ func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz floa
 	}
 	if mode != "nfm" && mode != "wfm" && mode != "fm" && mode != "am" {
 		return DemodulationResult{}, errors.New("built-in DSP supports AM, NFM, and WFM")
+	}
+	if !state.initialized || state.mode != mode || state.rate != inputRate || state.offset != offsetHz || state.format != format {
+		*state = streamingDemodulator{mode: mode, rate: inputRate, offset: offsetHz, format: format, initialized: true, oscillatorI: 1}
 	}
 
 	samples := len(data) / 2
@@ -65,18 +86,18 @@ func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz floa
 	outputRate = actualChannelRate / audioDecimation
 	audio := make([]int16, 0, samples/(iqDecimation*audioDecimation)+1)
 	phaseStep := -2 * math.Pi * offsetHz / float64(inputRate)
-	oscillatorI, oscillatorQ := 1.0, 0.0
+	oscillatorI, oscillatorQ := state.oscillatorI, state.oscillatorQ
 	stepI, stepQ := math.Cos(phaseStep), math.Sin(phaseStep)
-	previousI, previousQ := 0.0, 0.0
-	havePrevious := false
-	dc := 0.0
+	previousI, previousQ := state.previousI, state.previousQ
+	havePrevious := state.havePrevious
+	dc := state.dc
 	dcAlpha := 1.0 / math.Max(float64(actualChannelRate)*0.25, 1)
 	deemphasisAlpha := (1 / float64(outputRate)) / (deemphasis + 1/float64(outputRate))
-	filtered := 0.0
-	iqAccumulatorI, iqAccumulatorQ := 0.0, 0.0
-	iqCount := 0
-	audioAccumulator := 0.0
-	audioCount := 0
+	filtered := state.filtered
+	iqAccumulatorI, iqAccumulatorQ := state.iqAccumulatorI, state.iqAccumulatorQ
+	iqCount := state.iqCount
+	audioAccumulator := state.audioAccumulator
+	audioCount := state.audioCount
 	power := 0.0
 	blockPower := 0.0
 	blockCount := 0
@@ -147,6 +168,11 @@ func DemodulateIQ(data []byte, format SampleFormat, inputRate int, offsetHz floa
 		blocks = append(blocks, blockPower/float64(blockCount))
 	}
 	averagePower := power / float64(samples)
+	state.oscillatorI, state.oscillatorQ = oscillatorI, oscillatorQ
+	state.previousI, state.previousQ, state.havePrevious = previousI, previousQ, havePrevious
+	state.dc, state.filtered = dc, filtered
+	state.iqAccumulatorI, state.iqAccumulatorQ, state.iqCount = iqAccumulatorI, iqAccumulatorQ, iqCount
+	state.audioAccumulator, state.audioCount = audioAccumulator, audioCount
 	noisePower := averagePower
 	if len(blocks) > 0 {
 		sort.Float64s(blocks)

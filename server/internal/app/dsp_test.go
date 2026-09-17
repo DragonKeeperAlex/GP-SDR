@@ -19,6 +19,47 @@ func TestNFMDemodulatesToneWithFrequencyOffset(t *testing.T) {
 	}
 }
 
+func TestContinuousDemodulationMatchesSingleCapture(t *testing.T) {
+	for _, mode := range []string{"nfm", "wfm", "am"} {
+		t.Run(mode, func(t *testing.T) {
+			const rate = 256000
+			data := syntheticFM(rate, .35, 31250, 700, 5000)
+			whole, err := DemodulateIQ(data, ComplexSigned8, rate, 31250, mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := &streamingDemodulator{}
+			var audio []int16
+			for begin := 0; begin < len(data); begin += 2046 {
+				end := minInt(begin+2046, len(data))
+				result, err := state.Demodulate(data[begin:end], ComplexSigned8, rate, 31250, mode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				audio = append(audio, result.Audio...)
+			}
+			if len(audio) != len(whole.Audio) {
+				t.Fatalf("chunking changed sample count: %d vs %d", len(audio), len(whole.Audio))
+			}
+			for i, value := range audio {
+				if math.Abs(float64(value)-float64(whole.Audio[i])) > 1 {
+					t.Fatalf("chunk boundary changed PCM at %d: %d vs %d", i, value, whole.Audio[i])
+				}
+			}
+			changed, err := state.Demodulate(data, ComplexSigned8, rate, 0, mode)
+			fresh, _ := DemodulateIQ(data, ComplexSigned8, rate, 0, mode)
+			if err != nil || len(changed.Audio) != len(fresh.Audio) {
+				t.Fatal("configuration reset failed")
+			}
+			for i, value := range changed.Audio {
+				if value != fresh.Audio[i] {
+					t.Fatal("VFO change retained old channel state")
+				}
+			}
+		})
+	}
+}
+
 func TestWFMDemodulatesBroadcastToneAtHackRFRate(t *testing.T) {
 	const inputRate = 2_000_000
 	data := syntheticFM(inputRate, 0.2, 0, 1_000, 75_000)

@@ -1398,6 +1398,7 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 }
 
 func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, device SDRDevice) {
+	demodulators := make(map[string]*streamingDemodulator)
 	spec, channels, ok := widebandSpec(profile, device)
 	if !ok {
 		r.setRuntimeError("This channel bank does not fit inside the assigned receiver bandwidth.")
@@ -1459,6 +1460,7 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			snr := level.SignalDB - level.NoiseDB
 			isActive := measured && snr >= profile.Settings.NoiseMarginDB
 			if !isActive {
+				delete(demodulators, channel.ID)
 				r.updateMixerActivity(channel.FrequencyHz, 0, false)
 				if transmission := active[channel.ID]; transmission != nil {
 					r.finishWidebandTransmission(stop, profile, device, transmission)
@@ -1466,7 +1468,12 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 				}
 				continue
 			}
-			result, err := DemodulateIQ(data, format, spec.SampleRateHz,
+			demodulator := demodulators[channel.ID]
+			if demodulator == nil {
+				demodulator = &streamingDemodulator{}
+				demodulators[channel.ID] = demodulator
+			}
+			result, err := demodulator.Demodulate(data, format, spec.SampleRateHz,
 				channel.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationModeForDecoder(channel.Mode, stringValue(channel.Decoder)))
 			if err != nil {
 				r.setRuntimeError(err.Error())
@@ -1498,6 +1505,7 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 }
 
 func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SDRDevice, request TunerRequest, updates <-chan TunerRequest) {
+	demodulator := &streamingDemodulator{}
 	rate := request.SampleRateHz
 	if rate == 0 {
 		rate = liveSampleRate(device, surveyTarget{Mode: request.Mode})
@@ -1614,7 +1622,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 				demodulationMode = "nfm"
 			}
 		}
-		result, err := DemodulateIQ(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationMode)
+		result, err := demodulator.Demodulate(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), demodulationMode)
 		if err != nil {
 			r.setRuntimeError(err.Error())
 			continue

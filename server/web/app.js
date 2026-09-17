@@ -19,7 +19,7 @@ let lastWaterfallFrame = '';
 let analysisLogFloor = 0;
 const masterAudio = (()=>{try{return {volume:.8,muted:false,...JSON.parse(localStorage.getItem('gpsdr-master-audio-v1')||'{}')}}catch(_){return {volume:.8,muted:false}}})();
 const recordingPlayer = new Audio();
-const liveAudio = { context:null, controller:null, masterGain:null, gains:new Map(), panners:new Map(), nextTimes:new Map() };
+const liveAudio = { context:null, controller:null, masterGain:null, gains:new Map(), panners:new Map(), nextTimes:new Map(), sources:new Map() };
 let receiverApplyTimer, receiverApplying = false;
 let bandApplyTimer;
 const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20}}})();
@@ -993,17 +993,36 @@ function channelGain(channelID) {
   return gain;
 }
 
+function clearScheduledAudio(channelID) {
+  const ids = channelID === undefined ? [...liveAudio.sources.keys()] : [channelID];
+  for (const id of ids) {
+    const sources = liveAudio.sources.get(id);
+    liveAudio.sources.delete(id);
+    liveAudio.nextTimes.delete(id);
+    for (const source of sources || []) {
+      source.onended = null;
+      try { source.stop(); } catch (_) {}
+      source.disconnect();
+    }
+  }
+}
+
 function scheduleAudioFrame(channelID, sampleRate, pcm) {
   if (!liveAudio.context || !pcm.length || sampleRate < 8000) return;
   const buffer = liveAudio.context.createBuffer(1, pcm.length, sampleRate);
   const output = buffer.getChannelData(0);
   for (let index=0; index<pcm.length; index++) output[index] = pcm[index] / 32768;
-  const source = liveAudio.context.createBufferSource(); source.buffer = buffer; source.connect(channelGain(channelID));
   const now = liveAudio.context.currentTime, previous = liveAudio.nextTimes.get(channelID) || now;
 	// A small lead absorbs LAN/browser jitter. Preserve queued continuity through
 	// ordinary bursts, but discard a genuinely stale or runaway backlog.
 	const minimumLead=.06, maximumBacklog=.75;
+	if (previous > now + maximumBacklog) clearScheduledAudio(channelID);
 	const start = previous < now - .08 || previous > now + maximumBacklog ? now + minimumLead : (previous <= now ? now + minimumLead : previous);
+  const source = liveAudio.context.createBufferSource(); source.buffer = buffer; source.connect(channelGain(channelID));
+  let sources = liveAudio.sources.get(channelID);
+  if (!sources) { sources = new Set(); liveAudio.sources.set(channelID, sources); }
+  sources.add(source);
+  source.onended = () => { sources.delete(source); source.disconnect(); if (!sources.size && liveAudio.sources.get(channelID) === sources) liveAudio.sources.delete(channelID); };
   source.start(start); liveAudio.nextTimes.set(channelID, start + buffer.duration);
 }
 
@@ -1049,6 +1068,7 @@ async function pumpLiveAudio(controller) {
         }
       }catch(error){
         if(error.name==='AbortError'||controller.signal.aborted)break;
+        clearScheduledAudio();
         failures++; const audioState=$('#audio-state'); if(audioState)audioState.textContent='Audio reconnecting…';
         if(failures===1)toast('Live audio interrupted; reconnecting…',true);
         await new Promise(resolve=>setTimeout(resolve,Math.min(2000,400*failures)));
@@ -1058,7 +1078,7 @@ async function pumpLiveAudio(controller) {
 }
 
 function stopLiveAudio() {
-  liveAudio.controller?.abort(); liveAudio.controller=null; liveAudio.nextTimes.clear();
+  liveAudio.controller?.abort(); liveAudio.controller=null; clearScheduledAudio(); liveAudio.nextTimes.clear();
 }
 
 function drawSpectrumCanvas(canvas) {
