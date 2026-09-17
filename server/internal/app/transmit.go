@@ -121,6 +121,13 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 		}
 	}
 	busy := r.running && r.profileUsesDeviceLocked(device.ID)
+	mapperOwner := ""
+	for id, job := range r.mapperJobs {
+		if job.deviceID == device.ID {
+			mapperOwner = id
+			break
+		}
+	}
 	r.mu.RUnlock()
 	offlineFixture := request.DryRun && request.Fixture != nil
 	transmitCapable := strings.EqualFold(device.Kind, "HackRF") || (strings.EqualFold(device.Kind, "PlutoSDR") && device.TransmitChannels > 0)
@@ -135,6 +142,9 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	}
 	if busy {
 		return r.TransmitStatus(), fmt.Errorf("%s is already in use by Live, Tuner, or P25", device.Name)
+	}
+	if mapperOwner != "" && !request.DryRun {
+		return r.TransmitStatus(), fmt.Errorf("%s is collecting data for Mapper job %s; choose a separate transmitter or stop that job", device.Name, mapperOwner)
 	}
 	if request.AudioPath == "" && request.Fixture == nil {
 		return r.TransmitStatus(), errors.New("choose a WAV audio file")

@@ -4,6 +4,15 @@ Primary platform: Raspberry Pi/Linux ARM64. Mobile ports paused until main-app a
 
 ## Storage startup guard
 
+Decoder installation follow-up: FlightAware dump1090 commit
+`0339a57b89cd6e61856cbb13ae342c31ae7be5ac` compiled and installed at
+`/usr/local/bin/dump1090`; help command runs. Existing rtl_433, multimon-ng,
+acarsdec, AIS-catcher and OP25 executables remain installed. No ADS-B physical
+acceptance claimed. DSD-FME source `fa4a33258209d2b02c1b9331340869f189582740`
+still lacks mbelib. Downloaded mbelib `34adf9f054bc5650ace162a4917dcbc2cfa6102e`
+README advises patent/licensing review before compilation; not compiled pending
+user acknowledgement. The RF lab plan is in `RF_LAB_PLAN.md`.
+
 The current Pi uses `/mnt/gp-sdr-data/GP-SDR` on an exFAT data drive. Without a mount dependency, the service could start against the underlying internal-card directory. The site-specific `Scripts/pi/gp-sdr-storage.conf` drop-in requires the mount and checks the data directory is writable before launch. It preserves the base service and its private access settings.
 
 Install only on this configured Pi:

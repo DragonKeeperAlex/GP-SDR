@@ -4,9 +4,18 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestTransmitCannotTakeMapperReceiver(t *testing.T) {
+	runtime := &Runtime{transmit: newTransmitState(), devices: []SDRDevice{{ID: "tx-test", Name: "HackRF test", Kind: "HackRF", Connected: true, Available: true}}, mapperJobs: map[string]*mapperJobRuntime{"capture": {deviceID: "tx-test"}}}
+	_, err := runtime.Transmit(TransmitRequest{DeviceID: "tx-test", FrequencyHz: 462500000, Mode: "nfm", Armed: true})
+	if err == nil || !strings.Contains(err.Error(), "Mapper job capture") {
+		t.Fatalf("expected ownership rejection before any RF, got %v", err)
+	}
+}
 
 func TestTransmitUsesSignedIQAndWholeSource(t *testing.T) {
 	if int8(signedIQByte(-110)) != -110 || signedIQByte(0) != 0 {
