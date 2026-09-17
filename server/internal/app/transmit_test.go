@@ -17,6 +17,32 @@ func TestTransmitCannotTakeMapperReceiver(t *testing.T) {
 	}
 }
 
+func TestTransmitUploadValidatesBeforeSaving(t *testing.T) {
+	r := &Runtime{dataDirectory: t.TempDir()}
+	if _, err := r.SaveTransmitAudio("bad.wav", []byte("not a wave")); err == nil {
+		t.Fatal("invalid upload accepted")
+	}
+	if _, err := os.Stat(filepath.Join(r.dataDirectory, "Transmit")); !os.IsNotExist(err) {
+		t.Fatal("invalid upload persisted")
+	}
+	source := filepath.Join(t.TempDir(), "source.wav")
+	testPCM16WAV(t, source)
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := r.SaveTransmitAudio("valid.wav", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readPCM16WAV(stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodePCM16WAV(data[:len(data)-1]); err == nil {
+		t.Fatal("truncated PCM accepted")
+	}
+}
+
 func TestTransmitUsesSignedIQAndWholeSource(t *testing.T) {
 	if int8(signedIQByte(-110)) != -110 || signedIQByte(0) != 0 {
 		t.Fatal("IQ must use signed bytes without an unsigned midpoint")

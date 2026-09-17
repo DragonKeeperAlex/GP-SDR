@@ -66,6 +66,8 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 Fixed in this work tranche (bounded software scope only):
 
+- [x] Malformed WAV uploads are rejected before persistent storage; truncated chunks/incomplete PCM frames are rejected. Shared parser regression passes. Multipart temporary upload cleanup is explicit.
+
 - [x] Concurrent/repeated transmit preparation is rejected before allocating IQ or saving files; active-job rejection also moved before generation. This does not establish cross-workflow atomic receiver reservations.
 - [x] Saved benchmark library added to Transmit: bounded metadata listing, invalid-manifest counts and synthetic eligibility/paths/checksums. Listing never starts RF, loads IQ, promotes verification or trains a model. Label review/export/replay remain open.
 
@@ -91,6 +93,8 @@ Fixed in this work tranche (bounded software scope only):
 - [ ] AI-04 Lab review/export: corrected labels, real/synthetic separation, capture provenance, independent decoder evidence and dataset split controls.
 
 ## This session's evidence and limits
+
+- Pi deployment: `1.5.0-rc34-pi-test4`, SHA-256 `9ad24e45eefc264664cf8319087ebe7133d8bc0a346c05bc33d538e7ceba0c0e`. Rollback binary plus Data/Profiles snapshot: `/home/sdr/gpsdr-before-pi-test4-H6JZiN`. Existing service/configuration retained. Service active; DSD-FME ready; benchmark library endpoint and served UI present. Restored existing `pluto-p25-hardware-test` profile on its prior Pluto. No TX started. An empty production fixture library is expected: isolated test fixtures were not copied into user data or promoted to training samples.
 
 - Local Go unit suite, race suite and vet passed after fixture changes.
 - Audio scheduling and Band Monitor control/ownership JavaScript regression tests passed; app.js syntax passed.

@@ -76,6 +76,9 @@ func (r *Runtime) SaveTransmitAudio(name string, data []byte) (string, error) {
 	if strings.ToLower(filepath.Ext(name)) != ".wav" {
 		return "", errors.New("choose a PCM WAV file")
 	}
+	if _, _, err := decodePCM16WAV(data); err != nil {
+		return "", fmt.Errorf("choose a valid 16-bit mono or stereo PCM WAV: %w", err)
+	}
 	directory := filepath.Join(r.dataDirectory, "Transmit", "audio")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", err

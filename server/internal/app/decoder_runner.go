@@ -204,6 +204,10 @@ func readPCM16WAV(path string) ([]int16, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	return decodePCM16WAV(data)
+}
+
+func decodePCM16WAV(data []byte) ([]int16, int, error) {
 	if len(data) < 44 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
 		return nil, 0, errors.New("decoder did not produce a valid WAV file")
 	}
@@ -217,7 +221,7 @@ func readPCM16WAV(path string) ([]int16, int, error) {
 		}
 		size := int(binary.LittleEndian.Uint32(header[4:]))
 		if size < 0 || size > reader.Len() {
-			break
+			return nil, 0, errors.New("WAV chunk is truncated")
 		}
 		chunk := make([]byte, size)
 		_, _ = io.ReadFull(reader, chunk)
@@ -237,6 +241,9 @@ func readPCM16WAV(path string) ([]int16, int, error) {
 	}
 	if channels < 1 || channels > 2 || rate <= 0 || bits != 16 || len(pcm) < channels*2 {
 		return nil, 0, errors.New("decoder WAV contains no PCM voice")
+	}
+	if len(pcm)%(channels*2) != 0 {
+		return nil, 0, errors.New("WAV contains an incomplete PCM frame")
 	}
 	frames := len(pcm) / (channels * 2)
 	samples := make([]int16, frames)

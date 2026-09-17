@@ -571,6 +571,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "Choose a WAV file to upload.")
 			return
 		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
 		file, header, err := r.FormFile("audio")
 		if err != nil {
 			writeError(w, 400, "Choose a WAV file to upload.")
