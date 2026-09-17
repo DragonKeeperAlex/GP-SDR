@@ -422,6 +422,9 @@ func decoderLineIsEvidence(decoderID, line string) bool {
 func validDecoderMessages(messages []DecoderMessage) []DecoderMessage {
 	valid := make([]DecoderMessage, 0, len(messages))
 	for _, message := range messages {
+		if strings.TrimSpace(message.RawText) == "" && strings.TrimSpace(message.Summary) == "" {
+			continue
+		}
 		if strings.TrimSpace(message.Protocol) != "" && decoderLineIsEvidence(message.DecoderID, firstNonEmpty(message.RawText, message.Summary)) {
 			valid = append(valid, message)
 		}
