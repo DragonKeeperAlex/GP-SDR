@@ -1229,6 +1229,16 @@ func p25CallKey(call P25ActiveCall) string {
 }
 
 func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupState, calls []P25ActiveCall) {
+	known := make(map[uint32]bool)
+	for _, item := range talkgroups {
+		known[item.ID] = true
+	}
+	for _, call := range calls {
+		if call.Talkgroup != nil && !known[call.Grant.GroupID] {
+			talkgroups = append(talkgroups, *call.Talkgroup)
+			known[call.Grant.GroupID] = true
+		}
+	}
 	r.op25.mu.Lock()
 	streamCount := len(r.op25.audioSockets)
 	r.op25.mu.Unlock()

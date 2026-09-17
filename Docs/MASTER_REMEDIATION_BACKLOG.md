@@ -96,6 +96,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-16 continuation: RF-02 raw captures on Pi reproduced c5cb pinned-sign corruption (100% negative I/Q); a447 returned centered samples but its isolated P25 test still searched. Evidence `/tmp/gpsdr-{c5cb,a447}-current.iq` and companion logs; no HackRF acceptance claimed. RF-04: corrected OP25 active-call metadata source, stale/control/encrypted filtering and discovered mixer entries; unit/vet/race checks passed, Pi rc33-test installed, real active TG 2436 visible in API. Receiver-stream PCM is not yet per-talkgroup routing; RF-01/02/04 remain OPEN. See Pi status document for numeric results and remaining gates.
+
 - 2026-09-16: Pi made primary platform; PLAT-01/02 mobile implementation on hold. MAP-09/DIST-01: installed mount/writable-directory startup guard without replacing private base service. RF-02/03/UI-04: explicit Pi-only OP25 backend configuration, forwarded HackRF gain/amp and saved PPM calibration, 100 kHz HackRF DC-avoidance offset; software regression tests pass. Isolated OP25 HackRF initially still searched before offset change. Full hardware/audio/long-soak gates remain OPEN. See `PI_REMEDIATION_STATUS.md`.
 
 - 2026-09-16: Backlog saved on explicit user request. No item marked complete merely by saving it. Current Pi-only test build includes OP25 audio/site/targeting changes and decoder refresh/selection/audio-port cleanup. Entire app is not yet accepted.

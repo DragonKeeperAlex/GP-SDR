@@ -53,6 +53,7 @@ type OP25Manager struct {
 	rateFallback bool
 	audioHub     *AudioHub
 	audioSockets []io.Closer
+	op25Calls    map[int]P25ActiveCall
 }
 
 type op25Configuration struct {
@@ -315,6 +316,7 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	m.command, m.done, m.log = command, done, logFile
 	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
 	m.engine, m.apiURL = "OP25", nil
+	m.op25Calls = nil
 	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
 	m.sessionStart = time.Now()
 	m.mu.Unlock()
@@ -383,16 +385,7 @@ func (m *OP25Manager) op25Status() P25Status {
 // OP25 can decode control traffic without an enabled talkgroup receiving a
 // voice grant. Use its local decoded state rather than a voice-only log marker.
 func readOP25ControlStatus() (float64, bool) {
-	client := &http.Client{Timeout: 300 * time.Millisecond}
-	response, err := client.Post("http://127.0.0.1:8081/", "application/json", strings.NewReader(`[{"command":"update","arg1":0,"arg2":0}]`))
-	if err != nil {
-		return 0, false
-	}
-	defer response.Body.Close()
-	var updates []map[string]json.RawMessage
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&updates); err != nil {
-		return 0, false
-	}
+	updates := readOP25Updates()
 	for _, update := range updates {
 		var kind string
 		_ = json.Unmarshal(update["json_type"], &kind)
@@ -415,6 +408,20 @@ func readOP25ControlStatus() (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func readOP25Updates() []map[string]json.RawMessage {
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	response, err := client.Post("http://127.0.0.1:8081/", "application/json", strings.NewReader(`[{"command":"update","arg1":0,"arg2":0}]`))
+	if err != nil {
+		return nil
+	}
+	defer response.Body.Close()
+	var updates []map[string]json.RawMessage
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&updates); err != nil {
+		return nil
+	}
+	return updates
 }
 
 func readFileTail(path string, limit int64) string {

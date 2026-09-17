@@ -1016,8 +1016,12 @@ var decimalIdentifier = regexp.MustCompile(`\d+`)
 
 func (m *OP25Manager) ActiveCalls() ([]P25ActiveCall, error) {
 	m.mu.Lock()
+	engine := m.engine
 	profile, configPath := m.profile, m.configPath
 	m.mu.Unlock()
+	if engine == "OP25" {
+		return m.readOP25Calls(), nil
+	}
 	if profile == nil || configPath == nil {
 		return nil, nil
 	}
