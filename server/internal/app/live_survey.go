@@ -1651,7 +1651,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		clipped := clippedIQPercent(data, format)
 		telemetry := ReceiverTelemetry{DeviceID: device.ID, HardwareCenterHz: float64(spec.CenterFrequencyHz), ListenFrequencyHz: request.FrequencyHz,
 			SampleRateHz: spec.SampleRateHz, SignalDBFS: result.SignalDBFS, NoiseDBFS: noiseFloor, PeakDBFS: result.PeakDBFS,
-			ClippedPercent: clipped, Overloaded: clipped >= .5, SignalDetected: detected, SquelchOpen: active, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
+			ClippedPercent: clipped, Overloaded: clipped >= .5, SignalDetected: detected, SquelchOpen: active, GainDB: spec.GainDB, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
 		r.updateReceiverTelemetry(telemetry, &latestAnalysis)
 		if !active {
 			noiseFloor = noiseFloor*.96 + result.SignalDBFS*.04

@@ -484,6 +484,19 @@ func TestReceiverSpecificControlsDoNotSendHackRFFrontEndSettingsToOtherRadios(t 
 	}
 }
 
+func TestTunerShowsEffectiveReceiverControls(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"const appliedDevice=state.devices.find(item=>item.id===telemetry?.deviceID)", "Applied ${applied}", "LNA ${telemetry.lnaGainDB}"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("effective tuner-control readout %q is missing", required)
+		}
+	}
+}
+
 func TestUnifiedInterfaceKeepsControlsVisibleAndAutoContextual(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {

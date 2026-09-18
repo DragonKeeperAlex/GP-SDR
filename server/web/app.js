@@ -800,7 +800,8 @@ function renderTuner() {
   $('#tuner-stop').disabled = !tuning;
   const hardwareMHz=state.spectrum?.centerFrequencyHz?(state.spectrum.centerFrequencyHz/1e6).toFixed(6):'starting',listenMHz=Number($('#tuner-frequency').value||0).toFixed(6);
 	const intelligence=state.status?.signalAnalysis, analysisText=intelligence?.modulation&&intelligence.modulation!=='UNKNOWN'?` · ${intelligence.modulation} ${Math.round((intelligence.confidence||0)*100)}%`:'';
-	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${analysisText}` : connected.length ? 'Ready to tune.' : 'Connect a receiver, then refresh Hardware.';
+	const appliedDevice=state.devices.find(item=>item.id===telemetry?.deviceID),applied=telemetry?.sampleRateHz?`${(telemetry.sampleRateHz/1e6).toFixed(2)} MS/s · ${appliedDevice?.kind==='HackRF'?`LNA ${telemetry.lnaGainDB} · VGA ${telemetry.vgaGainDB} · amp ${telemetry.ampEnabled?'on':'off'}`:`gain ${Number(telemetry.gainDB).toFixed(1)} dB`}`:'';
+	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${applied?` · Applied ${applied}`:''}${analysisText}` : connected.length ? 'Ready to tune.' : 'Connect a receiver, then refresh Hardware.';
   const snapshot = state.spectrum;
   if (snapshot?.binsDBFS?.length) {
 		const sorted=[...snapshot.binsDBFS].sort((a,b)=>a-b),noise=sorted[Math.floor(sorted.length*.25)]??-120,peak=Math.max(...snapshot.binsDBFS),snr=Math.max(0,peak-noise);

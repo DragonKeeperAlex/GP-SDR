@@ -354,6 +354,7 @@ type ReceiverTelemetry struct {
 	Overloaded        bool    `json:"overloaded"`
 	SignalDetected    bool    `json:"signalDetected"`
 	SquelchOpen       bool    `json:"squelchOpen"`
+	GainDB            float64 `json:"gainDB"`
 	LNAGainDB         int     `json:"lnaGainDB"`
 	VGAGainDB         int     `json:"vgaGainDB"`
 	AmpEnabled        bool    `json:"ampEnabled"`
