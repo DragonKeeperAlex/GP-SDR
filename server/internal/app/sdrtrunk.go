@@ -351,7 +351,7 @@ func (m *OP25Manager) Status() P25Status {
 			return P25Status{State: "error", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath, Note: note}
 		default:
 			status := P25Status{State: "running", Engine: engine, Executable: ptr(command.Path), ProfileID: profileID, ConfigPath: configPath,
-				Reception: "searching", Note: "SDRTrunk is checking the configured P25 control channels."}
+				Reception: "searching", Note: "SDRTrunk is checking the configured P25 control channels.", ReceiverDeviceIDs: p25ReceiverDeviceIDs(plan, devices)}
 			if profile != nil {
 				status.CaptureRateHz = effectiveP25CaptureRate(*profile, p25DeviceAssignments(plan, devices), rateFallback)
 			}

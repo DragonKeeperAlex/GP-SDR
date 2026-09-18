@@ -27,6 +27,10 @@ type P25Status struct {
 	ControlChannelHz float64 `json:"controlChannelHz,omitempty"`
 	ControlSource    string  `json:"controlSource,omitempty"`
 	CaptureRateHz    int     `json:"captureRateHz,omitempty"`
+	// ReceiverDeviceIDs is the live P25 assignment, not merely a profile
+	// preference. The web client uses it to avoid rendering controls for a
+	// previously selected receiver after a P25 session has started elsewhere.
+	ReceiverDeviceIDs []string `json:"receiverDeviceIDs,omitempty"`
 }
 
 type OP25Manager struct {
@@ -363,7 +367,7 @@ func (m *OP25Manager) op25Status() P25Status {
 		default:
 		}
 		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath,
-			Reception: "searching", Note: "OP25 is checking the configured P25 control channels."}
+			Reception: "searching", Note: "OP25 is checking the configured P25 control channels.", ReceiverDeviceIDs: p25ReceiverDeviceIDs(m.plan, m.devices)}
 		if frequency, ok := readOP25ControlStatus(); ok {
 			status.Reception = "locked"
 			status.ControlChannelHz = frequency
@@ -380,6 +384,15 @@ func (m *OP25Manager) op25Status() P25Status {
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
 	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+}
+
+func p25ReceiverDeviceIDs(plan []ReceiverPlanItem, devices []SDRDevice) []string {
+	assigned := p25DeviceAssignments(plan, devices)
+	ids := make([]string, 0, len(assigned))
+	for _, assignment := range assigned {
+		ids = append(ids, assignment.Device.ID)
+	}
+	return ids
 }
 
 // OP25 can decode control traffic without an enabled talkgroup receiving a

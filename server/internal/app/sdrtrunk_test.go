@@ -98,6 +98,15 @@ func rtlSDRP25Assignment() []p25AssignedDevice {
 	return []p25AssignedDevice{{Device: SDRDevice{Kind: "RTL-SDR"}}}
 }
 
+func TestP25ReceiverDeviceIDsUsesLiveAssignedReceivers(t *testing.T) {
+	plutoID, rtlID := "pluto-live", "rtl-live"
+	plan := []ReceiverPlanItem{{DeviceID: &plutoID, Role: "control"}, {DeviceID: &rtlID, Role: "voice"}}
+	devices := []SDRDevice{{ID: plutoID, Connected: true, Available: true}, {ID: rtlID, Connected: true, Available: false}}
+	if got := p25ReceiverDeviceIDs(plan, devices); len(got) != 1 || got[0] != plutoID {
+		t.Fatalf("live P25 receiver IDs = %#v, want only %q", got, plutoID)
+	}
+}
+
 func TestOptimizeP25SampleRatesConfiguresAssignedHackRFOnly(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "configuration")
