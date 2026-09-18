@@ -69,6 +69,10 @@ Authenticated health check passed; existing Pluto P25 profile restored and decod
 
 ## Headless P25 backend selection
 
+## P25 runtime receiver status follow-up
+
+September 17, Pi test14: P25 status now includes the actual active assigned receiver IDs instead of making the client infer them from a stale profile selection. The browser P25 page uses that field to show receiver-specific controls only for the running radio. Local `go test ./internal/app`, `go vet ./internal/app`, and JavaScript syntax checks passed. Test14 is installed on the Pi, SHA-256 `d2923c0aeb6458b084b74d49dbaa9c8d68523036ff83e9d97d41257335652e5c`, with rollback at `/home/sdr/gpsdr-before-pi-test14-g3Usf3`. Authenticated status reported the Pluto receiver and OP25 locked 774.45625 MHz; a bounded no-playback live-audio read produced non-silent PCM. No user audio was played. This is not a talkgroup-routing or listening-quality acceptance.
+
 `Scripts/pi/gp-sdr-p25.conf` sets `GPSDR_P25_ENGINE=op25` on this Pi only. The application also accepts `auto` (default) or `sdrtrunk`; invalid values fail clearly, and explicitly selecting SDRTrunk for Pluto fails rather than silently choosing another engine. OP25 must already be installed. This configuration uses the existing direct UDP PCM bridge rather than nonexistent native sound hardware. It does not complete the separate SDRTrunk PCM bridge backlog item.
 
 Install as `/etc/systemd/system/gp-sdr.service.d/p25.conf`, reload systemd and restart GP-SDR after preserving job settings. HackRF P25 LNA/VGA/amp overrides are now passed to OP25 instead of ignored. RF-02/03 and UI-04 remain open until their full acceptance gates pass.
