@@ -114,6 +114,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-17 MAP-05/09 group-retention continuation: moved deferred IQ finalization after successful combined-group analysis; only successfully processed files enter combination. Group-model failures mark affected files error and preserve IQ, adjusting completed/failed counters. Cancellation before cleanup restores processed files to pending. Regression simulates successful first model call followed by group HTTP 503 and verifies IQ/status/counters. Status-write failure handling and explicit failed-group retry controls remain open; no production deployment yet.
+
 - 2026-09-17 MAP-05/09/AI-01/02 continuation: deferred decoder errors and ready/configured transcription errors now propagate before retention cleanup. Unconfigured optional transcription logs a skipped stage. Group-model errors appear in analysis LastError/log rather than a false success banner; disabled AI does not fail the optional stage. Added configured-missing-model IQ-preservation and group HTTP 503 regressions; local race suite/vet pass. Group retention/retry after individual-file cleanup, persistence-status errors and real decoder/speech acceptance remain open. Pi installed build remains test10 pending accumulated deployment.
 
 - 2026-09-17 AI-07: user requested local lightweight first-pass analysis plus queued notable samples for a larger remote Ollama server. Requirements saved only; no implementation, server configuration, transfers or running-session changes.

@@ -93,3 +93,46 @@ func TestDeferredGroupModelFailureIsReported(t *testing.T) {
 		t.Fatal("disabled optional AI failed", err)
 	}
 }
+
+func TestDeferredGroupFailurePreservesPreviouslyAnalyzedIQ(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audio, iq := filepath.Join(root, "audio.wav"), filepath.Join(root, "capture.cs8")
+	if err := WriteMonoWAV(audio, make([]int16, 8000), 8000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(iq, []byte{1, 2, 3, 4}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests > 1 {
+			http.Error(w, "offline", 503)
+			return
+		}
+		_, _ = w.Write([]byte(`{"response":"{\"signalFamily\":\"Unknown\",\"modulation\":\"UNKNOWN\",\"summary\":\"Insufficient evidence\",\"confidence\":0.2,\"evidence\":[],\"callsigns\":[]}"}`))
+	}))
+	defer server.Close()
+	ai := NewLocalAIAnalyzer(root)
+	ai.config = LocalAIConfig{Enabled: true, Endpoint: server.URL, Model: "test", Profile: "balanced"}
+	event := TransmissionEvent{ID: "group-failure", StartedAt: time.Now(), FrequencyHz: 98.1e6, AudioPath: &audio, IQPath: &iq, AnalysisStatus: "pending"}
+	if err := store.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{Events: store, localAI: ai}
+	runtime.processDeferredGroup([]TransmissionEvent{event}, make(chan struct{}))
+	current, _ := store.Get(event.ID)
+	if current.AnalysisStatus != "error" {
+		t.Fatalf("group failure marked %s", current.AnalysisStatus)
+	}
+	if _, err := os.Stat(iq); err != nil {
+		t.Fatal("group failure lost IQ", err)
+	}
+	if runtime.analysisCompleted != 0 || runtime.analysisFailed != 1 {
+		t.Fatal("misleading group counters")
+	}
+}

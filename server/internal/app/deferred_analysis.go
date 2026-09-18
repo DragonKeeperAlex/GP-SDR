@@ -219,6 +219,18 @@ func (r *Runtime) runDeferredWave(groups [][]TransmissionEvent, stop <-chan stru
 }
 
 func (r *Runtime) processDeferredGroup(events []TransmissionEvent, stop <-chan struct{}) {
+	successful := []TransmissionEvent{}
+	finished := false
+	defer func() {
+		if !finished {
+			for _, event := range successful {
+				_ = r.Events.UpdateAnalysisStatus(event.ID, "pending", "")
+			}
+			r.analysisMu.Lock()
+			r.analysisCompleted -= len(successful)
+			r.analysisMu.Unlock()
+		}
+	}()
 	frequency := events[0].FrequencyHz
 	location := deferredLocationLabel(events[0])
 	r.analysisMu.Lock()
@@ -249,7 +261,8 @@ func (r *Runtime) processDeferredGroup(events []TransmissionEvent, stop <-chan s
 			r.analysisMu.Unlock()
 			continue
 		}
-		_ = r.Events.UpdateAnalysisStatus(event.ID, "complete", "")
+		// Keep the event running/recoverable until group analysis and cleanup finish.
+		successful = append(successful, event)
 		resultMessage := fmt.Sprintf("File %d of %d processed", index+1, len(events))
 		if current, ok := r.Events.Get(event.ID); ok {
 			parts := []string{}
@@ -272,7 +285,33 @@ func (r *Runtime) processDeferredGroup(events []TransmissionEvent, stop <-chan s
 		r.analysisMu.Unlock()
 		r.clearAnalysisCurrent(event.ID)
 	}
-	combineErr := r.combineDeferredGroup(events, stop)
+	combineErr := r.combineDeferredGroup(successful, stop)
+	if errors.Is(combineErr, context.Canceled) {
+		return
+	}
+	select {
+	case <-stop:
+		return
+	default:
+	}
+	for _, event := range successful {
+		err := combineErr
+		if err == nil {
+			err = r.finalizeDeferredEvidence(event)
+		}
+		if err != nil {
+			_ = r.Events.UpdateAnalysisStatus(event.ID, "error", err.Error())
+			r.analysisMu.Lock()
+			r.analysisCompleted--
+			r.analysisFailed++
+			r.analysisLastError = err.Error()
+			r.appendAnalysisLogLocked("error", event.FrequencyHz, "retention", err.Error())
+			r.analysisMu.Unlock()
+		} else {
+			_ = r.Events.UpdateAnalysisStatus(event.ID, "complete", "")
+		}
+	}
+	finished = true
 	r.clearAnalysisCurrent(events[len(events)-1].ID)
 	r.analysisMu.Lock()
 	r.analysisGroupsDone++
@@ -513,6 +552,10 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	return nil
+}
+
+func (r *Runtime) finalizeDeferredEvidence(event TransmissionEvent) error {
 	current, ok := r.Events.Get(event.ID)
 	if ok && current.IQPath != nil {
 		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "retention cleanup")
@@ -520,7 +563,7 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 		if err != nil {
 			return err
 		}
-		_ = r.Events.UpdateIQPath(event.ID, path)
+		return r.Events.UpdateIQPath(event.ID, path)
 	}
 	return nil
 }
