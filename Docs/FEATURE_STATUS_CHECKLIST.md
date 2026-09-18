@@ -117,6 +117,8 @@ Fixed in this work tranche (bounded software scope only):
 
 ## This session's evidence and limits
 
+- Pi P25 test16: live P25 rate/gain/amp changes now preserve the actual runtime receiver rather than a stale UI choice during the supervised restart. Source regression, syntax, audio-queue, unit and vet checks pass; Pluto relocked after install. Browser click-through and audible output acceptance remain open.
+
 - Pi P25 test15: live audio status now reports connected/waiting until a frame is actually received, then reports the PCM rate. The 8 kHz P25 scheduling regression passes. A 25-second no-playback live Pluto stream captured 378 frames / 7.56 seconds of non-silent 8 kHz PCM while OP25 stayed locked. This strengthens delivery evidence only; clear user-listened speech, mixer routing, and full GUI acceptance remain open.
 
 - Pi P25 test14: status now exposes the actual assigned live receiver to the P25 UI, preventing a stale receiver choice from showing the wrong sample-rate/capability controls. Pluto assignment and OP25 lock at 774.45625 MHz verified through the installed authenticated API. Unit/vet and JavaScript syntax pass. A one-frame non-silent no-playback PCM capture is delivery evidence only; real voice intelligibility and complete GUI control acceptance remain open.

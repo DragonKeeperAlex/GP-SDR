@@ -459,7 +459,7 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	app := string(appData)
 	for _, required := range []string{
 		"status.controlChannelHz", `id="p25-order"`, "Most recent", "Most received",
-		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs",
+		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:''",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("P25 mixer status or activity-order behavior %q is missing", required)
