@@ -185,9 +185,10 @@ async function refreshAll() {
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
       api('/api/p25/status'), api('/api/spectrum'), api('/api/spectra'), api('/api/range-sync'), api('/api/local-database'), api('/api/local-ai'), api('/api/local-ai/benchmark'), api('/api/calibrations'), api('/api/calibrations/characterization'), api('/api/mapper'), api('/api/mapper/progress'), api('/api/analysis'), api('/api/remote-receivers'), api('/api/transmit/status')
     ]);
-    Object.assign(state, { status, profiles: profiles || [], events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, spectra: spectra || [], rangeSync, localDatabase, localAI, localAIBenchmark, calibrations: calibrations || [], characterization, mapper, mapperProgress, analysisStatus, remoteReceivers: remoteReceivers || [], transmitStatus });
-    if (!state.selectedProfileID || !profiles.some(profile => profile.id === state.selectedProfileID)) {
-      state.selectedProfileID = status.activeProfileID || profiles[0]?.id || null;
+    const safeProfiles=(profiles||[]).map(profile=>({...profile,ranges:Array.isArray(profile.ranges)?profile.ranges:[],channels:Array.isArray(profile.channels)?profile.channels:[],deviceAssignments:Array.isArray(profile.deviceAssignments)?profile.deviceAssignments:[],p25Systems:Array.isArray(profile.p25Systems)?profile.p25Systems:[],settings:profile.settings||{}}));
+    Object.assign(state, { status, profiles: safeProfiles, events: events || [], signals: signals || [], devices: devices || [], decoders: decoders || [], mixer: mixer || [], integrations, setup, p25Status, spectrum, spectra: spectra || [], rangeSync, localDatabase, localAI, localAIBenchmark, calibrations: calibrations || [], characterization, mapper, mapperProgress, analysisStatus, remoteReceivers: remoteReceivers || [], transmitStatus });
+    if (!state.selectedProfileID || !safeProfiles.some(profile => profile.id === state.selectedProfileID)) {
+      state.selectedProfileID = status.activeProfileID || safeProfiles[0]?.id || null;
     }
     render();
     document.body.classList.remove('server-offline');
@@ -640,7 +641,7 @@ function renderProfiles() {
   $('#profile-grid').innerHTML = state.profiles.length ? state.profiles.map(profile => `
     <article class="profile-card ${profile.id === state.selectedProfileID ? 'selected' : ''}" data-profile-id="${profile.id}">
       <div class="card-top"><div><h3>${escapeHTML(profile.name)}</h3><p>${escapeHTML(profile.summary || 'Custom scan configuration')}</p></div>${profile.builtIn ? '<span class="chip">Built-in</span>' : ''}</div>
-      <div class="profile-stats"><div><span>Ranges</span><strong>${profile.ranges.length}</strong></div><div><span>Channels</span><strong>${profile.channels.length}</strong></div><div><span>P25</span><strong>${(profile.p25Systems || []).length}</strong></div><div><span>Receivers</span><strong>${profile.deviceAssignments.length}</strong></div></div>
+      <div class="profile-stats"><div><span>Ranges</span><strong>${(profile.ranges||[]).length}</strong></div><div><span>Channels</span><strong>${(profile.channels||[]).length}</strong></div><div><span>P25</span><strong>${(profile.p25Systems || []).length}</strong></div><div><span>Receivers</span><strong>${(profile.deviceAssignments||[]).length}</strong></div></div>
       <div class="card-actions">
         <button class="select-profile" title="Use this profile">Use</button>
         <button class="${profile.builtIn ? 'duplicate-profile' : 'edit-profile'}" title="${profile.builtIn ? 'Make an editable copy' : 'Edit this profile'}">${profile.builtIn ? 'Duplicate' : 'Edit'}</button>
@@ -911,7 +912,8 @@ async function startP25Workspace() {
       profile.deviceAssignments=[{id:crypto.randomUUID(),deviceID:state.p25DeviceID,role:'control',target:null}];
       profile=await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});
     }
-    await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:profile.id})});
+    await startLiveAudio();
+    await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:profile.id,deviceID:state.p25DeviceID||undefined})});
     state.selectedProfileID=state.p25ProfileID=profile.id;button.blur();await refreshAll();toast('P25 started');
   } catch(error) {toast(error.message,true);button.disabled=false;button.textContent='Start P25';}
 }
