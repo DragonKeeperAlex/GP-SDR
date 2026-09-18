@@ -272,11 +272,16 @@ func (r *Runtime) processDeferredGroup(events []TransmissionEvent, stop <-chan s
 		r.analysisMu.Unlock()
 		r.clearAnalysisCurrent(event.ID)
 	}
-	r.combineDeferredGroup(events, stop)
+	combineErr := r.combineDeferredGroup(events, stop)
 	r.clearAnalysisCurrent(events[len(events)-1].ID)
 	r.analysisMu.Lock()
 	r.analysisGroupsDone++
-	r.appendAnalysisLogLocked("success", frequency, "group", "Combined group evidence")
+	if combineErr != nil {
+		r.analysisLastError = combineErr.Error()
+		r.appendAnalysisLogLocked("error", frequency, "group", combineErr.Error())
+	} else {
+		r.appendAnalysisLogLocked("info", frequency, "group", "Frequency group processing finished")
+	}
 	r.analysisMu.Unlock()
 }
 
@@ -342,9 +347,15 @@ func (r *Runtime) clearAnalysisCurrent(eventID string) {
 	r.analysisMu.Unlock()
 }
 
-func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan struct{}) {
+func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan struct{}) error {
 	if r.localAI == nil || len(events) == 0 {
-		return
+		return nil
+	}
+	r.localAI.mu.RLock()
+	enabled := r.localAI.config.Enabled
+	r.localAI.mu.RUnlock()
+	if !enabled {
+		return nil
 	}
 	combined := events[len(events)-1]
 	combined.DecoderMessages = nil
@@ -380,7 +391,7 @@ func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan s
 	r.setAnalysisCurrent(combined, deferredLocationLabel(combined), len(events), len(events), "combining evidence")
 	analysis, err := r.localAI.Analyze(ctx, combined)
 	if err != nil {
-		return
+		return fmt.Errorf("combine group evidence: %w", err)
 	}
 	for _, event := range events {
 		_ = r.Events.UpdateAnalysis(event.ID, analysis)
@@ -388,6 +399,7 @@ func (r *Runtime) combineDeferredGroup(events []TransmissionEvent, stop <-chan s
 	if r.mapper != nil {
 		r.mapper.SetSignalIntelligence(combined.FrequencyHz, analysis)
 	}
+	return nil
 }
 
 func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct{}) error {
@@ -446,7 +458,10 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 	}
 	if candidate, ok := decoderCandidate(event.FrequencyHz, event.RequestedDecoder); ok && r.decoderReady(candidate.DecoderID) {
 		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "decoder · "+candidate.DecoderID)
-		messages, _ := runCandidateDecoder(ctx, candidate.DecoderID, audio, audioRate, stringValue(event.IQPath), event.FrequencyHz, spec)
+		messages, err := runCandidateDecoder(ctx, candidate.DecoderID, audio, audioRate, stringValue(event.IQPath), event.FrequencyHz, spec)
+		if err != nil {
+			return fmt.Errorf("decoder %s: %w", candidate.DecoderID, err)
+		}
 		if len(messages) > 0 {
 			_ = r.Events.UpdateDecoderMessages(event.ID, messages)
 			if r.mapper != nil {
@@ -454,13 +469,27 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 			}
 		}
 	}
-	if event.AudioPath != nil && ctx.Err() == nil {
-		r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "transcription")
-		if transcript, err := r.transcriber.Transcribe(ctx, *event.AudioPath); err == nil && strings.TrimSpace(transcript) != "" {
-			_ = r.Events.UpdateTranscript(event.ID, transcript)
-			if r.mapper != nil {
-				r.mapper.SetTranscript(event.FrequencyHz, transcript)
+	if event.AudioPath != nil && ctx.Err() == nil && r.transcriber != nil {
+		status := r.transcriber.Status()
+		if status.State == "error" {
+			return fmt.Errorf("transcription: %s", status.Note)
+		}
+		if status.State == "ready" {
+			r.setAnalysisCurrent(event, deferredLocationLabel(event), 0, 0, "transcription")
+			transcript, err := r.transcriber.Transcribe(ctx, *event.AudioPath)
+			if err != nil {
+				return fmt.Errorf("transcription: %w", err)
 			}
+			if strings.TrimSpace(transcript) != "" {
+				_ = r.Events.UpdateTranscript(event.ID, transcript)
+				if r.mapper != nil {
+					r.mapper.SetTranscript(event.FrequencyHz, transcript)
+				}
+			}
+		} else {
+			r.analysisMu.Lock()
+			r.appendAnalysisLogLocked("warning", event.FrequencyHz, "transcription", "Skipped: offline transcription is not configured")
+			r.analysisMu.Unlock()
 		}
 	}
 	if ctx.Err() == nil && r.localAI != nil {

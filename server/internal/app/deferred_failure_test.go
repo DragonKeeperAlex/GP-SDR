@@ -53,3 +53,43 @@ func TestDeferredCorruptAudioReportsFailure(t *testing.T) {
 		t.Fatalf("invalid audio hidden: %v", err)
 	}
 }
+
+func TestDeferredMissingConfiguredTranscriptionRetainsIQ(t *testing.T) {
+	root := t.TempDir()
+	audio, iq := filepath.Join(root, "audio.wav"), filepath.Join(root, "capture.cs8")
+	if err := WriteMonoWAV(audio, make([]int16, 8000), 8000); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(iq, []byte{1, 2}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Runtime{transcriber: &Transcriber{executable: "whisper", model: filepath.Join(root, "missing-model")}}
+	err := runtime.analyzeStoredEvent(TransmissionEvent{ID: "missing-model", AudioPath: &audio, IQPath: &iq}, make(chan struct{}))
+	if err == nil || !strings.Contains(err.Error(), "transcription") {
+		t.Fatalf("configured model failure hidden: %v", err)
+	}
+	if _, err := os.Stat(iq); err != nil {
+		t.Fatal("transcription failure removed IQ")
+	}
+}
+
+func TestDeferredGroupModelFailureIsReported(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "offline", 503) }))
+	defer server.Close()
+	ai := NewLocalAIAnalyzer(root)
+	ai.config = LocalAIConfig{Enabled: true, Endpoint: server.URL, Model: "test", Profile: "balanced"}
+	runtime := &Runtime{Events: store, localAI: ai}
+	err = runtime.combineDeferredGroup([]TransmissionEvent{{ID: "group", FrequencyHz: 98.1e6}}, make(chan struct{}))
+	if err == nil || !strings.Contains(err.Error(), "combine group evidence") {
+		t.Fatalf("group failure hidden: %v", err)
+	}
+	ai.config.Enabled = false
+	if err := runtime.combineDeferredGroup([]TransmissionEvent{{ID: "group"}}, make(chan struct{})); err != nil {
+		t.Fatal("disabled optional AI failed", err)
+	}
+}

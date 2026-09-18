@@ -114,6 +114,8 @@ Start with easy bounded fixes and regression tests, then work toward difficult h
 
 ## Evidence log
 
+- 2026-09-17 MAP-05/09/AI-01/02 continuation: deferred decoder errors and ready/configured transcription errors now propagate before retention cleanup. Unconfigured optional transcription logs a skipped stage. Group-model errors appear in analysis LastError/log rather than a false success banner; disabled AI does not fail the optional stage. Added configured-missing-model IQ-preservation and group HTTP 503 regressions; local race suite/vet pass. Group retention/retry after individual-file cleanup, persistence-status errors and real decoder/speech acceptance remain open. Pi installed build remains test10 pending accumulated deployment.
+
 - 2026-09-17 AI-07: user requested local lightweight first-pass analysis plus queued notable samples for a larger remote Ollama server. Requirements saved only; no implementation, server configuration, transfers or running-session changes.
 
 - 2026-09-17 MAP-05/09/AI-02 analysis failure handling: enabled local-model errors now fail the capture before retention cleanup instead of being ignored; disabled AI remains optional. Corrupt saved WAV now returns an explicit read failure. Regression verifies HTTP 503 preserves IQ and corrupt audio fails. Local full race suite/vet passed. Deployment and Pi acceptance pending; transcription/decoder error propagation and group-level model failures remain open.

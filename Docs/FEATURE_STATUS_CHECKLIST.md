@@ -70,6 +70,8 @@ below but do not treat that unit as an active application-remediation blocker.
 
 Fixed in this work tranche (bounded software scope only):
 
+- [x] Deferred decoder/configured transcription failures propagate before IQ cleanup; unconfigured transcription is explicitly skipped. Group-model failures populate error log/status instead of unconditional combined-evidence success. Configured missing-model retention and group HTTP 503 regression pass locally. Full group retention/retry and physical speech/decoder acceptance remain open.
+
 - [x] Deferred local-model request failures no longer mark capture complete and proceed to IQ retention cleanup. Invalid saved WAV fails explicitly rather than being silently skipped. Regression checks HTTP 503 retains IQ. Local race suite/vet pass; Pi deployment pending. This does not close all decoder/transcription/group-combination failure handling.
 
 - [x] Mapper job disk failures: Save/Create/Delete return persistence errors and retain original in-memory/disk state; background results/job snapshot failures appear in Mapper error status. Race suite/vet and Pi exFAT fixture regressions pass. This is not complete NAS/offline recovery acceptance.
