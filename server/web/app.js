@@ -817,10 +817,11 @@ function renderTuner() {
 }
 
 function tunerRequest() {
-  return {deviceID:$('#tuner-device').value,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
+  const deviceID=$('#tuner-device').value,device=state.devices.find(item=>item.id===deviceID),hackrf=device?.kind==='HackRF';
+  return {deviceID,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
     bandwidthHz:Number($('#tuner-bandwidth').value)*1000,sampleRateHz:Number($('#tuner-rate').value),gainDB:Number($('#tuner-gain').value),
-    lnaGainDB:Number($('#tuner-lna').value),vgaGainDB:Number($('#tuner-vga').value),ppmCorrection:Number($('#tuner-ppm').value),
-    ampEnabled:$('#tuner-amp').checked,antennaPower:$('#tuner-bias').checked,iqDCRemoval:$('#tuner-dc').checked,
+    lnaGainDB:hackrf?Number($('#tuner-lna').value):0,vgaGainDB:hackrf?Number($('#tuner-vga').value):0,ppmCorrection:Number($('#tuner-ppm').value),
+    ampEnabled:hackrf&&$('#tuner-amp').checked,antennaPower:hackrf&&$('#tuner-bias').checked,iqDCRemoval:$('#tuner-dc').checked,
     iqGain:Number($('#tuner-iq-gain').value),iqPhase:Number($('#tuner-iq-phase').value),iqSwap:$('#tuner-iq-swap').checked,
     autoGain:$('#tuner-agc').checked,squelchDB:Number($('#tuner-squelch').value),monitorOpen:$('#tuner-monitor-open').checked,
     noiseReduction:$('#tuner-noise').value,useCalibration:$('#tuner-use-calibration').checked,lockCenter:$('#tuner-lock-center').checked,

@@ -467,6 +467,23 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	}
 }
 
+func TestReceiverSpecificControlsDoNotSendHackRFFrontEndSettingsToOtherRadios(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"function updateReceiverCapabilityControls()", "setCapabilityVisibility(`${prefix}-${suffix}`,hackrf)",
+		"lnaGainDB:hackrf?Number($('#tuner-lna').value):0", "vgaGainDB:hackrf?Number($('#tuner-vga').value):0",
+		"ampEnabled:hackrf&&$('#tuner-amp').checked", "antennaPower:hackrf&&$('#tuner-bias').checked",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("receiver-specific control behavior %q is missing", required)
+		}
+	}
+}
+
 func TestUnifiedInterfaceKeepsControlsVisibleAndAutoContextual(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {

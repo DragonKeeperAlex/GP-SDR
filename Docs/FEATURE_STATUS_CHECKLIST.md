@@ -117,6 +117,8 @@ Fixed in this work tranche (bounded software scope only):
 
 ## This session's evidence and limits
 
+- Pi UI-03 test17: non-HackRF Tuner/Live requests now neutralize HackRF LNA/VGA/RF-amp/bias fields rather than merely hiding them. Regression and app checks pass; Pluto P25 relocked after install. Browser click-through and applied-value telemetry remain open.
+
 - RF-11 bounded Pi test: 60 seconds direct RTL receive at 2.4 MS/s completed normally alongside locked Pluto P25, with no immediate USB fault or throttle. This is too short to close the reported long-duration RTL dropout.
 
 - Pi P25 test16: live P25 rate/gain/amp changes now preserve the actual runtime receiver rather than a stale UI choice during the supervised restart. Source regression, syntax, audio-queue, unit and vet checks pass; Pluto relocked after install. Browser click-through and audible output acceptance remain open.
