@@ -57,6 +57,8 @@ This does not restart GP-SDR. Test a subsequent normal restart before acceptance
 
 ## September 17 persistence and combined-load follow-up
 
+Further analysis continuation, source `6ac3a6d`: all four ARM64 regressions passed on Pi mounted-data disposable fixtures: model HTTP 503 retains IQ, corrupt WAV fails, configured missing transcription model retains IQ, group-model HTTP 503 is reported. Local full race suite/vet pass. Production service not restarted; installed build remains test10. Full group-level retention/retry and actual decoder/transcription acceptance remain open.
+
 Analysis continuation: ARM64 failure regressions `TestDeferredModelFailureRetainsIQ` and `TestDeferredCorruptAudioReportsFailure` passed using disposable fixtures on the mounted Pi data drive. Simulated HTTP 503 preserves IQ; malformed WAV reports failure. Source `f9e053c`; candidate `1.5.0-rc34-pi-test11` built but not installed. Production remains test10; existing receiver session not interrupted.
 
 Continuation: installed `1.5.0-rc34-pi-test10`, SHA-256 `f87fbc4ec74bdaf0bde916ee859df8ab335df3504baf000d1729813567ae04f0`; rollback binary/Data/Profiles `/home/sdr/gpsdr-before-pi-test10-gM7xSQ`. Mapper job Save/Create/Delete write errors now preserve previous state and return failure; background snapshot errors exposed. Two write-failure tests passed on Pi exFAT; local race suite/vet passed. Authenticated startup health passed. No user recordings/results deleted.
