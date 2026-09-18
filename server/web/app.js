@@ -1069,7 +1069,7 @@ async function pumpLiveAudio(controller) {
       try{
         const response = await fetch('/api/live-audio', {headers, signal:controller.signal});
         if (!response.ok || !response.body) throw new Error('Live audio stream is unavailable');
-        let receivedAudio=false; const audioState=$('#audio-state'); if(audioState)audioState.textContent='Audio ready';
+        let receivedAudio=false; const audioState=$('#audio-state'); if(audioState)audioState.textContent='Audio connected · waiting for voice';
         const reader = response.body.getReader(); let pending = new Uint8Array(0);
         while (true) {
           const {value,done} = await reader.read(); if (done) throw new Error('Live audio stream ended');
@@ -1082,7 +1082,7 @@ async function pumpLiveAudio(controller) {
             const samples=new DataView(pending.buffer,pending.byteOffset+10+idLength,count*2);
             for(let index=0;index<count;index++) pcm[index]=samples.getInt16(index*2,true);
             scheduleAudioFrame(channelID,sampleRate,pcm); pending=pending.slice(packetLength);
-            if(!receivedAudio){receivedAudio=true;failures=0;}
+            if(!receivedAudio){receivedAudio=true;failures=0;if(audioState)audioState.textContent=`Audio receiving · ${sampleRate/1000} kHz`;}
           }
         }
       }catch(error){
