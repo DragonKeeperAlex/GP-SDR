@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -13,24 +14,31 @@ import (
 
 const gibibyte = int64(1024 * 1024 * 1024)
 
+const defaultCaptureJournalCapBytes = int64(128 * 1024 * 1024)
+const maxCaptureJournalCapBytes = int64(1024 * 1024 * 1024)
+
 type StoragePolicy struct {
-	AutoCleanup              bool  `json:"autoCleanup"`
-	MaxCaptureDays           int   `json:"maxCaptureDays"`
-	RecordingCapBytes        int64 `json:"recordingCapBytes"`
-	IQCapBytes               int64 `json:"iqCapBytes"`
+	AutoCleanup       bool  `json:"autoCleanup"`
+	MaxCaptureDays    int   `json:"maxCaptureDays"`
+	RecordingCapBytes int64 `json:"recordingCapBytes"`
+	IQCapBytes        int64 `json:"iqCapBytes"`
+	// CaptureJournalCapBytes bounds raw capture timing diagnostics. It never
+	// applies to Mapper findings, event history, profiles, or calibration.
+	CaptureJournalCapBytes   int64 `json:"captureJournalCapBytes"`
 	AutoRemoveQuarantine     bool  `json:"autoRemoveQuarantine"`
 	QuarantineRetentionHours int   `json:"quarantineRetentionHours"`
 }
 
 type StorageCleanupResult struct {
-	FilesRemoved int       `json:"filesRemoved"`
-	BytesFreed   int64     `json:"bytesFreed"`
-	CompletedAt  time.Time `json:"completedAt"`
-	LastError    string    `json:"lastError,omitempty"`
+	FilesRemoved            int       `json:"filesRemoved"`
+	CaptureIntervalsRemoved int       `json:"captureIntervalsRemoved,omitempty"`
+	BytesFreed              int64     `json:"bytesFreed"`
+	CompletedAt             time.Time `json:"completedAt"`
+	LastError               string    `json:"lastError,omitempty"`
 }
 
 func defaultStoragePolicy() StoragePolicy {
-	return StoragePolicy{AutoCleanup: false, MaxCaptureDays: 30, RecordingCapBytes: 15 * gibibyte, IQCapBytes: 10 * gibibyte,
+	return StoragePolicy{AutoCleanup: false, MaxCaptureDays: 30, RecordingCapBytes: 15 * gibibyte, IQCapBytes: 10 * gibibyte, CaptureJournalCapBytes: defaultCaptureJournalCapBytes,
 		AutoRemoveQuarantine: true, QuarantineRetentionHours: 24}
 }
 
@@ -46,6 +54,9 @@ func loadStoragePolicy(dataDirectory string) StoragePolicy {
 			}
 			if _, exists := raw["quarantineRetentionHours"]; !exists {
 				policy.QuarantineRetentionHours = 24
+			}
+			if _, exists := raw["captureJournalCapBytes"]; !exists {
+				policy.CaptureJournalCapBytes = defaultCaptureJournalCapBytes
 			}
 		}
 	}
@@ -71,6 +82,9 @@ func validateStoragePolicy(policy StoragePolicy) (StoragePolicy, error) {
 			return policy, errors.New("storage caps must be between zero and 2048 GB")
 		}
 	}
+	if policy.CaptureJournalCapBytes < 0 || policy.CaptureJournalCapBytes > maxCaptureJournalCapBytes {
+		return policy, errors.New("capture journal cap must be between zero and 1024 MB")
+	}
 	return policy, nil
 }
 
@@ -88,7 +102,9 @@ func saveStoragePolicy(dataDirectory string, policy StoragePolicy) error {
 
 func enforceStoragePolicy(dataDirectory string, policy StoragePolicy, now time.Time) StorageCleanupResult {
 	// Results and event history are intentionally stored under Data and are not
-	// cleanup targets. Only derived media under Recordings and IQ is eligible.
+	// cleanup targets. Only derived media under Recordings and IQ, plus the raw
+	// capture timing journal, are eligible. Journal compaction retains newest
+	// complete records and never changes Mapper findings or event history.
 	// Keep TestStorageCleanupNeverDeletesResultsOrEventHistory as a hard guard
 	// if storage layout or retention behavior changes in a future release.
 	result := StorageCleanupResult{CompletedAt: now}
@@ -120,11 +136,73 @@ func enforceStoragePolicy(dataDirectory string, policy StoragePolicy, now time.T
 			result.LastError += err.Error()
 		}
 	}
+	journalRemoved, journalBytesFreed, err := compactCaptureIntervalJournal(dataDirectory, policy.CaptureJournalCapBytes)
+	result.CaptureIntervalsRemoved = journalRemoved
+	result.BytesFreed += journalBytesFreed
+	if err != nil {
+		if result.LastError != "" {
+			result.LastError += " · "
+		}
+		result.LastError += err.Error()
+	}
 	after := directoryBytes(filepath.Join(dataDirectory, "Recordings")) + directoryBytes(filepath.Join(dataDirectory, "IQ"))
 	if after < before {
-		result.BytesFreed = before - after
+		result.BytesFreed += before - after
 	}
 	return result
+}
+
+// compactCaptureIntervalJournal bounds only the append-only diagnostic journal.
+// It is serialized with capture appends and writes a replacement atomically, so
+// a power interruption leaves either the old journal or a complete new one.
+func compactCaptureIntervalJournal(dataDirectory string, capBytes int64) (int, int64, error) {
+	if capBytes <= 0 {
+		return 0, 0, nil
+	}
+	path := filepath.Join(dataDirectory, "Data", "capture-intervals.jsonl")
+	archiveMu.Lock()
+	defer archiveMu.Unlock()
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	if !info.Mode().IsRegular() {
+		return 0, 0, errors.New("capture interval journal is not a regular file")
+	}
+	if info.Size() <= capBytes {
+		return 0, 0, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	lines := bytes.SplitAfter(data, []byte("\n"))
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	} else if len(lines) > 0 {
+		// A missing newline means the final append may have been interrupted.
+		// Never promote a potentially torn JSON record into the retained journal.
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) == 0 {
+		return 0, 0, errors.New("capture journal contains no complete records")
+	}
+	keptStart, keptBytes := len(lines), 0
+	for keptStart > 0 && int64(keptBytes+len(lines[keptStart-1])) <= capBytes {
+		keptStart--
+		keptBytes += len(lines[keptStart])
+	}
+	if keptStart == len(lines) {
+		return 0, 0, errors.New("capture journal cap is smaller than a single record")
+	}
+	compacted := bytes.Join(lines[keptStart:], nil)
+	if err := writeBytesAtomic(path, compacted); err != nil {
+		return 0, 0, err
+	}
+	return keptStart, info.Size() - int64(len(compacted)), nil
 }
 
 func enforceQuarantinePolicy(dataDirectory string, policy StoragePolicy, now time.Time) StorageCleanupResult {

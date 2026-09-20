@@ -290,7 +290,7 @@ func TestMapperArchivesRepeatedHitsWithoutCooldown(t *testing.T) {
 	level := ChannelSpectrumLevel{SignalDB: -30, NoiseDB: -70, PeakDB: -25}
 	before := r.Events.Count()
 	for i := 0; i < 2; i++ {
-		if !r.processSurveyTargetCapture(make(chan struct{}), ScanProfile{}, SDRDevice{ID: "test", Kind: "RTL-SDR"}, target, run, spec, data, ComplexSigned8, &level, true) {
+		if !r.processSurveyTargetCapture(make(chan struct{}), ScanProfile{}, SDRDevice{ID: "test", Kind: "RTL-SDR"}, target, run, spec, data, ComplexSigned8, "", &level, true) {
 			t.Fatal("capture failed")
 		}
 	}

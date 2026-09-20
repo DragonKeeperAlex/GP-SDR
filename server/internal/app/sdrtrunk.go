@@ -121,14 +121,18 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 	if engine != "" && engine != "auto" && engine != "op25" && engine != "sdrtrunk" {
 		return errors.New("GPSDR_P25_ENGINE must be auto, op25, or sdrtrunk")
 	}
-	if engine == "sdrtrunk" && p25AssignmentsNeedOP25(assigned) {
-		return errors.New("SDRTrunk does not support the selected Soapy receiver; select OP25")
-	}
-	if engine == "op25" || p25AssignmentsNeedOP25(assigned) {
+	// OP25 is the single default backend for Pi P25 operation. It covers the
+	// native HackRF/RTL paths as well as Soapy receivers, and is the only path
+	// currently connected directly to GP-SDR's live PCM hub. Keep SDRTrunk as
+	// an explicit compatibility fallback while its audio bridge is unfinished.
+	if engine != "sdrtrunk" {
 		if _, err := findOP25(); err != nil {
-			return errors.New("PlutoSDR and other Soapy receivers require the OP25 component; install OP25, then refresh Hardware")
+			return errors.New("the default GP-SDR P25 backend is OP25; install OP25, then refresh Hardware, or explicitly select SDRTrunk")
 		}
 		return m.startOP25(profile, plan, devices, dataDirectory)
+	}
+	if p25AssignmentsNeedOP25(assigned) {
+		return errors.New("SDRTrunk does not support the selected Soapy receiver; select OP25")
 	}
 	executable, err := findSDRTrunk()
 	if err != nil {
@@ -664,6 +668,16 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 	for _, tuner := range root.Tuners {
 		tunerType, _ := tuner["type"].(string)
 		if useHackRF && tunerType == "hackRFTunerConfiguration" {
+			// SDRTrunk owns the native HackRF directly, so OP25's device-level
+			// PPM forwarding does not apply here. Preserve the saved calibration
+			// in SDRTrunk's tuner configuration or a correctly tuned control
+			// channel can still appear out of alignment and fail to trunk.
+			if calibration, ok := assignedHackRFCalibration(assigned, tuner); ok {
+				if current, exists := tuner["frequencyCorrection"].(float64); !exists || current != float64(calibration.PPMCorrection) {
+					tuner["frequencyCorrection"] = float64(calibration.PPMCorrection)
+					changed = true
+				}
+			}
 			if conservative || profile.Settings.P25AmpMode == "off" || profile.Settings.P25AmpMode == "on" {
 				tuner["amplifierEnabled"] = !conservative && profile.Settings.P25AmpMode == "on"
 				changed = true
@@ -697,6 +711,25 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 	}
 	updated = append(updated, '\n')
 	return os.WriteFile(path, updated, 0o600)
+}
+
+func assignedHackRFCalibration(assigned []p25AssignedDevice, tuner map[string]any) (*DeviceCalibration, bool) {
+	uniqueID, _ := tuner["uniqueID"].(string)
+	var fallback *DeviceCalibration
+	for index := range assigned {
+		item := assigned[index]
+		if !strings.EqualFold(item.Device.Kind, "HackRF") || item.Device.Calibration == nil {
+			continue
+		}
+		calibration := item.Device.Calibration
+		if fallback == nil {
+			fallback = calibration
+		}
+		if item.Device.Serial != nil && *item.Device.Serial != "" && strings.Contains(strings.ToLower(uniqueID), strings.ToLower(*item.Device.Serial)) {
+			return calibration, true
+		}
+	}
+	return fallback, fallback != nil && len(assigned) == 1
 }
 
 func p25AssignmentsContainKind(assigned []p25AssignedDevice, kind string) bool {
@@ -742,7 +775,9 @@ func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, 
 		if isHackRFSampleRate(profile.Settings.P25SampleRateHz) {
 			return profile.Settings.P25SampleRateHz
 		}
-		return 10_000_000
+		// Match OP25's safe automatic HackRF rate. Explicit 8/10/20 MS/s
+		// selections remain valid for users with a tested USB/RF path.
+		return 5_000_000
 	}
 	if hasRTL && !hasHackRF {
 		if _, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
@@ -1086,7 +1121,13 @@ func (m *OP25Manager) ActiveCalls() ([]P25ActiveCall, error) {
 
 func parseSDRTrunkTimestamp(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
-	for _, layout := range []string{"2006:01:02:15:04:05", "20060102 150405"} {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006:01:02:15:04:05.999999999",
+		"2006:01:02:15:04:05",
+		"20060102 150405.999999999",
+		"20060102 150405",
+	} {
 		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 			return parsed, nil
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -50,6 +51,32 @@ func newFPVReceiverState(dataDirectory string) *fpvReceiverState {
 	return &fpvReceiverState{framePath: filepath.Join(dataDirectory, "Cache", "fpv-live.png")}
 }
 
+func normalizeFPVRequest(request FPVReceiverRequest, device SDRDevice) (FPVReceiverRequest, error) {
+	if !isFinite(request.FrequencyHz) || request.FrequencyHz < 1e6 || request.FrequencyHz > 6e9 {
+		return request, errors.New("enter a valid frequency supported by the receiver")
+	}
+	if !isFinite(request.GainDB) || !isFinite(request.LNAGainDB) || !isFinite(request.VGAGainDB) {
+		return request, errors.New("FPV gain values must be finite numbers")
+	}
+	request.Standard = strings.ToLower(strings.TrimSpace(request.Standard))
+	if request.Standard == "" {
+		request.Standard = "ntsc"
+	}
+	if request.Standard != "ntsc" && request.Standard != "pal" {
+		return request, errors.New("video standard must be NTSC or PAL")
+	}
+	if request.SampleRateHz <= 0 {
+		request.SampleRateHz = 16_000_000
+	}
+	request.SampleRateHz = min(request.SampleRateHz, maximumCaptureRate(device))
+	if request.SampleRateHz <= 0 {
+		return request, errors.New("receiver does not report a usable sample rate")
+	}
+	return request, nil
+}
+
+func isFinite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
+
 func fpvBackend() (python, script, runtimeRoot string, ok bool) {
 	if runtime.GOOS != "darwin" {
 		return "", "", "", false
@@ -92,7 +119,7 @@ func (r *Runtime) StartFPV(request FPVReceiverRequest) (FPVReceiverStatus, error
 	if device.ID == "" {
 		return r.FPVStatus(), errors.New("select a connected receiver")
 	}
-	if request.FrequencyHz < 1e6 || request.FrequencyHz > 6e9 {
+	if !isFinite(request.FrequencyHz) || request.FrequencyHz < 1e6 || request.FrequencyHz > 6e9 {
 		return r.FPVStatus(), errors.New("enter a valid frequency supported by the receiver")
 	}
 	if (device.FrequencyMinimumHz > 0 && request.FrequencyHz < device.FrequencyMinimumHz) || (device.FrequencyMaximumHz > 0 && request.FrequencyHz > device.FrequencyMaximumHz) {
@@ -103,13 +130,10 @@ func (r *Runtime) StartFPV(request FPVReceiverRequest) (FPVReceiverStatus, error
 		return r.FPVStatus(), errors.New("FPV video backend is not installed; install FPV Viewer first")
 	}
 	r.StopFPV()
-	if request.SampleRateHz <= 0 {
-		request.SampleRateHz = 16_000_000
-	}
-	request.SampleRateHz = min(request.SampleRateHz, maximumCaptureRate(device))
-	request.Standard = strings.ToLower(strings.TrimSpace(request.Standard))
-	if request.Standard != "pal" {
-		request.Standard = "ntsc"
+	var err error
+	request, err = normalizeFPVRequest(request, device)
+	if err != nil {
+		return r.FPVStatus(), err
 	}
 	if err := os.MkdirAll(filepath.Dir(r.fpv.framePath), 0o755); err != nil {
 		return r.FPVStatus(), err

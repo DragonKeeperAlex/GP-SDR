@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"time"
 )
 
 // OP25 emits little-endian signed 16-bit mono audio at 8 kHz. Receive
@@ -35,6 +36,11 @@ func (m *OP25Manager) startOP25Audio(count int) error {
 					samples[i] = int16(binary.LittleEndian.Uint16(buffer[i*2:]))
 				}
 				m.audioHub.Publish(AudioFrame{ChannelID: fmt.Sprintf("p25-stream-%d", index), SampleRate: 8000, Samples: samples})
+				m.mu.Lock()
+				m.audioFrames++
+				m.audioSamples += uint64(len(samples))
+				m.audioLastAt = time.Now()
+				m.mu.Unlock()
 			}
 		}(index)
 	}

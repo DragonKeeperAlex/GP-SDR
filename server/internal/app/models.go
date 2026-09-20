@@ -145,6 +145,10 @@ type SurveySettings struct {
 	AmpEnabled         *bool   `json:"ampEnabled,omitempty"`
 	AutoGain           bool    `json:"autoGain,omitempty"`
 	DCRemoval          *bool   `json:"dcRemoval,omitempty"`
+	// MonitorOpen is runtime-only. Band Monitor requests should keep the
+	// selected channel audible while it is below the scan/event threshold, but
+	// that choice must not leak into or mutate the saved scan profile.
+	MonitorOpen bool `json:"-"`
 }
 
 type BandReceiverSettings struct {
@@ -352,12 +356,16 @@ type ReceiverTelemetry struct {
 	PeakDBFS          float64 `json:"peakDBFS"`
 	ClippedPercent    float64 `json:"clippedPercent"`
 	Overloaded        bool    `json:"overloaded"`
-	SignalDetected    bool    `json:"signalDetected"`
-	SquelchOpen       bool    `json:"squelchOpen"`
-	GainDB            float64 `json:"gainDB"`
-	LNAGainDB         int     `json:"lnaGainDB"`
-	VGAGainDB         int     `json:"vgaGainDB"`
-	AmpEnabled        bool    `json:"ampEnabled"`
+	// InputWarning describes an implausible raw I/Q condition, such as one
+	// quadrature path being pinned at an ADC rail. It is deliberately separate
+	// from ordinary overload: reducing gain cannot repair a stuck sample path.
+	InputWarning   string  `json:"inputWarning,omitempty"`
+	SignalDetected bool    `json:"signalDetected"`
+	SquelchOpen    bool    `json:"squelchOpen"`
+	GainDB         float64 `json:"gainDB"`
+	LNAGainDB      int     `json:"lnaGainDB"`
+	VGAGainDB      int     `json:"vgaGainDB"`
+	AmpEnabled     bool    `json:"ampEnabled"`
 }
 
 type TunerRequest struct {

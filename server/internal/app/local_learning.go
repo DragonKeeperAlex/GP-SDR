@@ -140,8 +140,9 @@ func (l *SignalLearningLibrary) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(l.path, append(data, '\n'), 0o600)
+	// Learning examples are valuable provenance for later evaluation. Do not
+	// truncate the canonical file in place: a process or removable-media
+	// interruption must not leave a half-written dataset that silently loads as
+	// an empty library on the next start.
+	return writeBytesAtomic(l.path, append(data, '\n'))
 }

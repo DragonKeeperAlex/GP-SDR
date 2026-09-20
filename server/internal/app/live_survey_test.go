@@ -3,7 +3,24 @@ package app
 import (
 	"math"
 	"testing"
+	"time"
 )
+
+func TestDefaultChannelDwellAllowsFiniteFileDecodersToObserveFrames(t *testing.T) {
+	for decoder, minimum := range map[string]time.Duration{
+		"dump1090": 2 * time.Second,
+		"rtl-433":  3 * time.Second,
+		"ais":      3 * time.Second,
+	} {
+		value := decoder
+		if got := defaultChannelDwell(&value); got < minimum {
+			t.Fatalf("%s dwell %s is shorter than %s", decoder, got, minimum)
+		}
+	}
+	if got := defaultChannelDwell(nil); got != 450*time.Millisecond {
+		t.Fatalf("analog default dwell changed: %s", got)
+	}
+}
 
 func TestMeasureSurveyTargetRejectsNoiseOnlyCapture(t *testing.T) {
 	const rate = 1_000_000
@@ -127,6 +144,21 @@ func TestSurveyCaptureSpecUsesUsableHackRFDefaultsAndSavedCalibration(t *testing
 	spec = surveyCaptureSpec(device, target, 2_000_000)
 	if spec.LNAGainDB != 32 || spec.VGAGainDB != 28 || !spec.AmpEnabled || spec.PPMCorrection != -2 {
 		t.Fatalf("saved calibration did not override scan defaults: %+v", spec)
+	}
+}
+
+func TestSequentialSurveyAppliesSavedReceiverControls(t *testing.T) {
+	limit := 20_000_000.0
+	device := SDRDevice{Kind: "HackRF", SampleRateLimit: &limit}
+	target := surveyTarget{FrequencyHz: 98_100_000, BandwidthHz: 180_000, Mode: "wfm"}
+	rate := compatibleUserSampleRate(device, 5_000_000, liveSampleRate(device, target))
+	if rate != 5_000_000 {
+		t.Fatalf("Band Monitor requested rate = %d, want 5000000", rate)
+	}
+	lna, vga, amp := 16, 8, false
+	spec := applySurveyProfileControls(surveyCaptureSpec(device, target, rate), SurveySettings{LNAGainDB: &lna, VGAGainDB: &vga, AmpEnabled: &amp})
+	if spec.SampleRateHz != 5_000_000 || spec.LNAGainDB != lna || spec.VGAGainDB != vga || spec.AmpEnabled {
+		t.Fatalf("sequential controls not applied: %+v", spec)
 	}
 }
 

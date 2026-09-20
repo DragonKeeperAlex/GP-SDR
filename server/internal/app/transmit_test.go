@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,60 @@ func TestTransmitCannotTakeMapperReceiver(t *testing.T) {
 	_, err := runtime.Transmit(TransmitRequest{DeviceID: "tx-test", FrequencyHz: 462500000, Mode: "nfm", Armed: true})
 	if err == nil || !strings.Contains(err.Error(), "Mapper job capture") {
 		t.Fatalf("expected ownership rejection before any RF, got %v", err)
+	}
+}
+
+func TestTransmitRFGuardrailsRejectUnsafeRequests(t *testing.T) {
+	serial := "tx-serial"
+	runtime := &Runtime{
+		transmit:   newTransmitState(),
+		devices:    []SDRDevice{{ID: "tx-test", Name: "HackRF test", Kind: "HackRF", Serial: &serial, Connected: true, Available: true}},
+		mapperJobs: map[string]*mapperJobRuntime{},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*TransmitRequest)
+	}{
+		{"not armed", func(r *TransmitRequest) { r.Armed = false }},
+		{"frequency below range", func(r *TransmitRequest) { r.FrequencyHz = 999999 }},
+		{"duration above limit", func(r *TransmitRequest) { r.DurationSecond = 61 }},
+		{"gain above HackRF limit", func(r *TransmitRequest) { r.TXGainDB = 48 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := TransmitRequest{DeviceID: "tx-test", FrequencyHz: 462500000, Mode: "nfm", DurationSecond: 1, Armed: true}
+			test.mutate(&request)
+			if _, err := runtime.Transmit(request); err == nil {
+				t.Fatal("unsafe transmit request was accepted")
+			}
+		})
+	}
+}
+
+func TestTransmitRFRequiresAConnectedCapableDevice(t *testing.T) {
+	runtime := &Runtime{transmit: newTransmitState(), devices: []SDRDevice{}, mapperJobs: map[string]*mapperJobRuntime{}}
+	_, err := runtime.Transmit(TransmitRequest{DeviceID: "missing", FrequencyHz: 462500000, Mode: "nfm", DurationSecond: 1, Armed: true})
+	if err == nil || !strings.Contains(err.Error(), "connected HackRF or PlutoSDR") {
+		t.Fatalf("expected hardware capability rejection, got %v", err)
+	}
+}
+
+func TestPlutoTransmitUsesSoapyTXArguments(t *testing.T) {
+	device := SDRDevice{ID: "pluto", Kind: "PlutoSDR", DeviceArguments: "ip:192.168.2.1", TransmitChannels: 1}
+	request := TransmitRequest{FrequencyHz: 433920000, TXGainDB: -10}
+	args := soapyTransmitArgs(device, request, "/tmp/test.cs8")
+	want := []string{"--device", "ip:192.168.2.1", "--frequency", "433920000", "--rate", "2000000", "--gain", "-10", "--bandwidth", "2000000", "--tx-file", "/tmp/test.cs8"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("unexpected Pluto TX arguments: %#v", args)
+	}
+}
+
+func TestTransmitHonorsDiscoveredDeviceFrequencyRange(t *testing.T) {
+	minimum, maximum := 70e6, 1e9
+	runtime := &Runtime{transmit: newTransmitState(), devices: []SDRDevice{{ID: "pluto", Name: "Pluto", Kind: "PlutoSDR", Connected: true, Available: true, TransmitChannels: 1, FrequencyMinimumHz: minimum, FrequencyMaximumHz: maximum}}, mapperJobs: map[string]*mapperJobRuntime{}}
+	_, err := runtime.Transmit(TransmitRequest{DeviceID: "pluto", FrequencyHz: 2e9, Mode: "nfm", DurationSecond: 1, Armed: true})
+	if err == nil || !strings.Contains(err.Error(), "above Pluto transmit range") {
+		t.Fatalf("expected discovered range rejection, got %v", err)
 	}
 }
 
@@ -131,4 +186,28 @@ func TestTransmitDryRunDoesNotRequireHardwareOutput(t *testing.T) {
 	if final := runtimeState.TransmitStatus(); final.State != "stopped" && final.State != "complete" {
 		t.Fatalf("unexpected final transmit state: %+v", final)
 	}
+}
+
+func TestTransmitDryRunAudioDoesNotRequireADevice(t *testing.T) {
+	root := t.TempDir()
+	wav := filepath.Join(root, "audio.wav")
+	testPCM16WAV(t, wav)
+	runtimeState, err := NewRuntime(root, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := runtimeState.Transmit(TransmitRequest{
+		FrequencyHz:    100.1e6,
+		Mode:           "nfm",
+		AudioPath:      wav,
+		DurationSecond: .1,
+		DryRun:         true,
+	})
+	if err != nil {
+		t.Fatalf("offline dry run should not require a transmitter: %v", err)
+	}
+	if status.State != "running" || status.DeviceID != "" {
+		t.Fatalf("unexpected dry-run status: %+v", status)
+	}
+	runtimeState.StopTransmit()
 }

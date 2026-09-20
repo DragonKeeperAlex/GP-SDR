@@ -16,17 +16,22 @@ import (
 )
 
 type P25Status struct {
-	State            string  `json:"state"`
-	Engine           string  `json:"engine"`
-	Executable       *string `json:"executable"`
-	ProfileID        *string `json:"profileID"`
-	ConfigPath       *string `json:"configPath"`
-	APIURL           *string `json:"apiURL,omitempty"`
-	Note             string  `json:"note"`
-	Reception        string  `json:"reception,omitempty"`
-	ControlChannelHz float64 `json:"controlChannelHz,omitempty"`
-	ControlSource    string  `json:"controlSource,omitempty"`
-	CaptureRateHz    int     `json:"captureRateHz,omitempty"`
+	State             string     `json:"state"`
+	Engine            string     `json:"engine"`
+	Executable        *string    `json:"executable"`
+	ProfileID         *string    `json:"profileID"`
+	ConfigPath        *string    `json:"configPath"`
+	APIURL            *string    `json:"apiURL,omitempty"`
+	Note              string     `json:"note"`
+	Reception         string     `json:"reception,omitempty"`
+	ControlChannelHz  float64    `json:"controlChannelHz,omitempty"`
+	ControlSource     string     `json:"controlSource,omitempty"`
+	CaptureRateHz     int        `json:"captureRateHz,omitempty"`
+	AudioState        string     `json:"audioState,omitempty"`
+	AudioFrames       uint64     `json:"audioFrames,omitempty"`
+	AudioSampleRateHz int        `json:"audioSampleRateHz,omitempty"`
+	AudioLastFrameAt  *time.Time `json:"audioLastFrameAt,omitempty"`
+	FrontendState     string     `json:"frontendState,omitempty"`
 	// ReceiverDeviceIDs is the live P25 assignment, not merely a profile
 	// preference. The web client uses it to avoid rendering controls for a
 	// previously selected receiver after a P25 session has started elsewhere.
@@ -34,30 +39,34 @@ type P25Status struct {
 }
 
 type OP25Manager struct {
-	mu           sync.Mutex
-	restartMu    sync.Mutex
-	command      *exec.Cmd
-	done         chan struct{}
-	waitError    error
-	log          io.Closer
-	profileID    *string
-	configPath   *string
-	lastError    *string
-	engine       string
-	apiURL       *string
-	streamStop   chan struct{}
-	audioFeeds   map[uint32]struct{}
-	profile      *ScanProfile
-	plan         []ReceiverPlanItem
-	devices      []SDRDevice
-	dataRoot     string
-	muted        map[uint32]bool
-	restartTimer *time.Timer
-	sessionStart time.Time
-	rateFallback bool
-	audioHub     *AudioHub
-	audioSockets []io.Closer
-	op25Calls    map[int]P25ActiveCall
+	mu            sync.Mutex
+	restartMu     sync.Mutex
+	command       *exec.Cmd
+	done          chan struct{}
+	waitError     error
+	log           io.Closer
+	profileID     *string
+	configPath    *string
+	lastError     *string
+	engine        string
+	apiURL        *string
+	streamStop    chan struct{}
+	audioFeeds    map[uint32]struct{}
+	profile       *ScanProfile
+	plan          []ReceiverPlanItem
+	devices       []SDRDevice
+	dataRoot      string
+	muted         map[uint32]bool
+	restartTimer  *time.Timer
+	sessionStart  time.Time
+	rateFallback  bool
+	audioHub      *AudioHub
+	audioSockets  []io.Closer
+	audioFrames   uint64
+	audioSamples  uint64
+	audioLastAt   time.Time
+	captureRateHz int
+	op25Calls     map[int]P25ActiveCall
 }
 
 type op25Configuration struct {
@@ -189,10 +198,7 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 	}
 	for index, device := range devices {
 		name := fmt.Sprintf("sdr%d", index)
-		rate := 1_000_000
-		if profile.Settings.P25SampleRateHz > 0 && (device.SampleRateLimit == nil || float64(profile.Settings.P25SampleRateHz) <= *device.SampleRateLimit) {
-			rate = profile.Settings.P25SampleRateHz
-		}
+		rate := effectiveOP25DeviceRate(profile, device)
 		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25Gains(device),
 			Name: name, Rate: rate, UsablePercent: .85, Tunable: true})
 		if device.Calibration != nil {
@@ -200,7 +206,10 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 		}
 		if device.Kind == "HackRF" {
 			configuration.Devices[len(configuration.Devices)-1].Offset = 100_000
-			lna, vga := 24, 24
+			// Conservative default for the native HackRF path. The repeatable
+			// field lock used low gain (LNA 8/VGA 0); higher gain remains an
+			// explicit profile choice for weaker signals or different front ends.
+			lna, vga := 8, 0
 			if profile.Settings.P25LNAGainDB != nil {
 				lna = *profile.Settings.P25LNAGainDB
 			}
@@ -249,6 +258,34 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 	return json.MarshalIndent(configuration, "", "  ")
 }
 
+// effectiveOP25DeviceRate keeps OP25's per-device configuration aligned with
+// the receiver's supported P25 rate. A profile can be shared between Pluto,
+// RTL-SDR, and HackRF; a rate valid for one must not be sent to another.
+func effectiveOP25DeviceRate(profile ScanProfile, device SDRDevice) int {
+	requested := profile.Settings.P25SampleRateHz
+	switch device.Kind {
+	case "HackRF":
+		if isHackRFSampleRate(requested) {
+			return requested
+		}
+		// 5 MS/s leaves enough bandwidth for a P25 control/voice channel while
+		// avoiding the USB and CPU pressure that made the automatic 10 MS/s
+		// choice miss a known live control channel on the Pi. Higher rates remain
+		// available when the user explicitly selects one.
+		return 5_000_000
+	case "RTL-SDR":
+		if _, ok := rtlSDRSampleRateName(requested); ok {
+			return requested
+		}
+		return 2_400_000
+	default:
+		if requested > 0 && (device.SampleRateLimit == nil || float64(requested) <= *device.SampleRateLimit) {
+			return requested
+		}
+		return 1_000_000
+	}
+}
+
 func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, devices []SDRDevice, dataDirectory string) error {
 	started := false
 	defer func() {
@@ -266,11 +303,15 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	if err != nil {
 		return err
 	}
+	var config op25Configuration
+	if err := json.Unmarshal(configuration, &config); err != nil {
+		return err
+	}
+	captureRateHz := 0
+	if len(config.Devices) > 0 {
+		captureRateHz = config.Devices[0].Rate
+	}
 	if m.audioHub != nil {
-		var config op25Configuration
-		if err := json.Unmarshal(configuration, &config); err != nil {
-			return err
-		}
 		config.Audio.Instances = []op25AudioInstance{}
 		configuration, err = json.MarshalIndent(config, "", "  ")
 		if err != nil {
@@ -306,6 +347,10 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		m.mu.Lock()
 		if m.command == command {
 			m.waitError = waitError
+			if waitError != nil {
+				message := op25ExitDiagnostic(logPath, waitError)
+				m.lastError = &message
+			}
 			sockets := m.audioSockets
 			m.audioSockets = nil
 			for _, socket := range sockets {
@@ -320,12 +365,45 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	m.command, m.done, m.log = command, done, logFile
 	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
 	m.engine, m.apiURL = "OP25", nil
+	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
 	m.op25Calls = nil
 	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
 	m.sessionStart = time.Now()
 	m.mu.Unlock()
 	started = true
 	return nil
+}
+
+// op25ExitDiagnostic preserves the useful, Pi-local decoder context when a
+// child exits.  A bare exit status leaves an operator unable to distinguish a
+// USB loss, bad control configuration, or an OP25 startup failure from the
+// P25 page.  Keep this deliberately short: status responses must stay useful
+// on narrow/mobile clients and must never turn a full runtime log into UI.
+func op25ExitDiagnostic(logPath string, waitError error) string {
+	message := "OP25 stopped"
+	if waitError != nil {
+		message += ": " + waitError.Error()
+	}
+	text := strings.TrimSpace(tailText(logPath, 4_096))
+	if text == "" {
+		return message
+	}
+	lines := strings.Split(text, "\n")
+	context := make([]string, 0, 3)
+	for index := len(lines) - 1; index >= 0 && len(context) < 3; index-- {
+		line := strings.TrimSpace(lines[index])
+		if line == "" || strings.HasPrefix(line, "Starting OP25") {
+			continue
+		}
+		context = append(context, line)
+	}
+	for left, right := 0, len(context)-1; left < right; left, right = left+1, right-1 {
+		context[left], context[right] = context[right], context[left]
+	}
+	if len(context) == 0 {
+		return message
+	}
+	return truncateText(message+" · "+strings.Join(context, " · "), 1_200)
 }
 
 func (m *OP25Manager) stopProcess() {
@@ -360,14 +438,29 @@ func (m *OP25Manager) op25Status() P25Status {
 		select {
 		case <-m.done:
 			note := "OP25 stopped."
-			if m.waitError != nil {
+			if m.lastError != nil {
+				note = *m.lastError
+			} else if m.waitError != nil {
 				note = m.waitError.Error()
 			}
 			return P25Status{State: "error", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath, Note: note}
 		default:
 		}
-		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath,
+		audioState := "waiting"
+		var audioLastAt *time.Time
+		if !m.audioLastAt.IsZero() {
+			at := m.audioLastAt
+			audioLastAt = &at
+			if time.Since(at) < 5*time.Second {
+				audioState = "receiving"
+			} else {
+				audioState = "idle"
+			}
+		}
+		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath, CaptureRateHz: m.captureRateHz,
 			Reception: "searching", Note: "OP25 is checking the configured P25 control channels.", ReceiverDeviceIDs: p25ReceiverDeviceIDs(m.plan, m.devices)}
+		status.AudioState, status.AudioFrames, status.AudioSampleRateHz, status.AudioLastFrameAt = audioState, m.audioFrames, 8000, audioLastAt
+		status.FrontendState = p25FrontendState(m.profile, m.plan, m.devices)
 		if frequency, ok := readOP25ControlStatus(); ok {
 			status.Reception = "locked"
 			status.ControlChannelHz = frequency
@@ -384,6 +477,40 @@ func (m *OP25Manager) op25Status() P25Status {
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
 	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+}
+
+// p25FrontendState reports the values written to the live OP25 receiver
+// config, rather than a profile form's shared/default values.
+func p25FrontendState(profile *ScanProfile, plan []ReceiverPlanItem, devices []SDRDevice) string {
+	if profile == nil {
+		return ""
+	}
+	assigned := assignedDevices(plan, devices)
+	if len(assigned) == 0 {
+		return ""
+	}
+	device := assigned[0]
+	switch device.Kind {
+	case "HackRF":
+		lna, vga := 24, 24
+		if profile.Settings.P25LNAGainDB != nil {
+			lna = *profile.Settings.P25LNAGainDB
+		}
+		if profile.Settings.P25VGAGainDB != nil {
+			vga = *profile.Settings.P25VGAGainDB
+		}
+		amp := "off"
+		if profile.Settings.P25AmpMode == "on" {
+			amp = "on"
+		}
+		return fmt.Sprintf("LNA %d dB · VGA %d dB · RF amp %s", lna, vga, amp)
+	case "RTL-SDR":
+		return "RTL LNA 36 dB"
+	case "PlutoSDR":
+		return "Pluto PGA 45 dB"
+	default:
+		return op25Gains(device)
+	}
 }
 
 func p25ReceiverDeviceIDs(plan []ReceiverPlanItem, devices []SDRDevice) []string {

@@ -53,7 +53,7 @@ type installerRecipe struct {
 
 func isDecoderSuiteComponent(id string) bool {
 	switch id {
-	case "dsd-fme", "dump1090", "multimon-ng", "acarsdec", "ais":
+	case "dsd-fme", "dump1090", "dump978", "multimon-ng", "acarsdec", "ais", "direwolf", "noaa-apt", "sstv":
 		return true
 	default:
 		return false
@@ -95,7 +95,7 @@ func setupRecipes() []installerRecipe {
 			Guide:    "Installs rtl_433 for compatible weather stations, TPMS devices, and ISM-band sensors.",
 			GuideURL: "https://github.com/merbanan/rtl_433"}, tools: []string{"rtl_433"}, formulae: []string{"rtl_433"}},
 		{component: SetupComponent{ID: "p25", Name: "P25 Phase 1/2", Category: "decoder",
-			Guide:    "Complete packages include SDRTrunk for native HackRF and RTL-SDR P25 input. On Linux, GP-SDR uses OP25 for PlutoSDR and other Soapy receivers when OP25 is installed. JMBE must be created once for SDRTrunk voice; GP-SDR detects an existing library.",
+			Guide:    "GP-SDR uses OP25 as the default P25 backend for PlutoSDR, HackRF, and RTL-SDR, with a direct live-PCM bridge. SDRTrunk remains an optional compatibility fallback for native HackRF/RTL-SDR input; JMBE is required for SDRTrunk voice.",
 			GuideURL: "https://github.com/DSheirer/sdrtrunk"}, tools: []string{"sdr-trunk"}},
 		{component: SetupComponent{ID: "p25-voice", Name: "P25 voice codec", Category: "decoder",
 			Guide:    "Creates the open-source JMBE voice library locally. The creator downloads and compiles the codec after showing the upstream patent notice; check the rules that apply where you use it.",
@@ -115,6 +115,14 @@ func setupRecipes() []installerRecipe {
 		{component: SetupComponent{ID: "ais", Name: "AIS-catcher", Category: "decoder",
 			Guide:    "Install AIS-catcher from its upstream releases or package instructions, then place AIS-catcher on PATH.",
 			GuideURL: "https://github.com/jvde-github/AIS-catcher"}, tools: []string{"AIS-catcher", "ais-catcher"}},
+		{component: SetupComponent{ID: "direwolf", Name: "Dire Wolf APRS/AX.25", Category: "decoder",
+			Guide: "Install Dire Wolf for receive-only APRS and AX.25 packet decoding.", GuideURL: "https://github.com/wb2osz/direwolf"}, tools: []string{"direwolf"}},
+		{component: SetupComponent{ID: "dump978", Name: "dump978 UAT", Category: "decoder",
+			Guide: "Install dump978 or dump978-fa for receive-only 978 MHz UAT aircraft decoding.", GuideURL: "https://github.com/ADSBexchange/dump978"}, tools: []string{"dump978", "dump978-fa"}},
+		{component: SetupComponent{ID: "noaa-apt", Name: "NOAA APT", Category: "decoder",
+			Guide: "Install noaa-apt-console to decode NOAA weather-satellite WAV captures into PNG images.", GuideURL: "https://github.com/martinber/noaa-apt"}, tools: []string{"noaa-apt-console", "noaa-apt"}},
+		{component: SetupComponent{ID: "sstv", Name: "SSTV", Category: "decoder",
+			Guide: "Install a receive-side SSTV decoder such as Open-SSTV to decode WAV audio into PNG images.", GuideURL: "https://github.com/bucknova/Open-SSTV"}, tools: []string{"open-sstv-decode", "sstv-decode", "qsstv"}},
 		{component: SetupComponent{ID: "radioreference", Name: "RadioReference", Category: "integration",
 			Guide:    "A Premium subscription and an approved application API key are required. On macOS, save them to Keychain from Settings. Credentials are never stored in shared profiles or Mapper exports.",
 			GuideURL: "https://www.radioreference.com/account/api/apply"}},
@@ -123,6 +131,9 @@ func setupRecipes() []installerRecipe {
 
 func recipeReady(recipe installerRecipe) bool {
 	if recipe.component.ID == "p25" {
+		if _, err := findOP25(); err == nil {
+			return true
+		}
 		_, err := findSDRTrunk()
 		return err == nil
 	}

@@ -52,7 +52,7 @@ func (s *CalibrationStore) Get(deviceID string) (DeviceCalibration, bool) {
 }
 
 func (s *CalibrationStore) Save(item DeviceCalibration) error {
-	if item.DeviceID == "" || item.IQGain < .5 || item.IQGain > 1.5 || item.IQPhase < -20 || item.IQPhase > 20 || item.PPMCorrection < -200 || item.PPMCorrection > 200 {
+	if item.DeviceID == "" || !isFinite(item.IQGain) || !isFinite(item.IQPhase) || !isFinite(item.ReferenceHz) || !isFinite(item.Confidence) || !isFinite(item.SignalToNoiseDB) || item.IQGain < .5 || item.IQGain > 1.5 || item.IQPhase < -20 || item.IQPhase > 20 || item.PPMCorrection < -200 || item.PPMCorrection > 200 {
 		return errors.New("calibration values are outside the supported range")
 	}
 	s.mu.Lock()
@@ -113,8 +113,11 @@ func (r *Runtime) DeleteCalibration(deviceID string) error {
 }
 
 func (r *Runtime) AutoCalibrate(request CalibrationRequest) (DeviceCalibration, error) {
-	if request.ReferenceHz <= 0 {
+	if !isFinite(request.ReferenceHz) || request.ReferenceHz <= 0 {
 		return DeviceCalibration{}, errors.New("enter a known active reference frequency")
+	}
+	if request.SampleRateHz < 0 {
+		return DeviceCalibration{}, errors.New("sample rate must not be negative")
 	}
 	r.mu.RLock()
 	busy := r.running || len(r.mapperJobs) > 0

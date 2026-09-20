@@ -1,6 +1,6 @@
 # Experimental standalone Android preview
 
-The repository contains a standalone Android shell that runs the shared GP-SDR engine locally. **The 1.5.0-rc9 downloadable packages are for macOS, Windows, and Linux; Android remains an experimental source-build preview.** It is separate from opening a desktop host’s console in an Android browser.
+The repository contains a standalone Android shell that runs the shared GP-SDR engine locally. **The 1.5.0-rc34 release candidate is Pi-focused; Android remains an experimental source-build preview and is not an accepted SDR release candidate.** It is separate from opening a desktop host’s console in an Android browser.
 
 ## What is available
 
@@ -32,4 +32,4 @@ The source instructions specify Android SDK API 35, NDK 27.2, Gradle 8.13, and G
 
 The expected debug output is `android/app/build/outputs/apk/debug/app-debug.apk`. Direct USB availability, power, permissions, and decoder parity must be verified on the physical Android device; successful compilation is not RF acceptance.
 
-Source: [Android README](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/android/README.md), [build script](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Scripts/build-android.sh), [release scope](https://github.com/DragonKeeperAlex/GP-SDR/blob/715de3b/Docs/RELEASE_NOTES_1.5.0-rc9.md).
+Source: [Android README](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/android/README.md), [build script](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Scripts/build-android.sh), [release scope](https://github.com/DragonKeeperAlex/GP-SDR/blob/main/Docs/RELEASE_NOTES_1.5.0-rc34.md).

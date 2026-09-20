@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"os"
@@ -8,6 +9,37 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestTransientDecoderIQIsNotRetained(t *testing.T) {
+	path, cleanup, err := writeTransientDecoderIQ([]byte{0, 1, 2, 3}, ComplexSigned8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Ext(path) != ".cs8" {
+		t.Fatalf("unexpected transient extension %q", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(data, []byte{0, 1, 2, 3}) {
+		t.Fatalf("transient IQ mismatch: %v %v", data, err)
+	}
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("transient IQ survived cleanup: %v", err)
+	}
+}
+
+func TestDecoderNeedsIQ(t *testing.T) {
+	for _, decoderID := range []string{"rtl-433", "dump1090", "dump978", "ais"} {
+		if !decoderNeedsIQ(decoderID) {
+			t.Fatalf("%s should require IQ", decoderID)
+		}
+	}
+	for _, decoderID := range []string{"multimon-ng", "dsd-fme", "acarsdec"} {
+		if decoderNeedsIQ(decoderID) {
+			t.Fatalf("%s should not require IQ", decoderID)
+		}
+	}
+}
 
 func TestParseTextDecoderOutputRequiresARealProtocolLine(t *testing.T) {
 	messages := parseTextDecoderOutput("multimon-ng", "startup banner\nPOCSAG1200: Address: 123456 Function: 3 Alpha: TEST\n")
@@ -83,6 +115,13 @@ func TestParseRTL433JSONOutput(t *testing.T) {
 	}
 }
 
+func TestParseRTL433IgnoresNullIdentityFields(t *testing.T) {
+	messages := parseRTL433Output([]byte(`{"model":null,"id":null,"temperature_C":21.2}` + "\n"))
+	if len(messages) != 1 || messages[0].Summary != "Decoded ISM sensor frame" {
+		t.Fatalf("null identity fields leaked into sensor summary: %#v", messages)
+	}
+}
+
 func TestResamplePCMProducesExpectedDuration(t *testing.T) {
 	input := make([]int16, 16_000)
 	if output := resamplePCM(input, 16_000, 48_000); len(output) != 48_000 {
@@ -94,6 +133,20 @@ func TestParseDump1090Frames(t *testing.T) {
 	messages := parseDump1090Output([]byte("banner\n*8D40621D58C382D690C8AC2863A7;\n"))
 	if len(messages) != 1 || messages[0].Protocol != "ADS-B / Mode S" || messages[0].Summary != "Mode S frame · ICAO 40621D" {
 		t.Fatalf("unexpected dump1090 messages: %#v", messages)
+	}
+}
+
+func TestParseDump978Frames(t *testing.T) {
+	messages := parseDump978Output([]byte("uat startup\n+8D40621D58C382D690C8AC2863A7;\n"))
+	if len(messages) != 1 || messages[0].Protocol != "UAT / ADS-B" {
+		t.Fatalf("unexpected UAT messages: %#v", messages)
+	}
+}
+
+func TestParseDirewolfFrames(t *testing.T) {
+	messages := parseDirewolfOutput([]byte("Dire Wolf version 1.7\nN0CALL>APRS,WIDE1-1:!3745.12N/12225.45W-Test\n"))
+	if len(messages) != 1 || messages[0].Protocol != "APRS / AX.25" || len(messages[0].Callsigns) == 0 {
+		t.Fatalf("unexpected Dire Wolf messages: %#v", messages)
 	}
 }
 
@@ -115,6 +168,13 @@ func TestParseACARSAndAISOutput(t *testing.T) {
 	ais := parseAISOutput([]byte("{\"mmsi\":367123456,\"shipname\":\"TEST VESSEL\",\"callsign\":\"WDF1234\"}\n"))
 	if len(ais) != 1 || ais[0].Protocol != "AIS" || len(ais[0].Callsigns) != 1 {
 		t.Fatalf("unexpected AIS result: %#v", ais)
+	}
+}
+
+func TestParseAISAlternateFieldNames(t *testing.T) {
+	ais := parseAISOutput([]byte(`{"MMSI":367123456,"VesselName":"TEST VESSEL","callSign":"WDF1234"}` + "\n"))
+	if len(ais) != 1 || !strings.Contains(ais[0].Summary, "MMSI 367123456") || !strings.Contains(ais[0].Summary, "TEST VESSEL") || len(ais[0].Callsigns) != 1 {
+		t.Fatalf("alternate AIS field names were not extracted: %#v", ais)
 	}
 }
 

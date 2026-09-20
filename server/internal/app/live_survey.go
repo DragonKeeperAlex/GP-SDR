@@ -47,7 +47,7 @@ func surveyTargets(profile ScanProfile) []surveyTarget {
 			continue
 		}
 		targets = append(targets, surveyTarget{FrequencyHz: channel.FrequencyHz, BandwidthHz: channel.BandwidthHz,
-			Mode: mode, Label: channel.Name, Dwell: 450 * time.Millisecond, Decoder: channel.Decoder})
+			Mode: mode, Label: channel.Name, Dwell: defaultChannelDwell(channel.Decoder), Decoder: channel.Decoder})
 	}
 	for _, scanRange := range profile.Ranges {
 		if !scanRange.Enabled {
@@ -63,6 +63,23 @@ func surveyTargets(profile ScanProfile) []surveyTarget {
 		}
 	}
 	return targets
+}
+
+// defaultChannelDwell gives finite-file decoders enough contiguous evidence
+// for a real frame. The old 450 ms generic survey window was appropriate for
+// energy discovery, but routinely starved packet decoders such as dump1090.
+// Explicit Mapper and range timing remain user-controlled.
+func defaultChannelDwell(decoder *string) time.Duration {
+	switch canonicalDecoderID(stringValue(decoder)) {
+	case "dump1090":
+		return 2 * time.Second
+	case "rtl-433", "ais", "acarsdec":
+		return 3 * time.Second
+	case "dsd-fme", "multimon-ng":
+		return 2500 * time.Millisecond
+	default:
+		return 450 * time.Millisecond
+	}
 }
 
 func liveSampleRate(device SDRDevice, target surveyTarget) int {
@@ -132,7 +149,7 @@ func compatibleUserSampleRate(device SDRDevice, requested, automatic int) int {
 
 func maximumCaptureRate(device SDRDevice) int {
 	maximum := 20_000_000
-	if strings.HasPrefix(device.Driver, "SoapySDR:") && device.SampleRateLimit != nil {
+	if device.SampleRateLimit != nil && *device.SampleRateLimit > 0 {
 		maximum = int(*device.SampleRateLimit)
 	}
 	return maximum
@@ -692,6 +709,11 @@ func (r *Runtime) processSurveyTarget(stop <-chan struct{}, profile ScanProfile,
 	rate := liveSampleRate(device, target)
 	if mapperRun != nil {
 		rate = compatibleUserSampleRate(device, mapperRun.Config.SampleRateHz, rate)
+	} else {
+		// Saved-profile and Band Monitor controls must affect the sequential
+		// survey path as well as the wideband-bank path. Without this, a one
+		// channel Band Monitor silently fell back to its automatic rate.
+		rate = compatibleUserSampleRate(device, profile.Settings.SampleRateHz, rate)
 	}
 	return r.processSurveyBatch(stop, profile, device, surveyTargetBatch{Targets: []surveyTarget{target}, SampleRate: rate}, mapperRun)
 }
@@ -707,6 +729,8 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 	}
 	if mapperRun != nil && mapperRun.Tuning != nil {
 		spec = mapperRun.Tuning.apply(spec)
+	} else {
+		spec = applySurveyProfileControls(spec, profile.Settings)
 	}
 	duration := time.Duration(0)
 	for _, target := range batch.Targets {
@@ -748,6 +772,9 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 		mapperRun.Capture = interval
 	}
 	format = DetectSampleFormat(data, format)
+	// Preserve raw ADC integrity before DC/IQ correction can cosmetically hide
+	// a stuck component from the live telemetry.
+	inputWarning := iqInputWarning(data, format)
 	if mapperRun != nil && mapperRun.Tuning != nil && r.mapper != nil {
 		status := mapperRun.Tuning.observe(data, format)
 		r.mapper.UpdateJobTuning(mapperRun.JobID, mapperRun.SessionID, status)
@@ -791,14 +818,31 @@ func (r *Runtime) processSurveyBatch(stop <-chan struct{}, profile ScanProfile, 
 		if peakAdjusted := level.PeakDB - 12; peakAdjusted > level.SignalDB {
 			level.SignalDB = peakAdjusted
 		}
-		if !r.processSurveyTargetCapture(stop, profile, device, target, mapperRun, spec, data, format, &level, measured) {
+		if !r.processSurveyTargetCapture(stop, profile, device, target, mapperRun, spec, data, format, inputWarning, &level, measured) {
 			return false
 		}
 	}
 	return true
 }
 
-func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat, measuredLevel *ChannelSpectrumLevel, measured bool) bool {
+func applySurveyProfileControls(spec CaptureSpec, settings SurveySettings) CaptureSpec {
+	if settings.GainDB > 0 {
+		spec.GainDB = settings.GainDB
+	}
+	if settings.LNAGainDB != nil {
+		spec.LNAGainDB = *settings.LNAGainDB
+	}
+	if settings.VGAGainDB != nil {
+		spec.VGAGainDB = *settings.VGAGainDB
+	}
+	if settings.AmpEnabled != nil {
+		spec.AmpEnabled = *settings.AmpEnabled
+	}
+	spec.AutoGain = settings.AutoGain
+	return spec
+}
+
+func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanProfile, device SDRDevice, target surveyTarget, mapperRun *mapperRunContext, spec CaptureSpec, data []byte, format SampleFormat, inputWarning string, measuredLevel *ChannelSpectrumLevel, measured bool) bool {
 	rate := spec.SampleRateHz
 	level := ChannelSpectrumLevel{}
 	if measuredLevel != nil {
@@ -865,8 +909,24 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	// reset can leave the whole app showing an error indefinitely.
 	r.clearRuntimeError()
 	active := measured && snr >= margin
+	telemetry := ReceiverTelemetry{DeviceID: device.ID, HardwareCenterHz: float64(spec.CenterFrequencyHz), ListenFrequencyHz: target.FrequencyHz,
+		SampleRateHz: spec.SampleRateHz, SignalDBFS: level.SignalDB, NoiseDBFS: level.NoiseDB, PeakDBFS: level.PeakDB,
+		ClippedPercent: clippedIQPercent(data, format), InputWarning: inputWarning, SignalDetected: active, SquelchOpen: active, GainDB: spec.GainDB, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
+	telemetry.Overloaded = telemetry.ClippedPercent >= .5
+	r.updateReceiverTelemetry(telemetry, &analysis)
 	if !active {
 		r.updateMixerActivity(target.FrequencyHz, 0, false)
+		// Band Monitor is a listener, not merely a scanner. Publish the selected
+		// analog channel even when scan squelch is closed, but do not turn quiet
+		// RF into events, recordings, or Mapper hits.
+		if profile.Settings.MonitorOpen && !deferredArchive && len(result.Audio) > 0 && r.audioHub != nil {
+			applyAudioAGC(result.Audio)
+			channelID := r.mixerChannelID(target.FrequencyHz)
+			if channelID == "" {
+				channelID = "band-monitor-channel"
+			}
+			r.audioHub.Publish(AudioFrame{ChannelID: channelID, SampleRate: result.AudioRateHz, Samples: result.Audio})
+		}
 		if mapperRun != nil && r.mapper != nil {
 			r.mapper.ObserveJob(mapperRun.JobID, device.ID, mapperRun.Config, target.FrequencyHz, false, level.SignalDB, level.NoiseDB, "", "", "", "")
 		}
@@ -992,7 +1052,19 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	if !deferAnalysis && mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil {
 		go r.deepAnalyzeMapperEvent(stop, event, candidate, hasCandidate && r.decoderReady(candidate.DecoderID), result.Audio, result.AudioRateHz, evidenceSpec, profile.Settings.TranscribeVoice)
 	} else if !deferAnalysis && hasCandidate && r.decoderReady(candidate.DecoderID) {
-		go r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, evidenceSpec)
+		decoderIQPath := stringValue(event.IQPath)
+		decoderIQCleanup := func() {}
+		if decoderIQPath == "" && decoderNeedsIQ(candidate.DecoderID) {
+			var temporaryIQErr error
+			decoderIQPath, decoderIQCleanup, temporaryIQErr = writeTransientDecoderIQ(data, format)
+			if temporaryIQErr != nil {
+				r.setRuntimeError("live decoder IQ: " + temporaryIQErr.Error())
+			}
+		}
+		go func() {
+			defer decoderIQCleanup()
+			r.decodeEvent(stop, event, candidate.DecoderID, result.Audio, result.AudioRateHz, evidenceSpec, decoderIQPath)
+		}()
 	}
 	if !deferAnalysis && !(mapperRun != nil && mapperRun.Config.Mode == "adaptive" && event.IQPath != nil) && profile.Settings.TranscribeVoice && event.AudioPath != nil {
 		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)
@@ -1052,7 +1124,7 @@ func (r *Runtime) deepAnalyzeMapperEvent(stop <-chan struct{}, event Transmissio
 	_ = r.Events.UpdateIQPath(event.ID, newPath)
 }
 
-func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, decoderID string, audio []int16, audioRate int, spec CaptureSpec) {
+func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, decoderID string, audio []int16, audioRate int, spec CaptureSpec, suppliedIQPath string) {
 	decoderContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -1062,8 +1134,8 @@ func (r *Runtime) decodeEvent(stop <-chan struct{}, event TransmissionEvent, dec
 		case <-decoderContext.Done():
 		}
 	}()
-	iqPath := ""
-	if event.IQPath != nil {
+	iqPath := suppliedIQPath
+	if iqPath == "" && event.IQPath != nil {
 		iqPath = *event.IQPath
 	}
 	var messages []DecoderMessage
@@ -1353,8 +1425,14 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 	required := maximum - minimum + math.Max(widest*2, 50_000)
 	rates := selectableCaptureRates()
 	minimumRate, maximumRate := 225_000, maximumCaptureRate(device)
+	preferredMinimumRate := minimumRate
 	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
-		minimumRate = 10_000_000
+		// Keep a generous capture width for automatic channel-bank monitoring,
+		// but do not silently reject a valid user-selected lower HackRF rate.
+		// P25 and narrow two-channel monitor cases benefit from 5 MS/s when the
+		// bank fits, and the Hardware page must reflect the applied choice.
+		minimumRate = 2_000_000
+		preferredMinimumRate = 10_000_000
 	}
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
 		maximumRate = 3_200_000
@@ -1364,7 +1442,7 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 	}
 	selectedRate := 0
 	for _, rate := range rates {
-		if rate >= minimumRate && rate <= maximumRate && float64(rate)*.86 >= required {
+		if rate >= preferredMinimumRate && rate <= maximumRate && float64(rate)*.86 >= required {
 			selectedRate = rate
 			break
 		}
@@ -1446,6 +1524,11 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			}
 		}
 		format := DetectSampleFormat(data, stream.Format)
+		// Keep raw receiver health visible on the Band Monitor too. The monitor
+		// previously updated spectrum/audio but left Hardware with stale or empty
+		// applied-control information.
+		inputWarning := iqInputWarning(data, format)
+		clipped := clippedIQPercent(data, format)
 		removeDC, iqGain, iqPhase, iqSwap := true, 1.0, 0.0, false
 		if calibration := device.Calibration; calibration != nil {
 			removeDC, iqGain, iqPhase, iqSwap = calibration.DCRemoval, calibration.IQGain, calibration.IQPhase, calibration.IQSwap
@@ -1460,10 +1543,17 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 			r.setRuntimeError(err.Error())
 			continue
 		}
+		var strongest ChannelSpectrumLevel
+		var strongestChannel ChannelDefinition
+		anyActive := false
 		for _, channel := range channels {
 			level, measured := levels[channel.ID]
+			if strongestChannel.ID == "" || level.SignalDB > strongest.SignalDB {
+				strongest, strongestChannel = level, channel
+			}
 			snr := level.SignalDB - level.NoiseDB
 			isActive := measured && snr >= profile.Settings.NoiseMarginDB
+			anyActive = anyActive || isActive
 			if !isActive {
 				delete(demodulators, channel.ID)
 				r.updateMixerActivity(channel.FrequencyHz, 0, false)
@@ -1504,6 +1594,13 @@ func (r *Runtime) widebandBankLoop(stop <-chan struct{}, profile ScanProfile, de
 				r.finishWidebandTransmission(stop, profile, device, transmission)
 				delete(active, channel.ID)
 			}
+		}
+		if strongestChannel.ID != "" {
+			telemetry := ReceiverTelemetry{DeviceID: device.ID, HardwareCenterHz: float64(spec.CenterFrequencyHz), ListenFrequencyHz: strongestChannel.FrequencyHz,
+				SampleRateHz: spec.SampleRateHz, SignalDBFS: strongest.SignalDB, NoiseDBFS: strongest.NoiseDB, PeakDBFS: strongest.PeakDB,
+				ClippedPercent: clipped, Overloaded: clipped >= .5, InputWarning: inputWarning, SignalDetected: anyActive, SquelchOpen: anyActive,
+				GainDB: spec.GainDB, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
+			r.updateReceiverTelemetry(telemetry, nil)
 		}
 		r.clearRuntimeError()
 	}
@@ -1557,6 +1654,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 	latestAnalysis := SignalIntelligence{}
 	decoderResults := make(chan tunerDecoderBatchResult, 1)
 	decoderAudio := make([]int16, 0, 48_000*3)
+	decoderIQ := make([]byte, 0, 2_400_000*2)
 	decoderBusy := false
 	for {
 		select {
@@ -1568,6 +1666,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 			request.NoiseReduction = next.NoiseReduction
 			noiseFloor = -150
 			decoderAudio = decoderAudio[:0]
+			decoderIQ = decoderIQ[:0]
 		default:
 		}
 		select {
@@ -1616,6 +1715,9 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		default:
 		}
 		format := DetectSampleFormat(data, stream.Format)
+		// Input integrity must be measured from the original ADC bytes. DC removal
+		// intentionally recentres a pinned path and would otherwise conceal it.
+		inputWarning := iqInputWarning(data, format)
 		ApplyIQCorrection(data, format, request.IQDCRemoval, request.IQGain, request.IQPhase, request.IQSwap)
 		r.updateSpectrum(device.ID, spec, data, format)
 		analysisFrames++
@@ -1651,7 +1753,7 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		clipped := clippedIQPercent(data, format)
 		telemetry := ReceiverTelemetry{DeviceID: device.ID, HardwareCenterHz: float64(spec.CenterFrequencyHz), ListenFrequencyHz: request.FrequencyHz,
 			SampleRateHz: spec.SampleRateHz, SignalDBFS: result.SignalDBFS, NoiseDBFS: noiseFloor, PeakDBFS: result.PeakDBFS,
-			ClippedPercent: clipped, Overloaded: clipped >= .5, SignalDetected: detected, SquelchOpen: active, GainDB: spec.GainDB, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
+			ClippedPercent: clipped, Overloaded: clipped >= .5, InputWarning: inputWarning, SignalDetected: detected, SquelchOpen: active, GainDB: spec.GainDB, LNAGainDB: spec.LNAGainDB, VGAGainDB: spec.VGAGainDB, AmpEnabled: spec.AmpEnabled}
 		r.updateReceiverTelemetry(telemetry, &latestAnalysis)
 		if !active {
 			noiseFloor = noiseFloor*.96 + result.SignalDBFS*.04
@@ -1670,7 +1772,37 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 				r.audioHub.Publish(AudioFrame{ChannelID: "quick-tune-channel", SampleRate: result.AudioRateHz, Samples: result.Audio})
 			}
 		}
-		if decoderID != "" && (canonicalDecoderID(decoderID) == "dsd-fme" || canonicalDecoderID(decoderID) == "multimon-ng" || canonicalDecoderID(decoderID) == "acarsdec") {
+		if decoderID != "" && decoderNeedsIQ(decoderID) {
+			// File-oriented decoders need more than a spectrum frame. Keep exactly
+			// one bounded observation and one in-flight decoder job so a busy
+			// decoder cannot turn a live tuner into an unbounded IQ recorder.
+			if decoderBusy {
+				decoderIQ = decoderIQ[:0]
+			} else {
+				decoderIQ = append(decoderIQ, data...)
+				minimumBytes := int(float64(spec.SampleRateHz*2) * defaultChannelDwell(&decoderID).Seconds())
+				if len(decoderIQ) >= minimumBytes {
+					batch := append([]byte(nil), decoderIQ...)
+					decoderIQ = decoderIQ[:0]
+					decoderBusy = true
+					frequency, mode, captureFormat := request.FrequencyHz, request.Mode, format
+					go func(decoderID string) {
+						decoded := tunerDecoderBatchResult{frequencyHz: frequency, mode: mode}
+						path, cleanup, err := writeTransientDecoderIQ(batch, captureFormat)
+						if err == nil {
+							ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+							decoded.messages, _ = runCandidateDecoder(ctx, decoderID, nil, 0, path, frequency, spec)
+							cancel()
+							cleanup()
+						}
+						select {
+						case decoderResults <- decoded:
+						case <-stop:
+						}
+					}(decoderID)
+				}
+			}
+		} else if decoderID != "" && (canonicalDecoderID(decoderID) == "dsd-fme" || canonicalDecoderID(decoderID) == "multimon-ng" || canonicalDecoderID(decoderID) == "acarsdec") {
 			decoderAudio = append(decoderAudio, result.Audio...)
 			minimumSamples := result.AudioRateHz * 5 / 2
 			if len(decoderAudio) >= minimumSamples && !decoderBusy {
@@ -1716,6 +1848,53 @@ func clippedIQPercent(data []byte, format SampleFormat) float64 {
 		}
 	}
 	return float64(clipped) / float64(len(data)) * 100
+}
+
+// iqInputWarning identifies a broken or stuck raw quadrature path without
+// treating a normal strong signal as a hardware fault. A healthy 8-bit I/Q
+// stream can occasionally touch a rail, but it cannot keep one component at a
+// rail for nearly every complex sample. This is evaluated before the next
+// receiver setting is requested so the UI can direct the user to hardware,
+// cable, or firmware investigation instead of suggesting more gain changes.
+func iqInputWarning(data []byte, format SampleFormat) string {
+	if len(data) < 2048 {
+		return ""
+	}
+	var iRail, qRail, pairs int
+	for index := 0; index+1 < len(data); index += 2 {
+		i, q := int(data[index]), int(data[index+1])
+		if format == ComplexSigned8 {
+			i, q = int(int8(data[index])), int(int8(data[index+1]))
+			if i <= -126 || i >= 125 {
+				iRail++
+			}
+			if q <= -126 || q >= 125 {
+				qRail++
+			}
+		} else {
+			if i <= 1 || i >= 254 {
+				iRail++
+			}
+			if q <= 1 || q >= 254 {
+				qRail++
+			}
+		}
+		pairs++
+	}
+	if pairs == 0 {
+		return ""
+	}
+	iPercent := 100 * float64(iRail) / float64(pairs)
+	qPercent := 100 * float64(qRail) / float64(pairs)
+	if iPercent >= 95 || qPercent >= 95 {
+		component := "I"
+		percent := iPercent
+		if qPercent > iPercent {
+			component, percent = "Q", qPercent
+		}
+		return fmt.Sprintf("%s sample path is pinned at an ADC rail (%.1f%%); check receiver hardware, firmware, and USB power", component, percent)
+	}
+	return ""
 }
 
 // applyNoiseReduction is an entirely local, low-latency speech filter. It uses
@@ -1822,7 +2001,7 @@ func (r *Runtime) finishWidebandTransmission(stop <-chan struct{}, profile ScanP
 	}
 	if transmission.channel.Decoder != nil && r.decoderReady(*transmission.channel.Decoder) {
 		spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(transmission.channel.FrequencyHz)), SampleRateHz: transmission.audioRate}
-		go r.decodeEvent(stop, event, *transmission.channel.Decoder, transmission.audio, transmission.audioRate, spec)
+		go r.decodeEvent(stop, event, *transmission.channel.Decoder, transmission.audio, transmission.audioRate, spec, "")
 	}
 	if profile.Settings.TranscribeVoice && event.AudioPath != nil {
 		go r.transcribeEvent(stop, event.ID, event.FrequencyHz, *event.AudioPath)

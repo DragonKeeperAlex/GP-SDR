@@ -559,6 +559,22 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.Plan())
 	case r.Method == "GET" && path == "/api/transmit/status":
 		writeJSON(w, 200, s.runtime.TransmitStatus())
+	case r.Method == "GET" && path == "/api/relay":
+		writeJSON(w, 200, s.runtime.relay.Status())
+	case r.Method == "PUT" && path == "/api/relay":
+		var request struct {
+			Streams []RelayStream    `json:"streams"`
+			Audio   RelayAudioConfig `json:"audio"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.relay.Configure(request.Streams, request.Audio)
+		writeResult(w, result, err, 200)
+	case r.Method == "POST" && path == "/api/relay/start":
+		writeJSON(w, 200, s.runtime.relay.Start())
+	case r.Method == "POST" && path == "/api/relay/stop":
+		writeJSON(w, 200, s.runtime.relay.Stop())
 	case r.Method == "GET" && path == "/api/transmit/fixtures":
 		library, err := s.runtime.FixtureLibrary()
 		writeResult(w, library, err, 200)

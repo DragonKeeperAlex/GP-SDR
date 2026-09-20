@@ -265,10 +265,10 @@ func TestMapperCSVIncludesCompleteRecordsAndEscapesFormulas(t *testing.T) {
 
 func TestDecoderTargetsAddProfilesAndMapperCandidateEvidence(t *testing.T) {
 	profiles := decoderScanProfiles()
-	if len(profiles) != 7 {
-		t.Fatalf("expected seven decoder scan profiles, got %d", len(profiles))
+	if len(profiles) != 11 {
+		t.Fatalf("expected eleven decoder scan profiles, got %d", len(profiles))
 	}
-	for _, id := range []string{"dsd-fme", "rtl-433", "dump1090", "multimon-ng", "acarsdec", "ais"} {
+	for _, id := range []string{"dsd-fme", "rtl-433", "dump1090", "dump978", "direwolf", "noaa-apt", "sstv", "multimon-ng", "acarsdec", "ais"} {
 		found := false
 		for _, profile := range profiles {
 			for _, channel := range profile.Channels {

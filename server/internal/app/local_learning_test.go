@@ -1,6 +1,9 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +28,37 @@ func TestConfirmedLearningLibraryPersistsAndExports(t *testing.T) {
 	export := string(reloaded.ExportJSONL())
 	if !strings.Contains(export, `"protocol":"Analog voice"`) || strings.Contains(export, "iqPath") {
 		t.Fatalf("unexpected training export: %s", export)
+	}
+}
+
+func TestConfirmedLearningSaveIsAtomicAndReloadable(t *testing.T) {
+	directory := t.TempDir()
+	library := NewSignalLearningLibrary(directory)
+	base := TransmissionEvent{ID: "atomic-1", FrequencyHz: 145.5e6, BandwidthHz: 12.5e3, Modulation: "NFM"}
+	if _, err := library.Confirm(base, "NFM", "Analog voice", "first", false); err != nil {
+		t.Fatal(err)
+	}
+	updated := base
+	updated.Transcript = ptr("updated evidence")
+	if _, err := library.Confirm(updated, "NFM", "Analog voice", "updated", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "Data", "confirmed-signal-samples.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples []ConfirmedSignalSample
+	if err := json.Unmarshal(data, &samples); err != nil {
+		t.Fatalf("canonical learning snapshot is invalid: %v", err)
+	}
+	if len(samples) != 1 || samples[0].Notes != "updated" || samples[0].Transcript != "updated evidence" {
+		t.Fatalf("unexpected persisted update: %+v", samples)
+	}
+	if matches, err := filepath.Glob(filepath.Join(directory, "Data", ".gpsdr-write-*.tmp")); err != nil {
+		t.Fatal(err)
+	} else if len(matches) != 0 {
+		t.Fatal("atomic temporary file was left behind")
 	}
 }
 

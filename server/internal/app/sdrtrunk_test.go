@@ -90,6 +90,23 @@ func TestInspectSDRTrunkControlFrequencyUsesCurrentBandPlan(t *testing.T) {
 	}
 }
 
+func TestParseSDRTrunkTimestampAcceptsKnownExportForms(t *testing.T) {
+	want := time.Date(2026, 9, 19, 14, 15, 16, 250000000, time.Local)
+	for _, value := range []string{
+		"2026:09:19:14:15:16.250",
+		"20260919 141516.250",
+		want.Format(time.RFC3339Nano),
+	} {
+		got, err := parseSDRTrunkTimestamp(value)
+		if err != nil {
+			t.Fatalf("parse %q: %v", value, err)
+		}
+		if !got.Equal(want) {
+			t.Fatalf("parse %q = %s, want %s", value, got, want)
+		}
+	}
+}
+
 func hackRFP25Assignment() []p25AssignedDevice {
 	return []p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF"}}}
 }
@@ -128,6 +145,31 @@ func TestOptimizeP25SampleRatesConfiguresAssignedHackRFOnly(t *testing.T) {
 	text := formattedTunerJSON(t, data)
 	if !strings.Contains(text, `"sampleRate": "RATE_10_0"`) || !strings.Contains(text, `"amplifierEnabled": true`) || !strings.Contains(text, `"sampleRate": "RATE_2_048MHZ"`) {
 		t.Fatalf("unexpected optimized tuner configuration:\n%s", text)
+	}
+}
+
+func TestOptimizeP25SampleRatesForwardsHackRFPPMCalibration(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "configuration")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "tuner_configuration.json")
+	input := `{"tunerConfigurations":[{"type":"hackRFTunerConfiguration","uniqueID":"HackRF ONE SERIAL123","frequencyCorrection":0.0}]}`
+	if err := os.WriteFile(path, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serial := "SERIAL123"
+	assigned := []p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Serial: &serial, Calibration: &DeviceCalibration{PPMCorrection: -7}}}}
+	if err := optimizeP25SampleRates(root, sdrTrunkTestProfile(), assigned, false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"frequencyCorrection": -7`) {
+		t.Fatalf("HackRF PPM calibration was not forwarded: %s", data)
 	}
 }
 
@@ -265,8 +307,8 @@ func TestEffectiveP25CaptureRateMatchesAssignedReceiver(t *testing.T) {
 		t.Fatalf("RTL-SDR explicit rate = %d, want 2048000", got)
 	}
 	profile.Settings.P25SampleRateHz = 0
-	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), false); got != 10_000_000 {
-		t.Fatalf("HackRF auto rate = %d, want 10000000", got)
+	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), false); got != 5_000_000 {
+		t.Fatalf("HackRF auto rate = %d, want 5000000", got)
 	}
 	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), true); got != 5_000_000 {
 		t.Fatalf("HackRF fallback rate = %d, want 5000000", got)

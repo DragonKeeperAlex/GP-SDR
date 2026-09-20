@@ -59,6 +59,7 @@ type Runtime struct {
 	storageCleanup      StorageCleanupResult
 	storagePruning      bool
 	transmit            *transmitState
+	relay               *RelayRuntime
 	analysisMu          sync.RWMutex
 	analysisRunning     bool
 	analysisStop        chan struct{}
@@ -82,6 +83,9 @@ type mapperJobRuntime struct {
 }
 
 func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
+	if _, err := removeOrphanedAtomicWriteTemps(filepath.Join(dataDirectory, "Data")); err != nil {
+		return nil, fmt.Errorf("atomic snapshot recovery: %w", err)
+	}
 	profiles, err := NewProfileStore(filepath.Join(dataDirectory, "Profiles"))
 	if err != nil {
 		return nil, err
@@ -110,6 +114,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
+	runtimeState.relay = NewRelayRuntime(runtimeState.audioHub)
 	runtimeState.op25.audioHub = runtimeState.audioHub
 	runtimeState.fpv = newFPVReceiverState(dataDirectory)
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
@@ -523,7 +528,9 @@ func (r *Runtime) healthNoticesLocked() []HealthNotice {
 		notices = append(notices, HealthNotice{ID: "dropped-samples", Level: "warning", Message: fmt.Sprintf("Receiver dropped %d sample blocks; lower the sample rate or use a direct USB connection.", r.droppedSamples)})
 	}
 	if telemetry := r.receiverTelemetry; telemetry != nil {
-		if telemetry.Overloaded {
+		if telemetry.InputWarning != "" {
+			notices = append(notices, HealthNotice{ID: "iq-input", Level: "warning", Message: telemetry.InputWarning})
+		} else if telemetry.Overloaded {
 			notices = append(notices, HealthNotice{ID: "overload", Level: "warning", Message: fmt.Sprintf("Receiver input is overloaded (%.1f%% clipped). Reduce gain or disable the RF amplifier.", telemetry.ClippedPercent)})
 		} else if r.running && telemetry.SampleRateHz > 0 && !telemetry.SignalDetected && telemetry.SignalDBFS-telemetry.NoiseDBFS < 2 {
 			notices = append(notices, HealthNotice{ID: "noise-only", Level: "info", Message: "No signal is above the measured noise floor on the current channel."})
@@ -577,6 +584,10 @@ func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiv
 		profile.Settings.DCRemoval = ptr(controls.DCRemoval)
 		profile.Settings.NoiseMarginDB = controls.SquelchDB
 	}
+	// Compact Band Monitor starts use this API. Keep its selected analog channel
+	// audible even when it is below the profile's event-detection threshold;
+	// this is deliberately runtime-only and never saved back to the profile.
+	profile.Settings.MonitorOpen = true
 	enabledChannels := 0
 	for _, channel := range profile.Channels {
 		if channel.Enabled {
@@ -759,6 +770,11 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 		}(profile.Settings.MaxRecordingDays)
 	}
 	plan := r.buildPlan(profile)
+	for _, item := range plan {
+		if item.State == "conflict" {
+			return fmt.Errorf("receiver assignment conflict for %s: %s", firstNonEmpty(item.Role, item.AssignmentID), item.Note)
+		}
+	}
 	liveDevices := make([]SDRDevice, 0)
 	useP25 := len(enabledP25Systems(profile)) > 0
 	useWideband := false
@@ -865,11 +881,20 @@ func partitionScanProfile(profile ScanProfile, index, total int) ScanProfile {
 	partition.Channels = nil
 	partition.Ranges = nil
 	if len(profile.Channels) > 0 {
-		start := index * len(profile.Channels) / total
-		end := (index + 1) * len(profile.Channels) / total
-		partition.Channels = append([]ChannelDefinition(nil), profile.Channels[start:end]...)
+		channels := make([]ChannelDefinition, 0, len(profile.Channels))
+		for _, channel := range profile.Channels {
+			if channel.Enabled {
+				channels = append(channels, channel)
+			}
+		}
+		start := index * len(channels) / total
+		end := (index + 1) * len(channels) / total
+		partition.Channels = append([]ChannelDefinition(nil), channels[start:end]...)
 	}
 	for _, scanRange := range profile.Ranges {
+		if !scanRange.Enabled {
+			continue
+		}
 		if scanRange.StepHz <= 0 {
 			continue
 		}
@@ -1054,6 +1079,11 @@ func (r *Runtime) buildPlan(profile ScanProfile) []ReceiverPlanItem {
 		if assignment.DeviceID != nil {
 			for _, d := range connected {
 				if d.ID == *assignment.DeviceID {
+					if used[d.ID] {
+						item.State = "conflict"
+						item.Note = "Pinned receiver is already assigned to another role."
+						break
+					}
 					name := d.Name
 					item.DeviceName = &name
 					item.State = "assigned"
@@ -1164,6 +1194,15 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 		case <-stop:
 			return
 		case <-ticker.C:
+			if status := r.P25Status(); status.State == "error" {
+				note := status.Note
+				r.Stop()
+				if note == "" {
+					note = "OP25 exited unexpectedly."
+				}
+				r.setRuntimeError("P25 decoder stopped: " + note)
+				return
+			}
 			talkgroups, talkgroupErr := r.op25.Talkgroups()
 			calls, callsErr := r.op25.ActiveCalls()
 			if talkgroupErr != nil || callsErr != nil {

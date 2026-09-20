@@ -403,6 +403,10 @@ func DiscoverDecoders() []DecoderDescriptor {
 		{"multimon-ng", "multimon-ng", []string{"POCSAG", "FLEX", "MDC1200", "DTMF"}, []string{"multimon-ng"}, "Install multimon-ng to enable pager and signaling decoders."},
 		{"acarsdec", "acarsdec", []string{"ACARS"}, []string{"acarsdec"}, "Install acarsdec to decode ACARS."},
 		{"ais", "AIS-catcher", []string{"AIS"}, []string{"AIS-catcher", "ais-catcher"}, "Install AIS-catcher to decode marine AIS."},
+		{"direwolf", "Dire Wolf APRS/AX.25", []string{"APRS", "AX.25", "Packet Radio"}, []string{"direwolf"}, "Install Dire Wolf to decode APRS and AX.25 packet radio."},
+		{"dump978", "dump978 UAT", []string{"UAT", "978 MHz ADS-B"}, []string{"dump978", "dump978-fa"}, "Install dump978 to decode 978 MHz UAT aircraft messages."},
+		{"noaa-apt", "NOAA APT", []string{"NOAA APT", "Weather Images"}, []string{"noaa-apt-console", "noaa-apt"}, "Install a NOAA APT decoder to produce satellite weather images from WAV audio."},
+		{"sstv", "SSTV", []string{"Robot", "PD120", "PD180", "Slow-Scan TV"}, []string{"open-sstv-decode", "sstv-decode", "qsstv"}, "Install a receive-side SSTV decoder to produce images from WAV audio."},
 	}
 	for _, def := range definitions {
 		item := DecoderDescriptor{ID: def.id, Name: def.name, Standards: def.standards, State: "optional", Note: def.missing}

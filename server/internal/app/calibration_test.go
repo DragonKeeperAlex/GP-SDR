@@ -26,6 +26,22 @@ func TestCalibrationStorePersistsPerDevice(t *testing.T) {
 	}
 }
 
+func TestCalibrationStoreRejectsNonFiniteValues(t *testing.T) {
+	store, err := NewCalibrationStore(filepath.Join(t.TempDir(), "calibrations.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []DeviceCalibration{
+		{DeviceID: "nan-gain", IQGain: math.NaN()},
+		{DeviceID: "inf-phase", IQGain: 1, IQPhase: math.Inf(1)},
+		{DeviceID: "nan-confidence", IQGain: 1, Confidence: math.NaN()},
+	} {
+		if err := store.Save(item); err == nil {
+			t.Fatalf("expected non-finite calibration to be rejected: %+v", item)
+		}
+	}
+}
+
 func TestAnalyzeCalibrationMeasuresIQGainMismatch(t *testing.T) {
 	const rate = 2_400_000
 	data := make([]byte, 32768)

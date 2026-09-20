@@ -1,0 +1,24 @@
+[Unit]
+Description=GP-SDR local TFT status display
+After=gp-sdr.service
+Wants=gp-sdr.service
+ConditionPathExists=/dev/fb0
+
+[Service]
+Type=simple
+User=sdr
+Group=sdr
+SupplementaryGroups=video input
+Environment=GPSDR_TFT_FRAMEBUFFER=/dev/fb0
+Environment=GPSDR_TFT_WIDTH=320
+Environment=GPSDR_TFT_HEIGHT=240
+Environment=GPSDR_TFT_REFRESH_SECONDS=1
+Environment=GPSDR_TFT_PAGE_TIMEOUT_SECONDS=30
+Environment=GPSDR_DATA_ROOT=/mnt/gp-sdr-data
+ExecStart=/usr/bin/python3 /usr/local/lib/gp-sdr/gp-sdr-status-display.py
+Restart=always
+RestartSec=3
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

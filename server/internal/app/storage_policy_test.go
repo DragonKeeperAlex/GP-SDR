@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,7 +96,7 @@ func TestStorageCleanupNeverDeletesResultsOrEventHistory(t *testing.T) {
 
 func TestStoragePolicyRoundTripAndValidation(t *testing.T) {
 	root := t.TempDir()
-	want := StoragePolicy{AutoCleanup: true, MaxCaptureDays: 14, RecordingCapBytes: 8 * gibibyte, IQCapBytes: 4 * gibibyte}
+	want := StoragePolicy{AutoCleanup: true, MaxCaptureDays: 14, RecordingCapBytes: 8 * gibibyte, IQCapBytes: 4 * gibibyte, CaptureJournalCapBytes: 64 * 1024 * 1024}
 	if err := saveStoragePolicy(root, want); err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +105,54 @@ func TestStoragePolicyRoundTripAndValidation(t *testing.T) {
 	}
 	if _, err := validateStoragePolicy(StoragePolicy{MaxCaptureDays: -1}); err == nil {
 		t.Fatal("negative retention should be rejected")
+	}
+	legacy := []byte(`{"autoCleanup":false,"maxCaptureDays":30,"recordingCapBytes":0,"iqCapBytes":0}`)
+	legacyPath := filepath.Join(root, "Data", "storage-policy.json")
+	if err := os.WriteFile(legacyPath, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadStoragePolicy(root); got.CaptureJournalCapBytes != defaultCaptureJournalCapBytes {
+		t.Fatalf("legacy storage policy did not receive safe capture-journal default: %+v", got)
+	}
+}
+
+func TestCaptureIntervalJournalCompactionRetainsNewestCompleteRows(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "Data", "capture-intervals.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rows := []string{"old-one\n", "old-two\n", "keep-three\n", "keep-four\n"}
+	if err := os.WriteFile(path, []byte(strings.Join(rows, "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, freed, err := compactCaptureIntervalJournal(root, int64(len(rows[2])+len(rows[3])))
+	if err != nil || removed != 2 || freed != int64(len(rows[0])+len(rows[1])) {
+		t.Fatalf("unexpected journal compaction: removed=%d freed=%d err=%v", removed, freed, err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != rows[2]+rows[3] {
+		t.Fatalf("journal did not retain newest complete rows: %q err=%v", got, err)
+	}
+}
+
+func TestCaptureIntervalJournalCompactionDropsTornFinalRow(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "Data", "capture-intervals.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	complete := "{\"id\":\"complete\"}\n"
+	if err := os.WriteFile(path, []byte("{\"id\":\"old\"}\n"+complete+"{\"id\":"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed, _, err := compactCaptureIntervalJournal(root, int64(len(complete)))
+	if err != nil || removed != 1 {
+		t.Fatalf("unexpected torn-row compaction: removed=%d err=%v", removed, err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != complete {
+		t.Fatalf("torn final row survived compaction: %q err=%v", got, err)
 	}
 }
 

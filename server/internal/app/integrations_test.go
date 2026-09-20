@@ -53,6 +53,21 @@ func TestBuildOP25ConfigurationUsesDistinctReceiversAndSilencesEncryptedTalkgrou
 	}
 }
 
+func TestBuildOP25ConfigurationUsesConservativeHackRFDefaults(t *testing.T) {
+	profile := ScanProfile{P25Systems: []P25SystemConfig{{ID: "system", Name: "P25", Enabled: true, ControlChannelsHz: []float64{774_456_250}}}}
+	data, err := BuildOP25Configuration(profile, []SDRDevice{{ID: "hackrf", Kind: "HackRF"}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config op25Configuration
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Devices) != 1 || config.Devices[0].Gains != "LNA:8,VGA:0,AMP:0" {
+		t.Fatalf("unexpected conservative HackRF defaults: %#v", config.Devices)
+	}
+}
+
 func TestPlutoP25UsesSoapyOP25Input(t *testing.T) {
 	serial := "PLUTO123"
 	device := SDRDevice{ID: "pluto-1", Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", Serial: &serial, DeviceArguments: "driver=plutosdr,uri=usb:1.2.3"}
@@ -67,7 +82,7 @@ func TestPlutoP25UsesSoapyOP25Input(t *testing.T) {
 		t.Fatalf("unexpected OP25 Pluto arguments: %q", got)
 	}
 	if p25AssignmentsNeedOP25([]p25AssignedDevice{{Device: SDRDevice{Kind: "HackRF", Driver: "/usr/bin/hackrf_info"}}}) {
-		t.Fatal("native HackRF should remain on the tested SDRTrunk path")
+		t.Fatal("native HackRF should not require Soapy-specific OP25 routing")
 	}
 }
 

@@ -49,3 +49,27 @@ func TestAtomicSnapshotMarshalFailurePreservesPrevious(t *testing.T) {
 		t.Fatal("failed snapshot replaced previous data")
 	}
 }
+
+func TestRemoveOrphanedAtomicWriteTempsRemovesOnlyRegularGPSDRTemps(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{".gpsdr-write-old.tmp", ".gpsdr-write-other.tmp", "mapper-records.json"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(directory, "mapper-records.json"), filepath.Join(directory, ".gpsdr-write-link.tmp")); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := removeOrphanedAtomicWriteTemps(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed %d temporary files, want 2", removed)
+	}
+	for _, name := range []string{"mapper-records.json", ".gpsdr-write-link.tmp"} {
+		if _, err := os.Lstat(filepath.Join(directory, name)); err != nil {
+			t.Fatalf("%s was unexpectedly removed: %v", name, err)
+		}
+	}
+}

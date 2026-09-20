@@ -146,13 +146,23 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 		}
 	}
 	r.mu.RUnlock()
-	offlineFixture := request.DryRun && request.Fixture != nil
+	// A dry run is an offline waveform-generation operation regardless of
+	// whether the source is a fixture or uploaded audio.  Do not require a
+	// selected/connected transmitter for it; hardware validation belongs only
+	// to the armed RF path.
+	offlineFixture := request.DryRun
 	transmitCapable := strings.EqualFold(device.Kind, "HackRF") || (strings.EqualFold(device.Kind, "PlutoSDR") && device.TransmitChannels > 0)
 	if !offlineFixture && (device.ID == "" || !device.Connected || !device.Available || !transmitCapable) {
 		return r.TransmitStatus(), errors.New("select a connected HackRF or PlutoSDR with an exposed TX channel; RTL-SDR cannot transmit")
 	}
 	if strings.EqualFold(device.Kind, "HackRF") && request.TXGainDB > 47 {
 		return r.TransmitStatus(), errors.New("HackRF TX gain must be between 0 and 47 dB")
+	}
+	if device.FrequencyMinimumHz > 0 && request.FrequencyHz < device.FrequencyMinimumHz {
+		return r.TransmitStatus(), fmt.Errorf("frequency is below %s transmit range", device.Name)
+	}
+	if device.FrequencyMaximumHz > 0 && request.FrequencyHz > device.FrequencyMaximumHz {
+		return r.TransmitStatus(), fmt.Errorf("frequency is above %s transmit range", device.Name)
 	}
 	if (device.HealthWarning != "" || device.FirmwareSelfTestWarning) && !request.DryRun {
 		return r.TransmitStatus(), errors.New("resolve the HackRF diagnostic warning before RF transmission; receive and transmit dry runs remain available")
@@ -247,7 +257,7 @@ func (r *Runtime) runTransmit(ctx context.Context, request TransmitRequest, devi
 			if err != nil {
 				runErr = errors.New("GP-SDR's SoapySDR transmit helper is not installed")
 			} else {
-				args := []string{"--device", soapyDeviceArguments(device), "--frequency", strconv.FormatInt(int64(request.FrequencyHz), 10), "--rate", "2000000", "--gain", strconv.Itoa(request.TXGainDB), "--bandwidth", "2000000", "--tx-file", iqPath}
+				args := soapyTransmitArgs(device, request, iqPath)
 				command := exec.CommandContext(ctx, tool, args...)
 				_, runErr = command.Output()
 			}
@@ -268,6 +278,13 @@ func (r *Runtime) runTransmit(ctx context.Context, request TransmitRequest, devi
 		started.State, started.Note = "complete", "Transmit completed. Use a dummy load and verify local regulations before on-air use."
 	}
 	r.transmit.status = started
+}
+
+// soapyTransmitArgs is kept separate so the Pluto/Soapy TX contract can be
+// regression-tested without opening hardware. gpsdr-soapy consumes signed
+// interleaved CS8 IQ and converts it to the driver's native TX format.
+func soapyTransmitArgs(device SDRDevice, request TransmitRequest, iqPath string) []string {
+	return []string{"--device", soapyDeviceArguments(device), "--frequency", strconv.FormatInt(int64(request.FrequencyHz), 10), "--rate", "2000000", "--gain", strconv.Itoa(request.TXGainDB), "--bandwidth", "2000000", "--tx-file", iqPath}
 }
 
 func (r *Runtime) StopTransmit() TransmitStatus {

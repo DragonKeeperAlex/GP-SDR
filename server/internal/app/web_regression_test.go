@@ -101,13 +101,27 @@ func TestHiddenSpectrumCanvasCannotCreateZeroIncrementLoop(t *testing.T) {
 	}
 }
 
+func TestStandaloneAnalyzerUsesNativeSweepAndClampsFullRange(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	if !strings.Contains(source, "full?Number(device.frequencyMinimumHz)") || !strings.Contains(source, "full?Number(device.frequencyMaximumHz)") {
+		t.Fatal("full-range analyzer start must use each receiver's reported tuning limits")
+	}
+	if !strings.Contains(source, "/api/spectrum-analyzer/start") || !strings.Contains(source, "deviceIDs:ranges.map(item=>item.device.id)") {
+		t.Fatal("analyzer must use the native multi-receiver sweep endpoint")
+	}
+}
+
 func TestBandMonitorIncludesLiveWidebandDisplay(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	for _, required := range []string{`id="band-spectrum"`, `id="band-waterfall"`, `id="band-spectrum-cursor"`} {
+	for _, required := range []string{`id="band-spectrum"`, `id="band-waterfall"`, `id="band-spectrum-cursor"`, `id="band-applied-state"`} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("Band Monitor display %q is missing", required)
 		}
@@ -118,9 +132,32 @@ func TestBandMonitorIncludesLiveWidebandDisplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := string(appData)
-	for _, required := range []string{"drawSpectrumCanvas($('#band-spectrum'))", "drawWaterfallCanvas(canvas)", "selectedDevice=connected.find"} {
+	for _, required := range []string{"drawSpectrumCanvas($('#band-spectrum'))", "drawWaterfallCanvas(canvas)", "selectedDevice=connected.find", "Applied receiver state", "telemetryMatches"} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Band Monitor behavior %q is missing", required)
+		}
+	}
+}
+
+func TestLiveOverviewKeepsSessionControlsAndPromotesDecoderWorkspaces(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="live-task-overview"`, `id="live-quick-controls"`, `data-decoder-id="p25"`, `data-decoder-id="dsd-fme"`, `id="view-relay"`, `id="relay-start"`, `id="relay-streams"`, `id="relay-audio-device"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("Live/decoder/relay UI %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{`function renderLiveOverview()`, `data-live-task-action="stop"`, `api('/api/mapper/jobs/stop'`, `state.view==='mapper'||state.view==='analyzer'||state.view==='live'`} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("Live overview behavior %q is missing", required)
 		}
 	}
 }
@@ -135,6 +172,26 @@ func TestPiPowerHatCardIsCapabilityDriven(t *testing.T) {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Pi power HAT behavior %q is missing", required)
 		}
+	}
+}
+
+func TestHardwareActivityNamesOnlyTheAssignedReceiver(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"const p25Receivers=state.integrations?.p25?.receiverDeviceIDs||[]",
+		"const telemetryDeviceID=state.status?.receiverTelemetry?.deviceID",
+		"p25Receivers.includes(device.id)||telemetryDeviceID===device.id",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("hardware activity attribution %q is missing", required)
+		}
+	}
+	if strings.Contains(app, "if(device.connected&&state.status?.running)return `Streaming · ${state.status.mode}`;") {
+		t.Fatal("hardware page still labels every connected receiver as streaming")
 	}
 }
 
@@ -308,7 +365,7 @@ func TestSettingsExposeBoundedCaptureStorageControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	for _, required := range []string{`id="storage-policy-form"`, `id="storage-auto-cleanup"`, `id="storage-max-days"`, `id="storage-recording-cap"`, `id="storage-iq-cap"`, `id="storage-clean-now"`, `Results are separate.`, `id="display-fps"`, `value="60">60 Hz`} {
+	for _, required := range []string{`id="storage-policy-form"`, `id="storage-auto-cleanup"`, `id="storage-max-days"`, `id="storage-recording-cap"`, `id="storage-iq-cap"`, `id="storage-capture-journal-cap"`, `id="storage-clean-now"`, `Results are separate.`, `id="display-fps"`, `value="60">60 Hz`} {
 		if !strings.Contains(index, required) {
 			t.Fatalf("storage control %q is missing", required)
 		}
@@ -460,6 +517,7 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	for _, required := range []string{
 		"status.controlChannelHz", `id="p25-order"`, "Most recent", "Most received",
 		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:''",
+		"const p25Action=", "P25 searching…", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "P25 audio enabled",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("P25 mixer status or activity-order behavior %q is missing", required)

@@ -8,9 +8,9 @@
   <title>GP-SDR</title>
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
-  <link rel="stylesheet" href="/app.css?v=1.5.0-rc20">
-  <link rel="stylesheet" href="/console.css?v=1.5.0-rc32">
-  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc20">
+  <link rel="stylesheet" href="/app.css?v=1.5.0-rc34">
+  <link rel="stylesheet" href="/console.css?v=1.5.0-rc34">
+  <link rel="stylesheet" href="/explore.css?v=1.5.0-rc34">
 </head>
 <body>
   <div class="shell">
@@ -48,15 +48,23 @@
         <button class="nav-item" data-view="profiles" title="Scan ranges, channels, and receiver assignments">
           <span class="nav-icon">▤</span><span>Channels</span>
         </button>
-        <button class="nav-item" data-view="decoders" title="Open a workspace for each decoder">
-          <span class="nav-icon">⌗</span><span>Decoders</span>
-        </button>
+        <span class="nav-group-label">Decoders</span>
+        <button class="nav-item" data-view="decoders" data-decoder-id="p25" title="P25 trunking, control-channel status, and talkgroup audio"><span class="nav-icon">P25</span><span>P25</span></button>
+        <button class="nav-item" data-view="decoders" data-decoder-id="dsd-fme" title="Digital voice decoder workspace"><span class="nav-icon">DV</span><span>Digital voice</span></button>
+        <button class="nav-item" data-view="decoders" data-decoder-id="rtl-433" title="Sensor, weather, and ISM decoder workspace"><span class="nav-icon">RF</span><span>Signal data</span></button>
+        <button class="nav-item" data-view="decoders" title="Browse every installed decoder workspace"><span class="nav-icon">⌗</span><span>All decoders</span></button>
         <button class="nav-item" data-view="hardware" title="Connected SDRs and decoder availability">
           <span class="nav-icon">⌁</span><span>Hardware</span>
         </button>
         <span class="nav-group-label">System</span>
         <button class="nav-item" data-view="transmit" title="Generate known IQ fixtures or prepare a guarded SDR transmission">
           <span class="nav-icon">TX</span><span>Transmit</span>
+        </button>
+        <button class="nav-item" data-view="relay" title="Route selected decoded audio to the analog relay radio">
+          <span class="nav-icon">⇄</span><span>Radio relay</span>
+        </button>
+        <button class="nav-item" data-view="relay" title="Reserved for the future RF lab relay and switching box">
+          <span class="nav-icon">⇄</span><span>RF relay</span>
         </button>
         <button class="nav-item" data-view="settings" title="Server, storage, and application information">
           <span class="nav-icon">⚙︎</span><span>Settings</span>
@@ -107,7 +115,14 @@
           <article class="metric"><span>Session</span><strong id="metric-session">—</strong><small id="metric-mode">idle</small></article>
         </div>
 
-        <article class="panel receiver-controls-panel">
+        <article class="panel live-task-overview-panel">
+          <div class="panel-head"><div><h2>Running now</h2><span id="live-task-summary">Loading active work</span></div><span id="live-task-state" class="chip">Checking</span></div>
+          <div id="live-task-overview" class="live-task-grid" aria-live="polite"></div>
+        </article>
+
+        <details id="live-quick-controls" class="panel receiver-controls-panel live-quick-controls">
+          <summary><span>Quick receiver controls</span><small>Available only for an active one-frequency Live session</small></summary>
+          <div class="live-quick-controls-body">
           <div class="panel-head"><div><h2>Receiver controls</h2><span id="audio-state">Ready</span></div><div class="signal-state"><i id="live-signal-light"></i><span id="live-signal-text">No signal</span></div><button id="audio-monitor" title="Enable or resume receiver audio">Audio</button><button id="live-apply-radio" class="primary" title="Controls apply automatically; click to retry now">Applied</button></div>
           <div class="receiver-control-grid">
             <h3 class="control-group-title">Receiver</h3>
@@ -131,7 +146,8 @@
 			<label class="check-line"><input id="live-use-calibration" type="checkbox" checked> Auto calibration</label>
           </div>
           <p class="control-warning">RF amp and antenna power default off. Antenna power is only for compatible powered accessories.</p>
-        </article>
+          </div>
+        </details>
 
         <article class="panel spectrum-panel">
           <div class="panel-head">
@@ -173,6 +189,7 @@
             <label>Squelch · dB<input id="band-squelch" type="number" min="0" max="60" step="1" value="6"></label>
             <label class="check-line"><input id="band-auto-gain" type="checkbox" checked> Auto gain</label><label class="check-line"><input id="band-amp" type="checkbox"> HackRF RF amp</label><label class="check-line"><input id="band-dc" type="checkbox" checked> DC removal</label>
           </div>
+          <div id="band-applied-state" class="band-applied-state"><span>Applied receiver state</span><strong>Start monitoring to confirm the active receiver settings.</strong></div>
           <p class="band-help"><strong>Privacy codes are squelch tones, not encryption.</strong> Carrier mode hears every transmission, including radios with no code. GP‑SDR identifies CTCSS on active audio and leaves the code blank when there is not enough evidence.</p>
         </article>
         <div class="band-summary"><article><span>Channels</span><strong id="band-channel-count">0</strong><small>monitored</small></article><article><span>Active now</span><strong id="band-active-count">0</strong><small>receiving</small></article><article><span>Last tone</span><strong id="band-last-code">—</strong><small>CTCSS detected</small></article><article><span>Capture</span><strong id="band-capture-width">—</strong><small>shared bandwidth</small></article></div>
@@ -359,7 +376,7 @@
 
       <section id="view-mapper" class="view">
         <div class="mapper-workspace"><article class="panel mapper-control-panel">
-          <div class="panel-head"><div><h2>Job setup</h2><span>Independent tasks per receiver</span></div><div class="mapper-actions"><span id="mapper-state" class="chip">Idle</span><button id="mapper-new-job" type="button" title="Clear the editor for a new Mapper job">New job</button><button id="mapper-import-jobs" type="button" title="Import one or more shared Mapper job files">Import</button><input id="mapper-job-files" type="file" accept="application/json,.json" multiple hidden><button id="mapper-stop-button" type="button" title="Stop every active Mapper job">Stop all</button></div></div>
+          <div class="panel-head"><div><h2>Job setup</h2><span>Independent tasks per receiver</span></div><div class="mapper-actions"><span id="mapper-state" class="chip">Idle</span><button id="mapper-new-job" type="button" title="Clear the editor for a new Mapper job">New job</button><button id="mapper-import-jobs" type="button" title="Import one or more shared Mapper job files">Import</button><input id="mapper-job-files" type="file" accept="application/json,.json" multiple hidden aria-label="Import Mapper job files"><button id="mapper-stop-button" type="button" title="Stop every active Mapper job">Stop all</button></div></div>
           <form id="mapper-form" class="mapper-controls">
             <input id="mapper-job-id" type="hidden">
             <label>Job name<input id="mapper-job-name" maxlength="60" placeholder="UHF discovery"></label>
@@ -457,7 +474,7 @@
           <div id="analysis-console" class="analysis-console" role="log" aria-live="polite"><div class="analysis-empty">Start analysis to process stored captures.</div></div>
           <p class="analysis-note">All recordings at the same frequency and nearby location are evaluated together. Captures from distinct receive areas remain separate. Rejected IQ is deleted only after analysis completes successfully under the selected retention policy.</p>
         </article>
-        <article id="mapper-results-panel" class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-actions"><label class="check-line mapper-repeat-toggle" title="Hide frequencies recorded only once"><input id="mapper-filter-repeated" type="checkbox"> Repeated only</label><button id="mapper-results-toggle" type="button" aria-expanded="true" title="Collapse or expand Mapper results">Collapse</button></div></div><div id="mapper-results-content"><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver"><option value="">All receivers</option></select><select id="mapper-filter-type" title="Filter by modulation or decoded protocol"><option value="">All types</option></select><select id="mapper-filter-state" title="Filter by identification or activity"><option value="">All results</option><option value="verified">Successfully identified</option><option value="identified">Any identity</option><option value="unidentified">Unidentified</option><option value="decoded">Decoder evidence</option><option value="transcribed">Has transcript</option><option value="callsign">Has callsign</option><option value="recent">Seen in 1 hour</option><option value="frequent">10+ hits</option><option value="repeat">2+ hits</option><option value="oneoff">One-off only</option></select><select id="mapper-sort" title="Choose result order"><option value="recent">Most recent</option><option value="hits">Most received</option><option value="checks">Most checked</option><option value="occupancy">Highest successful checks</option><option value="strongest">Strongest signal</option><option value="snr">Best signal over noise</option><option value="confidence">Highest confidence</option><option value="receivers">Most receivers</option><option value="first-seen">First discovered</option><option value="identity">Identity A–Z</option><option value="frequency">Frequency low–high</option><option value="frequency-desc">Frequency high–low</option></select><input id="mapper-filter-search" type="search" placeholder="Search frequency, name, protocol, callsign…" aria-label="Search Mapper results"><button id="mapper-filter-reset" type="button">Reset filters</button><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></div></article>
+        <article id="mapper-results-panel" class="panel table-panel mapper-results-panel"><div class="panel-head"><div><h2>Combined results</h2><span id="mapper-count">No detected activity</span></div><div class="mapper-result-actions"><label class="check-line mapper-repeat-toggle" title="Hide frequencies recorded only once"><input id="mapper-filter-repeated" type="checkbox"> Repeated only</label><button id="mapper-results-toggle" type="button" aria-expanded="true" title="Collapse or expand Mapper results">Collapse</button></div></div><div id="mapper-results-content"><div class="mapper-result-filters"><select id="mapper-filter-job" title="Show results observed by one job" aria-label="Filter Mapper results by job"><option value="">All jobs</option></select><select id="mapper-filter-device" title="Show results observed by one receiver" aria-label="Filter Mapper results by receiver"><option value="">All receivers</option></select><select id="mapper-filter-type" title="Filter by modulation or decoded protocol" aria-label="Filter Mapper results by type"><option value="">All types</option></select><select id="mapper-filter-state" title="Filter by identification or activity" aria-label="Filter Mapper results by state"><option value="">All results</option><option value="verified">Successfully identified</option><option value="identified">Any identity</option><option value="unidentified">Unidentified</option><option value="decoded">Decoder evidence</option><option value="transcribed">Has transcript</option><option value="callsign">Has callsign</option><option value="recent">Seen in 1 hour</option><option value="frequent">10+ hits</option><option value="repeat">2+ hits</option><option value="oneoff">One-off only</option></select><select id="mapper-sort" title="Choose result order" aria-label="Sort Mapper results"><option value="recent">Most recent</option><option value="hits">Most received</option><option value="checks">Most checked</option><option value="occupancy">Highest successful checks</option><option value="strongest">Strongest signal</option><option value="snr">Best signal over noise</option><option value="confidence">Highest confidence</option><option value="receivers">Most receivers</option><option value="first-seen">First discovered</option><option value="identity">Identity A–Z</option><option value="frequency">Frequency low–high</option><option value="frequency-desc">Frequency high–low</option></select><input id="mapper-filter-search" type="search" placeholder="Search frequency, name, protocol, callsign…" aria-label="Search Mapper results"><button id="mapper-filter-reset" type="button">Reset filters</button><button id="mapper-clear">Clear</button><button id="mapper-save">Save CSV</button><button id="mapper-download">Download</button></div><div class="table-scroll"><table><thead><tr><th>Frequency</th><th>Identity</th><th>Type</th><th>Hits</th><th>Source</th><th>Last seen</th><th></th></tr></thead><tbody id="mapper-body"></tbody></table></div></div></article>
         <details class="panel mapper-sheet-panel"><summary><span><strong>Google Sheet</strong><small>Optional Additions Queue upload</small></span><span id="mapper-upload-state" class="chip">Off</span></summary><form id="mapper-sheet-form" class="mapper-sheet-form"><label>Master sheet<input id="mapper-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label><label>Apps Script webhook<input id="mapper-webhook" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label><label>Contributor<input id="mapper-contributor" placeholder="GP-SDR"></label><label>Shared secret<input id="mapper-secret" type="password" autocomplete="off"></label><label class="check-line"><input id="mapper-auto-upload" type="checkbox"> Queue automatically</label><label class="check-line" title="Require a nearby authoritative reference match or valid decoder frames"><input id="mapper-upload-verified" type="checkbox" checked> Identified only</label><button class="primary" type="submit">Save</button><button id="mapper-script-download" type="button">Setup script</button><button id="mapper-upload-now" type="button">Send eligible now</button></form><p id="mapper-upload-detail" class="range-sync-detail">Fully identified requires nearby reference data or valid decoded frames.</p></details>
       </section>
 
@@ -465,7 +482,7 @@
         <div class="section-actions">
           <div><h2>Channels &amp; profiles</h2><p>Portable channel banks, scan ranges, and receiver roles.</p></div>
           <div>
-            <input id="import-profile" type="file" accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values" multiple hidden>
+            <input id="import-profile" type="file" accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values" multiple hidden aria-label="Import profiles and channels">
             <button id="reference-button" title="Find RadioReference channels and systems near a ZIP code">Location import</button>
             <button id="import-button" title="Bulk import GP-SDR profiles, CHIRP CSVs, or tab-separated channel files">Import</button>
             <button id="new-profile" class="primary" title="Create a custom scan profile">＋ New profile</button>
@@ -524,6 +541,15 @@
         </div>
       </section>
 
+      <section id="view-relay" class="view">
+        <div class="section-actions"><div><h2>Radio relay</h2><p>Forward selected decoded audio to the analog handheld radio.</p></div><div><span id="relay-state" class="chip">Stopped</span></div></div>
+        <article class="panel relay-panel"><div class="panel-head"><div><h2>Relay routing</h2><span>Each enabled source is mixed into the USB audio output.</span></div><div class="relay-actions"><button id="relay-stop" type="button">Stop</button><button id="relay-start" class="primary" type="button">Start relay</button></div></div>
+          <div id="relay-streams" class="relay-streams"><div class="empty-state compact">Loading audio streams…</div></div>
+          <div class="relay-settings"><label>USB audio device<input id="relay-audio-device" value="plughw:2,0" placeholder="plughw:2,0"></label><label>Sample rate<select id="relay-audio-rate"><option value="8000">8 kHz · P25/voice</option><option value="16000">16 kHz</option></select></label><label>Segment limit<input id="relay-segment" value="30" type="number" min="1" max="30" step="1"> seconds</label><button id="relay-save" type="button">Save routing</button></div>
+          <p id="relay-detail" class="range-sync-detail">Relay is stopped. PTT remains low until the relay is started.</p>
+        </article>
+      </section>
+
       <section id="view-settings" class="view">
         <div class="settings-grid">
           <header class="settings-section-title"><div><h2>Data &amp; reference sources</h2><p>Channel databases and automatic range updates.</p></div></header>
@@ -542,7 +568,7 @@
           </article>
 		  <article class="panel settings-card local-database-card">
 		    <div class="settings-card-head"><div><h2>Local database</h2><p>Recursively import CSV, TSV, and GP-SDR JSON files.</p></div><span id="local-db-state" class="chip">Not configured</span></div>
-		    <form id="local-db-form"><label class="local-db-folder-label">Folder path<input id="local-db-folder" autocomplete="off" placeholder="/Users/you/Downloads/Radio Database"></label><div class="local-db-actions"><button id="local-db-choose" type="button">Choose folder</button><button id="local-db-scan" type="button">Rescan</button><button class="primary" type="submit">Use path</button><input id="local-db-upload" type="file" accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" webkitdirectory multiple hidden></div></form>
+		    <form id="local-db-form"><label class="local-db-folder-label">Folder path<input id="local-db-folder" autocomplete="off" placeholder="/Users/you/Downloads/Radio Database"></label><div class="local-db-actions"><button id="local-db-choose" type="button">Choose folder</button><button id="local-db-scan" type="button">Rescan</button><button class="primary" type="submit">Use path</button><input id="local-db-upload" type="file" accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" webkitdirectory multiple hidden aria-label="Import local database folder"></div></form>
 		    <div id="local-db-path" class="local-db-path">No folder selected.</div>
 		    <div id="local-db-detail" class="range-sync-detail">Choose a folder containing supported channel files.</div>
 		    <details class="range-sync-format"><summary>RadioReference download steps</summary><ol><li>Open a county, state, or system page while signed in.</li><li>Open <b>Downloads</b> and save its CSV into a folder organized by state or county.</li><li>Choose the top-level folder here. Rescan after adding files.</li></ol><p>RadioReference does not document a single whole-US archive. GP-SDR does not scrape or mirror its database.</p></details>
@@ -591,7 +617,7 @@
           <article class="panel settings-card system-card"><h2>App &amp; web access</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl><p class="range-sync-detail">Core scanning and logs stay on this computer. The web app uses the private network link above.</p></article>
 		  <article class="panel settings-card update-card"><div class="settings-card-head"><div><h2>Software update</h2><p>Install verified releases without replacing your data.</p></div><span id="app-update-state" class="chip">Not checked</span></div><div class="range-sync-actions"><button id="app-update-button" class="primary" type="button">Check for updates</button><a id="app-update-release" class="setup-link hidden" href="https://github.com/DragonKeeperAlex/GP-SDR/releases/latest" target="_blank" rel="noreferrer">View release ↗</a><label class="check-line"><input id="app-update-auto" type="checkbox" checked> Check when GP-SDR opens</label></div><p id="app-update-detail" class="range-sync-detail">The native Mac app can download, verify, install, and restart GP-SDR. Settings, Mapper results, recordings, and profiles stay in Application Support.</p><details id="app-update-notes" class="range-sync-format hidden"><summary>Release notes</summary><pre id="app-update-notes-body"></pre></details></article>
 		  <article class="panel settings-card expert-card"><div class="settings-card-head"><div><h2>Expert transmit mode</h2><p>Skip the repeated transmit acknowledgement on this Mac.</p></div><span id="expert-transmit-state" class="chip">Off</span></div><button id="expert-transmit-toggle" type="button">I know what I’m doing</button><p class="range-sync-detail">This convenience mode remembers your acknowledgement locally. It does not bypass local-only access, hardware/range validation, the emergency stop, firmware-health blocks, or the 60-second transmission ceiling.</p></article>
-		  <article class="panel settings-card storage-card"><h2>Storage</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd><dt>Original IQ archive</dt><dd id="storage-iq-archive">—</dd><dt>IQ analyzing</dt><dd id="storage-iq-pending">—</dd><dt>IQ retained</dt><dd id="storage-iq-retained">—</dd><dt>IQ rejected</dt><dd id="storage-iq-quarantine">—</dd></dl><form id="storage-policy-form" class="display-settings"><label class="check-line"><input id="storage-auto-cleanup" type="checkbox"> Automatic cleanup</label><label class="check-line"><input id="storage-auto-remove-rejected" type="checkbox" checked> Remove rejected IQ</label><label>Rejected IQ recovery<select id="storage-rejected-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="48">2 days</option><option value="72">3 days</option><option value="168">7 days</option></select></label><label>Keep captures<select id="storage-max-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">No age limit</option></select></label><label>Recording cap · GB<input id="storage-recording-cap" type="number" min="0" max="2048" step="1" value="15" title="Zero disables this cap"></label><label>IQ cap · GB<input id="storage-iq-cap" type="number" min="0" max="2048" step="1" value="10" title="Zero disables this cap"></label><button class="primary" type="submit">Save limits</button><button id="storage-clean-now" type="button">Clean media now</button></form><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p><p class="range-sync-detail"><strong>Results are separate.</strong> Media cleanup removes eligible IQ data and recordings only. Mapper results, event history, transcripts, decoded metadata, profiles, calibration, and channel data remain until you explicitly clear their corresponding data. Original archives and pending IQ retain their existing protection rules.</p></article>
+		  <article class="panel settings-card storage-card"><h2>Storage</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd><dt>Original IQ archive</dt><dd id="storage-iq-archive">—</dd><dt>IQ analyzing</dt><dd id="storage-iq-pending">—</dd><dt>IQ retained</dt><dd id="storage-iq-retained">—</dd><dt>IQ rejected</dt><dd id="storage-iq-quarantine">—</dd></dl><form id="storage-policy-form" class="display-settings"><label class="check-line"><input id="storage-auto-cleanup" type="checkbox"> Automatic cleanup</label><label class="check-line"><input id="storage-auto-remove-rejected" type="checkbox" checked> Remove rejected IQ</label><label>Rejected IQ recovery<select id="storage-rejected-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="48">2 days</option><option value="72">3 days</option><option value="168">7 days</option></select></label><label>Keep captures<select id="storage-max-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">No age limit</option></select></label><label>Recording cap · GB<input id="storage-recording-cap" type="number" min="0" max="2048" step="1" value="15" title="Zero disables this cap"></label><label>IQ cap · GB<input id="storage-iq-cap" type="number" min="0" max="2048" step="1" value="10" title="Zero disables this cap"></label><label>Capture journal cap · MB<input id="storage-capture-journal-cap" type="number" min="0" max="1024" step="1" value="128" title="Newest raw capture records are retained. Zero disables this cap."></label><button class="primary" type="submit">Save limits</button><button id="storage-clean-now" type="button">Clean eligible data</button></form><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p><p class="range-sync-detail"><strong>Results are separate.</strong> Cleanup removes eligible IQ data, recordings, and excess capture-journal diagnostics; the journal keeps its newest complete records. Mapper results, event history, transcripts, decoded metadata, profiles, calibration, and channel data remain until you explicitly clear their corresponding data. Original archives and pending IQ retain their existing protection rules.</p></article>
         </div>
         <article class="panel acknowledgements">
           <h2>Acknowledgements</h2>
@@ -707,7 +733,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.5.0-rc32"></script>
-  <script src="/explore.js?v=1.5.0-rc32"></script>
+  <script src="/app.js?v=1.5.0-rc34"></script>
+  <script src="/explore.js?v=1.5.0-rc34"></script>
 </body>
 </html>

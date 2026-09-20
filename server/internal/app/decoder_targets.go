@@ -44,6 +44,10 @@ func decoderScanProfiles() []ScanProfile {
 			decoderChannel("915 MHz ISM", 915.000, 250_000, "nfm", "rtl-433")),
 		decoderChannelProfile("decoder-dump1090", "ADS-B · 1090 MHz", "Aircraft ADS-B and Mode S target", "dump1090", "dump1090",
 			decoderChannel("ADS-B / Mode S", 1090.000, 2_000_000, "nfm", "dump1090")),
+		decoderChannelProfile("decoder-dump978", "UAT · 978 MHz", "U.S. 978 MHz aircraft UAT target", "dump978", "dump978",
+			decoderChannel("UAT / 978 MHz", 978.000, 2_100_000, "nfm", "dump978")),
+		decoderRangeProfile("decoder-direwolf", "APRS / AX.25", "VHF packet-radio and APRS candidates", "direwolf", "direwolf",
+			decoderRange("2 m APRS candidates", 144.390e6, 144.390e6, 12_500, "nfm", "direwolf")),
 		decoderRangeProfile("decoder-multimon-ng", "Paging & Signaling Discovery", "Common US paging and signaling candidate bands", "multimon-ng", "multimon-ng",
 			decoderRange("VHF paging candidates", 152e6, 153e6, 12_500, "nfm", "multimon-ng"),
 			decoderRange("UHF paging candidates", 454e6, 460e6, 12_500, "nfm", "multimon-ng"),
@@ -55,6 +59,14 @@ func decoderScanProfiles() []ScanProfile {
 		decoderChannelProfile("decoder-ais", "Marine AIS", "AIS 1 and AIS 2 vessel data channels", "AIS", "ais",
 			decoderChannel("AIS 1 · 87B", 161.975, 25_000, "nfm", "ais"),
 			decoderChannel("AIS 2 · 88B", 162.025, 25_000, "nfm", "ais")),
+		decoderChannelProfile("decoder-noaa-apt", "NOAA APT", "NOAA polar weather satellite image channels", "noaa-apt", "noaa-apt",
+			decoderChannel("NOAA 15 · 137.620", 137.620, 40_000, "nfm", "noaa-apt"),
+			decoderChannel("NOAA 18 · 137.9125", 137.9125, 40_000, "nfm", "noaa-apt"),
+			decoderChannel("NOAA 19 · 137.100", 137.100, 40_000, "nfm", "noaa-apt")),
+		decoderRangeProfile("decoder-sstv", "SSTV", "Amateur slow-scan television candidates", "sstv", "sstv",
+			decoderRange("20 m SSTV", 14.230e6, 14.230e6, 3_000, "nfm", "sstv"),
+			decoderRange("15 m SSTV", 21.340e6, 21.340e6, 3_000, "nfm", "sstv"),
+			decoderRange("2 m SSTV", 144.500e6, 144.500e6, 3_000, "nfm", "sstv")),
 	}
 	return profiles
 }
@@ -140,6 +152,14 @@ func canonicalDecoderID(value string) string {
 		return "dump1090"
 	case "ais-catcher":
 		return "ais"
+	case "dump978-fa", "uat":
+		return "dump978"
+	case "aprs", "ax.25", "packet", "packet-radio":
+		return "direwolf"
+	case "weather", "noaa", "apt", "noaa apt":
+		return "noaa-apt"
+	case "slow-scan", "slow scan", "sstv", "robot36", "pd120", "pd180":
+		return "sstv"
 	case "acars":
 		return "acarsdec"
 	case "pocsag", "flex", "mdc1200", "dtmf":
@@ -181,6 +201,10 @@ func decoderForMode(mode string) string {
 	switch mode {
 	case "adsb", "ads-b", "mode-s", "mode s":
 		return "dump1090"
+	case "uat", "dump978":
+		return "dump978"
+	case "aprs", "ax.25", "packet", "packet-radio":
+		return "direwolf"
 	case "rtl-433", "sensors":
 		return "rtl-433"
 	case "pocsag", "flex", "signaling":

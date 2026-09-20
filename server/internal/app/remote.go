@@ -23,6 +23,11 @@ func NewRemoteReceiverStore(path string) (*RemoteReceiverStore, error) {
 		if err := json.Unmarshal(data, &s.items); err != nil {
 			return nil, err
 		}
+		// Older empty stores can contain JSON null. Keep the public API shape
+		// stable: callers should always receive an array, never null.
+		if s.items == nil {
+			s.items = []RemoteReceiver{}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -32,7 +37,7 @@ func NewRemoteReceiverStore(path string) (*RemoteReceiverStore, error) {
 func (s *RemoteReceiverStore) List() []RemoteReceiver {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]RemoteReceiver(nil), s.items...)
+	return append([]RemoteReceiver{}, s.items...)
 }
 
 func (s *RemoteReceiverStore) Save(item RemoteReceiver) (RemoteReceiver, error) {

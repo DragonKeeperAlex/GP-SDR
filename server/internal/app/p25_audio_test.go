@@ -37,6 +37,11 @@ func TestOP25AudioStreamsPCMWithoutSoundDevice(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("missing audio frame")
 	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.audioFrames != 1 || manager.audioSamples != 2 || manager.audioLastAt.IsZero() {
+		t.Fatalf("P25 audio telemetry was not updated: frames=%d samples=%d at=%v", manager.audioFrames, manager.audioSamples, manager.audioLastAt)
+	}
 }
 
 func TestOP25AudioPortsCanBeReusedAfterStop(t *testing.T) {

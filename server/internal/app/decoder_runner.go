@@ -19,17 +19,55 @@ import (
 )
 
 type DecoderMessage struct {
-	DecoderID  string   `json:"decoderID"`
-	Protocol   string   `json:"protocol"`
-	Summary    string   `json:"summary"`
-	Callsigns  []string `json:"callsigns,omitempty"`
-	TimeSlot   int      `json:"timeSlot,omitempty"`
-	ColorCode  int      `json:"colorCode,omitempty"`
-	Talkgroup  int      `json:"talkgroup,omitempty"`
-	SourceID   int      `json:"sourceID,omitempty"`
-	Encrypted  bool     `json:"encrypted,omitempty"`
-	RawText    string   `json:"rawText,omitempty"`
-	Confidence float64  `json:"confidence"`
+	DecoderID    string   `json:"decoderID"`
+	Protocol     string   `json:"protocol"`
+	Summary      string   `json:"summary"`
+	Callsigns    []string `json:"callsigns,omitempty"`
+	TimeSlot     int      `json:"timeSlot,omitempty"`
+	ColorCode    int      `json:"colorCode,omitempty"`
+	Talkgroup    int      `json:"talkgroup,omitempty"`
+	SourceID     int      `json:"sourceID,omitempty"`
+	Encrypted    bool     `json:"encrypted,omitempty"`
+	RawText      string   `json:"rawText,omitempty"`
+	ArtifactPath string   `json:"artifactPath,omitempty"`
+	ArtifactType string   `json:"artifactType,omitempty"`
+	Confidence   float64  `json:"confidence"`
+}
+
+// decoderNeedsIQ reports whether a live decoder requires a finite complex-IQ
+// input file. This is deliberately separate from retained evidence: a user
+// may disable archival IQ while still expecting a live decoder to run.
+func decoderNeedsIQ(decoderID string) bool {
+	switch canonicalDecoderID(decoderID) {
+	case "rtl-433", "dump1090", "dump978", "ais":
+		return true
+	default:
+		return false
+	}
+}
+
+// writeTransientDecoderIQ supplies a decoder with a short-lived capture when
+// the profile's retention policy does not keep IQ. It always lives in the OS
+// temporary area, is mode-tagged for the conversion helper, and is removed by
+// the caller once the decoder exits. It is never linked from an event.
+func writeTransientDecoderIQ(data []byte, format SampleFormat) (string, func(), error) {
+	if len(data) < 2 {
+		return "", func() {}, errors.New("decoder IQ input is empty")
+	}
+	directory, err := os.MkdirTemp("", "gpsdr-live-decoder-iq-*")
+	if err != nil {
+		return "", func() {}, err
+	}
+	extension := ".cs8"
+	if format == ComplexUnsigned8 {
+		extension = ".cu8"
+	}
+	path := filepath.Join(directory, "capture"+extension)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		_ = os.RemoveAll(directory)
+		return "", func() {}, err
+	}
+	return path, func() { _ = os.RemoveAll(directory) }, nil
 }
 
 func runCandidateDecoder(parent context.Context, decoderID string, audio []int16, audioRate int, iqPath string, frequencyHz float64, spec CaptureSpec) ([]DecoderMessage, error) {
@@ -95,6 +133,54 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 			err = nil
 		}
 		return messages, decoderCommandError(err, output)
+	case "dump978":
+		executable, err := findAnyTool("dump978", "dump978-fa")
+		if err != nil {
+			return nil, err
+		}
+		if iqPath == "" {
+			return nil, errors.New("dump978 requires saved IQ evidence")
+		}
+		prepared, cleanup, err := prepareUC8DecoderIQ(iqPath, frequencyHz, spec, 2_083_334)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		input, err := os.Open(prepared)
+		if err != nil {
+			return nil, err
+		}
+		defer input.Close()
+		command := exec.CommandContext(ctx, executable)
+		command.Stdin = input
+		output, err := command.CombinedOutput()
+		return parseDump978Output(output), decoderCommandError(err, output)
+	case "direwolf":
+		executable, err := findTool("direwolf")
+		if err != nil {
+			return nil, err
+		}
+		pcm := resamplePCM(audio, audioRate, 48_000)
+		var input bytes.Buffer
+		if err := binary.Write(&input, binary.LittleEndian, pcm); err != nil {
+			return nil, err
+		}
+		command := exec.CommandContext(ctx, executable, "-q", "h", "-q", "d", "-r", "48000", "-t", "0", "-")
+		command.Stdin = &input
+		output, err := command.CombinedOutput()
+		return parseDirewolfOutput(output), decoderCommandError(err, output)
+	case "noaa-apt":
+		executable, err := findAnyTool("noaa-apt-console", "noaa-apt")
+		if err != nil {
+			return nil, err
+		}
+		return runImageAudioDecoder(ctx, executable, "noaa-apt", audio, audioRate, "-o")
+	case "sstv":
+		executable, err := findAnyTool("open-sstv-decode", "sstv-decode", "qsstv")
+		if err != nil {
+			return nil, err
+		}
+		return runImageAudioDecoder(ctx, executable, "sstv", audio, audioRate, "-o")
 	case "acarsdec":
 		executable, err := findTool("acarsdec")
 		if err != nil {
@@ -131,6 +217,45 @@ func runCandidateDecoder(parent context.Context, decoderID string, audio []int16
 	default:
 		return nil, fmt.Errorf("live file bridge is not implemented for %s", decoderID)
 	}
+}
+
+func runImageAudioDecoder(ctx context.Context, executable, decoderID string, audio []int16, audioRate int, outputFlag string) ([]DecoderMessage, error) {
+	directory, err := os.MkdirTemp("", "gpsdr-image-decoder-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(directory)
+	input := filepath.Join(directory, "capture.wav")
+	output := filepath.Join(directory, "decoded.png")
+	if err := WriteMonoWAV(input, resamplePCM(audio, audioRate, 48_000), 48_000); err != nil {
+		return nil, err
+	}
+	command := exec.CommandContext(ctx, executable, input, outputFlag, output)
+	if strings.HasSuffix(strings.ToLower(filepath.Base(executable)), "qsstv") {
+		return nil, errors.New("qsstv requires an interactive desktop and is not supported by the headless bridge")
+	}
+	combined, err := command.CombinedOutput()
+	if err != nil {
+		return nil, decoderCommandError(err, combined)
+	}
+	if info, statErr := os.Stat(output); statErr == nil && info.Size() > 0 {
+		artifact, err := os.CreateTemp("", "gpsdr-decoded-*.png")
+		if err != nil {
+			return nil, err
+		}
+		artifactPath := artifact.Name()
+		if err := artifact.Close(); err != nil {
+			return nil, err
+		}
+		if err := os.Remove(artifactPath); err != nil {
+			return nil, err
+		}
+		if err := os.Rename(output, artifactPath); err != nil {
+			return nil, err
+		}
+		return []DecoderMessage{{DecoderID: decoderID, Protocol: strings.ToUpper(decoderID), Summary: "Decoded image artifact", ArtifactPath: artifactPath, ArtifactType: "image/png", RawText: strings.TrimSpace(string(combined)), Confidence: .9}}, nil
+	}
+	return nil, errors.New("image decoder completed without producing a PNG artifact")
 }
 
 func dump1090ReachedEOF(output []byte) bool {
@@ -455,8 +580,8 @@ func parseRTL433Output(output []byte) []DecoderMessage {
 		if json.Unmarshal(line, &item) != nil || len(item) == 0 {
 			continue
 		}
-		model := strings.TrimSpace(fmt.Sprint(item["model"]))
-		identifier := strings.TrimSpace(fmt.Sprint(item["id"]))
+		model := decoderMapValue(item, "model", "Model")
+		identifier := decoderMapValue(item, "id", "ID", "device_id", "deviceID")
 		summary := model
 		if identifier != "" && identifier != "<nil>" {
 			summary += " · ID " + identifier
@@ -489,6 +614,42 @@ func parseDump1090Output(output []byte) []DecoderMessage {
 	return result
 }
 
+var uatFramePattern = regexp.MustCompile(`(?m)[+@]([0-9A-Fa-f]{28,56});`)
+
+func parseDump978Output(output []byte) []DecoderMessage {
+	frames := uatFramePattern.FindAllSubmatch(output, 25)
+	result := make([]DecoderMessage, 0, len(frames))
+	for _, match := range frames {
+		frame := strings.ToUpper(string(match[1]))
+		result = append(result, DecoderMessage{DecoderID: "dump978", Protocol: "UAT / ADS-B", Summary: "UAT aircraft frame", RawText: frame, Confidence: .99})
+	}
+	return result
+}
+
+func parseDirewolfOutput(output []byte) []DecoderMessage {
+	result := make([]DecoderMessage, 0)
+	aprsSourcePattern := regexp.MustCompile(`(?m)^\s*([A-Z0-9]{3,6})>`)
+	for _, raw := range bytes.Split(output, []byte{'\n'}) {
+		line := strings.TrimSpace(string(raw))
+		lower := strings.ToLower(line)
+		if line == "" || strings.Contains(lower, "dire wolf") || strings.Contains(lower, "audio input") || strings.Contains(lower, "version") {
+			continue
+		}
+		if !strings.Contains(line, ">") || (!strings.Contains(line, ":") && !strings.Contains(lower, "packet")) {
+			continue
+		}
+		callsigns := ExtractCallsigns(line)
+		if match := aprsSourcePattern.FindStringSubmatch(line); len(match) == 2 {
+			callsigns = append(callsigns, match[1])
+		}
+		result = append(result, DecoderMessage{DecoderID: "direwolf", Protocol: "APRS / AX.25", Summary: line, Callsigns: callsigns, RawText: line, Confidence: .98})
+		if len(result) >= 25 {
+			break
+		}
+	}
+	return result
+}
+
 func parseACARSOutput(output []byte) []DecoderMessage {
 	result := make([]DecoderMessage, 0)
 	for _, raw := range bytes.Split(output, []byte{'\n'}) {
@@ -514,9 +675,9 @@ func parseAISOutput(output []byte) []DecoderMessage {
 		if json.Unmarshal(line, &item) != nil || len(item) == 0 {
 			continue
 		}
-		mmsi := decoderMapValue(item, "mmsi", "MMSI")
-		name := decoderMapValue(item, "shipname", "ship_name", "name", "NAME")
-		callsign := decoderMapValue(item, "callsign", "call_sign", "CALLSIGN")
+		mmsi := decoderMapValue(item, "mmsi", "MMSI", "userid", "UserID")
+		name := decoderMapValue(item, "shipname", "ship_name", "shipName", "name", "NAME", "vessel_name", "VesselName")
+		callsign := decoderMapValue(item, "callsign", "call_sign", "CALLSIGN", "callSign")
 		parts := []string{"AIS vessel frame"}
 		if mmsi != "" {
 			parts = append(parts, "MMSI "+mmsi)
@@ -540,7 +701,12 @@ func parseAISOutput(output []byte) []DecoderMessage {
 func decoderMapValue(item map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if value, ok := item[key]; ok && value != nil {
-			text := strings.TrimSpace(fmt.Sprint(value))
+			text := ""
+			if number, ok := value.(float64); ok {
+				text = strconv.FormatFloat(number, 'f', -1, 64)
+			} else {
+				text = strings.TrimSpace(fmt.Sprint(value))
+			}
 			if text != "" && text != "<nil>" {
 				return text
 			}

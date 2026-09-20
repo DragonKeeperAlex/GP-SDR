@@ -11,8 +11,9 @@ notes and master remediation backlog for verification limits and outstanding wor
 
 ## 1.5.0-rc32: Pluto P25 routing and non-blocking Pi telemetry
 
-- PlutoSDR and other Soapy receivers now use OP25 for P25 trunk following;
-  native HackRF and RTL-SDR receivers continue to use SDRTrunk.
+- OP25 is now the default P25 backend for PlutoSDR, HackRF, and RTL-SDR, with
+  SDRTrunk retained only as an explicit native HackRF/RTL-SDR fallback while
+  its GP-SDR live-audio bridge remains unfinished.
 - The Hardware page reports both P25 engines when installed.
 - PiPower5 polling runs in the background so slow HAT reads cannot delay the
   console or receiver status.

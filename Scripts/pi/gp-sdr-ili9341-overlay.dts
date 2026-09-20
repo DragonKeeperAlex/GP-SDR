@@ -1,0 +1,58 @@
+/dts-v1/;
+/plugin/;
+
+/* SHCHV/LCDWIKI MPI2418-compatible 2.4-inch ILI9341 panel. */
+/ {
+    compatible = "brcm,bcm2835", "brcm,bcm2712";
+
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            status = "okay";
+            spidev@0 { status = "disabled"; };
+            spidev@1 { status = "disabled"; };
+        };
+    };
+
+    fragment@1 {
+        target = <&gpio>;
+        __overlay__ {
+            gp_sdr_tft_pins: gp_sdr_tft_pins {
+                brcm,pins = <17 27 22>;
+                brcm,function = <0 0 0>;
+            };
+        };
+    };
+
+    fragment@2 {
+        target = <&spi0>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            display@0 {
+                compatible = "ilitek,ili9341";
+                reg = <0>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&gp_sdr_tft_pins>;
+                spi-max-frequency = <16000000>;
+                txbuflen = <32768>;
+                rotate = <270>;
+                fps = <20>;
+                bgr = <0>;
+                buswidth = <8>;
+                reset-gpios = <&gpio 27 1>;
+                dc-gpios = <&gpio 22 0>;
+            };
+            touchscreen@1 {
+                compatible = "ti,ads7846";
+                reg = <1>;
+                spi-max-frequency = <2000000>;
+                interrupt-parent = <&gpio>;
+                interrupts = <17 2>;
+                pendown-gpio = <&gpio 17 1>;
+                ti,x-plate-ohms = <60>;
+                ti,pressure-max = <255>;
+            };
+        };
+    };
+};

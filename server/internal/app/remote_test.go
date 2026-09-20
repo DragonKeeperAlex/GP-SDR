@@ -4,9 +4,26 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestRemoteReceiverStoreNormalizesLegacyNullList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "remote-receivers.json")
+	if err := os.WriteFile(path, []byte("null\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewRemoteReceiverStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := store.List()
+	if items == nil || len(items) != 0 {
+		t.Fatalf("legacy null list = %#v, want non-nil empty list", items)
+	}
+}
 
 func TestRTLTCPStreamHandshakeAndCommands(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
