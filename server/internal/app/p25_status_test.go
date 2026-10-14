@@ -51,6 +51,16 @@ func TestOP25ExitDiagnosticKeepsUsefulTailWithoutFullLog(t *testing.T) {
 	}
 }
 
+func TestP25FrontendStateMatchesConservativeHackRFDefaults(t *testing.T) {
+	id := "hackrf-test"
+	profile := ScanProfile{}
+	plan := []ReceiverPlanItem{{DeviceID: &id}}
+	devices := []SDRDevice{{ID: id, Kind: "HackRF", Connected: true, Available: true}}
+	if got, want := p25FrontendState(&profile, plan, devices), "LNA 8 dB · VGA 0 dB · RF amp off"; got != want {
+		t.Fatalf("frontend state = %q, want %q", got, want)
+	}
+}
+
 func TestP25FrontendStateReportsAppliedHackRFGains(t *testing.T) {
 	id := "hackrf-test"
 	lna, vga := 8, 0

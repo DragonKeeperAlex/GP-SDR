@@ -492,7 +492,10 @@ func p25FrontendState(profile *ScanProfile, plan []ReceiverPlanItem, devices []S
 	device := assigned[0]
 	switch device.Kind {
 	case "HackRF":
-		lna, vga := 24, 24
+		// Match the conservative values written by buildOP25Configuration.
+		// Reporting a higher legacy default here misled field operators about
+		// the actual front-end state.
+		lna, vga := 8, 0
 		if profile.Settings.P25LNAGainDB != nil {
 			lna = *profile.Settings.P25LNAGainDB
 		}
