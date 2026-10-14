@@ -8,7 +8,12 @@ const state = {
   mixerOrder: localStorage.getItem('gpsdr-mixer-order') || 'active',
   mapperPage: localStorage.getItem('gpsdr-mapper-page') || 'overview'
 };
-const serverToken = new URLSearchParams(location.search).get('token') || '';
+let serverToken = new URLSearchParams(location.search).get('token') || '';
+if (serverToken) {
+  const safeURL = new URL(location.href);
+  safeURL.searchParams.delete('token');
+  history.replaceState({}, '', `${safeURL.pathname}${safeURL.search}${safeURL.hash}`);
+}
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -16,7 +21,10 @@ const encoder = new TextEncoder();
 let toastTimer;
 let setupPollTimer;
 let reconnectTimer;
+let startupRetryTimer;
 let reconnectInFlight = false;
+let tunerSubmitting = false;
+let tunerModeAvailabilityNote = '';
 let lastWaterfallFrame = '';
 let analysisLogFloor = 0;
 const masterAudio = (()=>{try{return {volume:.8,muted:false,...JSON.parse(localStorage.getItem('gpsdr-master-audio-v1')||'{}')}}catch(_){return {volume:.8,muted:false}}})();
@@ -24,12 +32,14 @@ const recordingPlayer = new Audio();
 const liveAudio = { context:null, controller:null, masterGain:null, gains:new Map(), panners:new Map(), nextTimes:new Map(), sources:new Map() };
 let receiverApplyTimer, receiverApplying = false;
 let bandApplyTimer;
-const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20}}})();
+let mapperPreviewTimer, mapperPreviewRequest = 0;
+const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,audioPriority:true,audioFPS:4,floor:-120,ceiling:-20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,audioPriority:true,audioFPS:4,floor:-120,ceiling:-20}}})();
 const spectrumHistory = new WeakMap();
 const spectrumPeaks = new WeakMap();
 const spectrumCursors = new WeakMap();
 const receiverWaterfalls = new Map();
 let tunerHistory=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-tuner-history')||'[]')}catch(_){return []}})();
+let tunerVFOs=[];
 let mapperResultsCollapsed=localStorage.getItem('gpsdr-mapper-results-collapsed')==='true';
 const analyzerSelectedPeaks=new Set();
 let analyzerJobIDs=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-analyzer-jobs')||'[]')}catch(_){return []}})();
@@ -40,6 +50,59 @@ function renderTunerHistory(){const select=$('#tuner-history');if(!select)return
 function rememberTunerFrequency(request){const label=`${(request.frequencyHz/1e6).toFixed(6)} MHz · ${String(request.mode).toUpperCase()}`;tunerHistory=[{frequencyHz:request.frequencyHz,mode:request.mode,bandwidthHz:request.bandwidthHz,label},...tunerHistory.filter(item=>Math.abs(item.frequencyHz-request.frequencyHz)>1)].slice(0,12);localStorage.setItem('gpsdr-tuner-history',JSON.stringify(tunerHistory));renderTunerHistory();}
 const expandedMapperFrequencies = new Set();
 
+const touchKeyboard = (() => {
+  const root = $('#touch-keyboard');
+  const keys = $('#touch-keyboard-keys');
+  const label = $('#touch-keyboard-label');
+  if (!root || !keys || !label) return { bind() {} };
+  let target = null;
+  let closing = false;
+  const textKeys = ['q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m',' ','-','.',','];
+  const numberKeys = ['1','2','3','4','5','6','7','8','9','0','.','-'];
+  const isEligible = input => input instanceof HTMLInputElement && !input.disabled && !input.readOnly && !['hidden','checkbox','radio','range','file','color','date','time','datetime-local'].includes(input.type);
+  const render = input => {
+    const numeric = ['number','tel'].includes(input.type) || input.inputMode === 'numeric' || input.inputMode === 'decimal';
+    const list = numeric ? numberKeys : textKeys;
+    label.textContent = numeric ? 'Number keypad' : 'Keyboard';
+    keys.innerHTML = list.map(key => `<button type="button" data-key="${key === ' ' ? 'space' : escapeHTML(key)}" aria-label="${key === ' ' ? 'Space' : escapeHTML(key)}">${key === ' ' ? 'Space' : escapeHTML(key)}</button>`).join('') + '<button type="button" class="touch-keyboard-action" data-key="backspace" aria-label="Backspace">⌫</button><button type="button" class="touch-keyboard-action" data-key="enter">Done</button>';
+  };
+  const show = input => {
+    if (!isEligible(input)) return;
+    target = input;
+    closing = false;
+    render(input);
+    root.classList.remove('hidden');
+    root.setAttribute('aria-hidden', 'false');
+  };
+  const hide = () => {
+    target = null;
+    root.classList.add('hidden');
+    root.setAttribute('aria-hidden', 'true');
+  };
+  const write = key => {
+    if (!target || !document.contains(target)) return hide();
+    if (key === 'enter') { target.blur(); return hide(); }
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? start;
+    if (key === 'backspace') target.value = target.value.slice(0, Math.max(0, start - 1)) + target.value.slice(end);
+    else target.value = target.value.slice(0, start) + (key === 'space' ? ' ' : key) + target.value.slice(end);
+    const position = key === 'backspace' ? Math.max(0, start - 1) : start + (key === 'space' ? 1 : key.length);
+    try { target.setSelectionRange(position, position); } catch (_) {}
+    target.dispatchEvent(new Event('input', {bubbles:true}));
+    target.dispatchEvent(new Event('change', {bubbles:true}));
+  };
+  keys.addEventListener('pointerdown', event => event.preventDefault());
+  keys.addEventListener('click', event => { const button = event.target.closest('button[data-key]'); if (button) write(button.dataset.key); });
+  $('#touch-keyboard-close')?.addEventListener('click', hide);
+  document.addEventListener('focusin', event => show(event.target));
+  document.addEventListener('focusout', event => {
+    if (!target || event.target !== target || closing) return;
+    closing = true;
+    setTimeout(() => { closing = false; if (document.activeElement !== target) hide(); }, 0);
+  });
+  return { bind() {} };
+})();
+
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (serverToken) headers['X-GP-SDR-Token'] = serverToken;
@@ -47,10 +110,31 @@ async function api(path, options = {}) {
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try { message = (await response.json()).message || message; } catch (_) {}
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+function showLogin(access, message = '') {
+  const dialog = $('#login-dialog');
+  if (!dialog || dialog.open || access?.authenticated) return;
+  const enabled = Boolean(access?.passwordEnabled);
+  $('#login-dialog-title').textContent = enabled ? 'Sign in to GP-SDR' : 'Web sign-in is not configured';
+  $('#login-dialog-message').textContent = enabled ? 'Enter the receiver password to continue.' : 'Ask the receiver administrator to configure password sign-in, then reload this page.';
+  $('#login-password-field').hidden = !enabled;
+  $('#login-submit').hidden = !enabled;
+  $('#login-error').textContent = message;
+  dialog.showModal();
+  if (enabled) requestAnimationFrame(() => $('#login-password').focus());
+}
+
+async function accessStatus() {
+  const access = await api('/api/auth/status');
+  if (!access.authenticated) showLogin(access);
+  return access;
 }
 
 function toast(message, error = false) {
@@ -164,7 +248,8 @@ function setView(view) {
     profiles: ['Channels', 'Channel banks, scan ranges, and receiver roles'],
     decoders: ['Decoders', 'Dedicated decoder workspaces'],
     hardware: ['Hardware', 'Receivers and decoder tools'],
-    settings: ['Settings', 'Server and local data']
+    settings: ['Settings', 'Server and local data'],
+    desktop: ['Desktop', 'Full Linux applications on the touchscreen']
   }[view];
   if (!copy) return;
   $('#view-title').textContent = copy[0];
@@ -186,6 +271,12 @@ async function refreshAll() {
   if (reconnectInFlight) return;
   reconnectInFlight = true;
   try {
+    const access = await accessStatus();
+    if (!access.authenticated) {
+      $('#side-status').textContent = 'Sign in required';
+      $('#side-status').title = access.passwordEnabled ? 'Enter the receiver password to continue.' : 'Password sign-in has not been configured.';
+      return;
+    }
     const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, spectra, rangeSync, localDatabase, localAI, localAIBenchmark, calibrations, characterization, mapper, mapperProgress, analysisStatus, remoteReceivers, transmitStatus, relay] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
@@ -198,15 +289,27 @@ async function refreshAll() {
     }
     render();
     document.body.classList.remove('server-offline');
+    document.body.classList.remove('server-starting');
+    clearTimeout(startupRetryTimer);
     $('#side-status').title = `Updated ${new Date().toLocaleTimeString()}`;
     clearTimeout(setupPollTimer);
     if (state.setup?.job?.state === 'installing') setupPollTimer = setTimeout(refreshAll, 1200);
   } catch (error) {
-    $('#side-status').textContent = 'Offline';
+    if (error.status === 401) {
+      try { showLogin(await api('/api/auth/status'), error.message); } catch (_) { toast(error.message, true); }
+      $('#side-status').textContent = 'Sign in required';
+      return;
+    }
+    const starting = error.message === 'GP-SDR is starting. The touchscreen is ready while saved radios, decoders, and models load.';
+    $('#side-status').textContent = starting ? 'Starting' : 'Offline';
     $('#side-status').title = error.message;
     $('#side-dot').classList.remove('live');
-    document.body.classList.add('server-offline');
-    if (navigator.onLine !== false) toast('GP-SDR connection lost; reconnecting…', true);
+    document.body.classList.toggle('server-offline', !starting);
+    document.body.classList.toggle('server-starting', starting);
+    if (starting) {
+      clearTimeout(startupRetryTimer);
+      startupRetryTimer = setTimeout(() => { void refreshAll(); }, 1000);
+    } else if (navigator.onLine !== false) toast('GP-SDR connection lost; reconnecting…', true);
   } finally {
     reconnectInFlight = false;
   }
@@ -231,8 +334,8 @@ function render() {
   renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); updateReceiverCapabilityControls(); renderTransmit(); renderRelay(); renderExpertTransmitMode(); renderDecoders(); renderMapper(); renderRFMonitor(); renderSpectrumAnalyzer(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
 }
 
-function renderRelay(){const status=state.relay||{},badge=$('#relay-state'),detail=$('#relay-detail'),list=$('#relay-streams');if(!badge||!list)return;badge.textContent=status.active?'Ready':'Stopped';badge.className=`chip ${status.active?'ready':''}`;detail.textContent=status.note||'Relay is stopped.';$('#relay-start').disabled=!!status.active;$('#relay-stop').disabled=!status.active;if(status.audio){$('#relay-audio-device').value=status.audio.device||'plughw:2,0';$('#relay-audio-rate').value=String(status.audio.sampleRate||8000);}const streams=status.streams||[];list.innerHTML=streams.length?streams.map(s=>`<label class="relay-stream"><input type="checkbox" data-relay-id="${escapeHTML(s.id)}" ${s.enabled?'checked':''}><span><strong>${escapeHTML(s.name||s.id)}</strong><small>${escapeHTML(s.id)}</small></span><input class="relay-volume" data-relay-volume="${escapeHTML(s.id)}" type="range" min="0" max="2" step="0.05" value="${Number(s.volume??1)}" aria-label="${escapeHTML(s.name||s.id)} volume"></label>`).join(''):'<div class="empty-state compact">No decoded audio streams are available.</div>';}
-async function saveRelay(){const streams=[...$$('[data-relay-id]')].map(input=>({id:input.dataset.relayId,name:input.closest('.relay-stream')?.querySelector('strong')?.textContent||input.dataset.relayId,enabled:input.checked,volume:Number($(`[data-relay-volume="${CSS.escape(input.dataset.relayId)}"]`)?.value||1)}));state.relay=await api('/api/relay',{method:'PUT',body:JSON.stringify({streams,audio:{device:$('#relay-audio-device').value,sampleRate:Number($('#relay-audio-rate').value),channels:1}})});renderRelay();toast('Relay routing saved');}
+function renderRelay(){const status=state.relay||{},badge=$('#relay-state'),detail=$('#relay-detail'),list=$('#relay-streams');if(!badge||!list)return;badge.textContent=status.state==='error'?'Error':status.active?(status.keyed?'Transmitting':'Waiting for audio'):'Stopped';badge.className=`chip ${status.active?'ready':''}`;detail.textContent=status.note||'Relay is stopped.';$('#relay-system-audio').checked=!!status.systemAudio;$('#relay-system-audio').disabled=!!status.active;$('#relay-speaker-mute').checked=!!status.speakerMuted;$('#relay-manual-options').disabled=!!status.systemAudio;$('#relay-manual-options-settings').disabled=!!status.systemAudio;const outputVolume=$('#relay-output-volume');if(outputVolume&&document.activeElement!==outputVolume){outputVolume.value=String(Math.round(100*Number(status.outputVolume??.2)));$('#relay-output-volume-value').textContent=outputVolume.value+'%';}$('#relay-save').disabled=!!status.active||!!status.systemAudio;$('#relay-start').disabled=!!status.active;$('#relay-stop').disabled=!status.active;if(status.audio){$('#relay-audio-device').value=status.audio.device||'plughw:CARD=A,DEV=0';$('#relay-audio-rate').value=String(status.audio.sampleRate||8000);}const streams=status.streams||[];list.innerHTML=streams.length?streams.map(s=>`<label class="relay-stream"><input type="checkbox" data-relay-id="${escapeHTML(s.id)}" ${s.enabled?'checked':''}><span><strong>${escapeHTML(s.name||s.id)}</strong><small>${escapeHTML(s.id)}</small></span><input class="relay-volume" data-relay-volume="${escapeHTML(s.id)}" type="range" min="0" max="2" step="0.05" value="${Number(s.volume??1)}" aria-label="${escapeHTML(s.name||s.id)} volume"></label>`).join(''):'<div class="empty-state compact">No decoded audio streams are available.</div>';}
+async function saveRelay(){const streams=[...$$('[data-relay-id]')].map(input=>({id:input.dataset.relayId,name:input.closest('.relay-stream')?.querySelector('strong')?.textContent||input.dataset.relayId,enabled:input.checked,volume:Number($(`[data-relay-volume="${CSS.escape(input.dataset.relayId)}"]`)?.value??1)}));const vfoStreams=tunerVFOs.map(item=>({id:`tuner-vfo-${item.id}`,name:`Tuner · ${formatFrequency(item.frequencyHz)}`,enabled:true,volume:1,frequencyHz:item.frequencyHz,mode:item.mode}));state.relay=await api('/api/relay',{method:'PUT',body:JSON.stringify({streams:[...streams,...vfoStreams],audio:{device:$('#relay-audio-device').value,sampleRate:Number($('#relay-audio-rate').value),channels:1}})});renderRelay();toast('Relay routing saved');}
 
 function drawReceiverSpectrum(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(120,Math.floor(170*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}const ctx=canvas.getContext('2d'),bins=snapshot.binsDBFS||[];ctx.clearRect(0,0,width,height);ctx.fillStyle='#080b0f';ctx.fillRect(0,0,width,height);if(!bins.length)return;ctx.beginPath();bins.forEach((value,index)=>{const x=index/Math.max(1,bins.length-1)*width,y=Math.max(0,Math.min(height,(1-(value+120)/110)*height));index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle='#4dd6aa';ctx.lineWidth=Math.max(1,ratio);ctx.stroke();ctx.lineTo(width,height);ctx.lineTo(0,height);ctx.closePath();ctx.fillStyle='rgba(77,214,170,.10)';ctx.fill();}
 function drawReceiverWaterfall(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(90,Math.floor(120*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}let history=receiverWaterfalls.get(snapshot.deviceID);if(!history)history={last:'',rows:[]};if(history.last!==snapshot.capturedAt&&snapshot.binsDBFS?.length){history.last=snapshot.capturedAt;history.rows.unshift([...snapshot.binsDBFS]);history.rows=history.rows.slice(0,80);receiverWaterfalls.set(snapshot.deviceID,history);}const ctx=canvas.getContext('2d');ctx.fillStyle='#05070a';ctx.fillRect(0,0,width,height);if(!history.rows.length)return;const sourceWidth=history.rows.reduce((count,row)=>Math.max(count,row.length),1),image=ctx.createImageData(sourceWidth,80);history.rows.forEach((row,y)=>row.forEach((value,x)=>{const [red,green,blue]=waterfallColor(value),offset=(y*sourceWidth+x)*4;image.data[offset]=red;image.data[offset+1]=green;image.data[offset+2]=blue;image.data[offset+3]=255;}));const scratch=document.createElement('canvas');scratch.width=sourceWidth;scratch.height=80;scratch.getContext('2d').putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(scratch,0,0,width,height);}
@@ -652,8 +755,17 @@ function mixerRows(items) {
 function bandProfiles(){ return state.profiles.filter(profile => profile.channels?.length > 1 && !profile.p25Systems?.length); }
 function latestEventForFrequency(frequencyHz){ return state.events.find(event => Math.abs(Number(event.frequencyHz)-Number(frequencyHz)) < 1000); }
 function bandMonitorIsRunning(){return Boolean(state.status?.running&&state.status.activeProfileID===$('#band-profile')?.value&&bandProfiles().some(profile=>profile.id===state.status.activeProfileID));}
-function bandReceiverSettings(){const device=state.devices.find(item=>item.id===$('#band-device').value),hackrf=device?.kind==='HackRF';return {sampleRateHz:Number($('#band-rate').value),gainDB:Number($('#band-gain').value),lnaGainDB:hackrf?Number($('#band-lna').value):0,vgaGainDB:hackrf?Number($('#band-vga').value):0,ampEnabled:hackrf&&$('#band-amp').checked,autoGain:$('#band-auto-gain').checked,squelchDB:Number($('#band-squelch').value),dcRemoval:$('#band-dc').checked};}
-async function startBandMonitor(){const profileID=$('#band-profile').value,deviceID=$('#band-device').value;if(!profileID)return;const button=$('#band-start');button.disabled=true;button.textContent='Starting…';try{await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});state.selectedProfileID=profileID;await startLiveAudio();await refreshAll();setView('band');}finally{button.textContent='Monitor band';button.disabled=bandMonitorIsRunning();}}
+let bandWindowCenterHz=0, bandStarting=false;
+function bandReceiverSettings(){const device=state.devices.find(item=>item.id===$('#band-device').value),hackrf=device?.kind==='HackRF';return {centerFrequencyHz:bandWindowCenterHz,sampleRateHz:Number($('#band-rate').value),gainDB:Number($('#band-gain').value),lnaGainDB:hackrf?Number($('#band-lna').value):0,vgaGainDB:hackrf?Number($('#band-vga').value):0,ampEnabled:hackrf&&$('#band-amp').checked,autoGain:$('#band-auto-gain').checked,squelchDB:Number($('#band-squelch').value),dcRemoval:$('#band-dc').checked};}
+async function startBandMonitor(){
+  if(bandStarting)return;
+  const profileID=$('#band-profile').value,deviceID=$('#band-device').value;
+  if(!profileID||!deviceID)return toast('Choose a ready receiver and channel bank first',true);
+  bandStarting=true;
+  renderBandMonitor();
+  try{await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});state.selectedProfileID=profileID;await startLiveAudio();await refreshAll();setView('band');}
+  finally{bandStarting=false;renderBandMonitor();}
+}
 function renderBandMonitor(){
   const profileSelect=$('#band-profile'),deviceSelect=$('#band-device');if(!profileSelect||!deviceSelect)return;
   const profiles=bandProfiles(),prior=profileSelect.value;
@@ -671,7 +783,7 @@ function renderBandMonitor(){
   const snapshot=state.spectrum;
   const selectedDevice=connected.find(device=>device.id===deviceSelect.value)||connected[0];
   if(snapshot?.binsDBFS?.length&&running&&selectedDevice){$('#band-spectrum-caption').textContent=`${receiverLabel(selectedDevice)} · ${Number(snapshot.sampleRateHz/1e6).toFixed(2)} MS/s`;$('#band-spectrum-start').textContent=formatFrequency(snapshot.startFrequencyHz);$('#band-spectrum-mid').textContent=formatFrequency(snapshot.centerFrequencyHz);$('#band-spectrum-end').textContent=formatFrequency(snapshot.endFrequencyHz);}else{$('#band-spectrum-caption').textContent='Start monitoring to view the shared capture';$('#band-spectrum-start').textContent='—';$('#band-spectrum-mid').textContent='—';$('#band-spectrum-end').textContent='—';}
-  $('#band-start').disabled=running||!profile||!connected.length;$('#band-stop').disabled=!running;
+  $('#band-start').disabled=running||bandStarting||!profile||!connected.length;$('#band-start').textContent=bandStarting?'Starting…':'Monitor band';$('#band-stop').disabled=!running;
   const applied=$('#band-applied-state'),telemetry=state.status?.receiverTelemetry;
   if(applied){
     const telemetryMatches=running&&telemetry&&telemetry.deviceID===selectedDevice?.id;
@@ -748,8 +860,8 @@ function renderGlobalPowerStatus() {
 }
 
 function renderHardware() {
-  const powerHat=state.status?.powerHat, powerCard=(powerHat?.available||powerHat?.error)?piPowerHatHTML(powerHat):'';
-  $('#device-grid').innerHTML = state.devices.length||powerCard ? state.devices.map(device => `
+  const powerHat=state.status?.powerHat, powerCard=(powerHat?.available||powerHat?.error)?piPowerHatHTML(powerHat):'', systemCard=systemHealthHTML(state.status?.systemHealth);
+  $('#device-grid').innerHTML = state.devices.length||powerCard||systemCard ? state.devices.map(device => `
     <article class="hardware-card"><div class="hardware-title"><i class="${device.healthWarning ? 'optional' : device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
 		<p>${escapeHTML(hardwareActivityText(device))}</p>
       <div class="hardware-detail">${escapeHTML(hardwareCapabilityText(device))}<br>${escapeHTML(hardwareRangeText(device))}<br>${device.firmwareVersion?`${escapeHTML(device.firmwareVersion)} · `:''}${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
@@ -764,12 +876,21 @@ function renderHardware() {
       <p>${escapeHTML(decoder.note)}</p><footer><span>${escapeHTML(decoder.standards.join(' · '))}</span><span>${decoder.state === 'ready' ? 'Ready' : 'Optional'}</span></footer>
       <div class="card-actions decoder-card-actions"><button class="open-decoder" data-decoder-id="${escapeHTML(decoder.id)}" title="Open the ${escapeHTML(decoder.name)} workspace">Open</button></div>
       ${decoder.state === 'ready' || decoder.id === 'analog' ? '' : setupActions(decoder.id)}</article>`).join('') : '<div class="empty-state">Decoder status is unavailable.</div>';
+	$('#device-grid').innerHTML += systemCard;
   renderSetupJob();
 	updateReceiverCapabilityControls();
   const remoteList=$('#remote-list'); if(remoteList) remoteList.innerHTML=state.remoteReceivers.map(item=>`<div class="remote-row"><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.host)}:${item.port}</small></span><button class="remove-remote" data-remote-id="${escapeHTML(item.id)}" title="Remove this remote receiver">Remove</button></div>`).join('')||'<span class="empty-state compact">No remote receivers saved</span>';
 }
 
-function piPowerHatHTML(power){if(!power.available)return `<article id="power-hat-card" data-power-error="true" class="hardware-card power-hat-card"><div class="hardware-title"><i class="warning"></i><h3>PiPower5 power HAT</h3></div><p>${escapeHTML(power.error||'Telemetry unavailable')}</p><footer><span>Readings unavailable · retrying automatically</span></footer></article>`;const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0)),source=power.powerSource||'Unknown';return `<article id="power-hat-card" class="hardware-card power-hat-card"><div class="hardware-title"><i class="ready"></i><h3>PiPower5 power HAT</h3></div><p id="power-hat-source">${escapeHTML(source)} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}</p><div class="power-hat-battery"><span><i id="power-hat-level" style="width:${battery}%"></i></span><strong id="power-hat-percent">${battery.toFixed(0)}%</strong></div><dl class="power-hat-readings"><dt>Input</dt><dd id="power-hat-input">${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W</dd><dt>Output</dt><dd id="power-hat-output">${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W</dd><dt>Battery</dt><dd id="power-hat-battery">${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A</dd></dl><footer><span>Pi power</span><span id="power-hat-updated">${power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry'}</span></footer></article>`;}
+function systemHealthHTML(health){
+  if(!health?.available)return '';
+  const memoryTotal=Number(health.memoryTotalBytes||0),memoryAvailable=Number(health.memoryAvailableBytes||0),memoryUsed=memoryTotal?Math.max(0,memoryTotal-memoryAvailable):0;
+  const storageTotal=Number(health.storageTotalBytes||0),storageFree=Number(health.storageFreeBytes||0),storageUsed=storageTotal?Math.max(0,storageTotal-storageFree):0;
+  const percent=(used,total)=>total?`${Math.round(used/total*100)}%`:'—', bytes=value=>value?formatBytes(value):'Unavailable', temps=(health.temperatures||[]).map(item=>`${escapeHTML(item.name)} ${Number(item.celsius).toFixed(1)} °C`).join(' · ')||'Unavailable';
+  return `<article id="system-health-card" class="hardware-card system-health-card"><div class="hardware-title"><i class="ready"></i><h3>System health</h3></div><p>Read-only host metrics · updated ${health.updatedAt?timeAgo(health.updatedAt):'now'}</p><div class="system-health-grid"><div><span>CPU load</span><strong>${Number.isFinite(Number(health.load1))?Number(health.load1).toFixed(2):'—'}</strong><small>${health.cpuCount||'—'} logical CPUs</small></div><div><span>Memory</span><strong>${percent(memoryUsed,memoryTotal)}</strong><small>${bytes(memoryUsed)} / ${bytes(memoryTotal)}</small></div><div><span>Storage</span><strong>${percent(storageUsed,storageTotal)}</strong><small>${bytes(storageFree)} free</small></div><div><span>Temperature</span><strong>${temps}</strong><small>thermal sensors</small></div><div><span>GPU</span><strong>${escapeHTML(health.gpu||'Unavailable')}</strong><small>platform graphics</small></div><div><span>Uptime</span><strong>${health.uptimeSeconds?compactDuration(health.uptimeSeconds):'—'}</strong><small>host uptime</small></div></div></article>`;
+}
+
+function piPowerHatHTML(power){if(!power.available)return `<article id="power-hat-card" data-power-error="true" class="hardware-card power-hat-card"><div class="hardware-title"><i class="warning"></i><h3>PiPower5 power HAT</h3></div><p>${escapeHTML(power.error||'Telemetry unavailable')}</p><footer><span>Readings unavailable · retrying automatically</span></footer></article>`;const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0)),source=power.powerSource||'Unknown';return `<article id="power-hat-card" class="hardware-card power-hat-card"><div class="hardware-title"><i class="ready"></i><h3>PiPower5 power HAT</h3></div><p id="power-hat-source">${escapeHTML(source)} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}</p><div class="power-hat-battery"><span><i id="power-hat-level" style="width:${battery}%"></i></span><strong id="power-hat-percent">${battery.toFixed(0)}%</strong></div><dl class="power-hat-readings"><dt>Input</dt><dd id="power-hat-input">${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W</dd><dt>Output</dt><dd id="power-hat-output">${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W</dd><dt>Battery</dt><dd id="power-hat-battery">${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A</dd></dl><footer><span>Pi power</span><span id="power-hat-updated">${power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry'}</span><a href="http://${location.hostname}:34001/" target="_blank" rel="noopener">Open full PiPower dashboard</a></footer></article>`;}
 function renderPiPowerHatStatus(){const power=state.status?.powerHat,card=$('#power-hat-card');if(!power?.available){if(power?.error){if(card)card.outerHTML=piPowerHatHTML(power);else if(state.view==='hardware')renderHardware();}else card?.remove();return;}if(card?.dataset.powerError){card.outerHTML=piPowerHatHTML(power);return;}if(!card){if(state.view==='hardware')renderHardware();return;}const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0));$('#power-hat-source').textContent=`${power.powerSource||'Unknown'} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}`;$('#power-hat-level').style.width=`${battery}%`;$('#power-hat-percent').textContent=`${battery.toFixed(0)}%`;$('#power-hat-input').textContent=`${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W`;$('#power-hat-output').textContent=`${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W`;$('#power-hat-battery').textContent=`${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A`;$('#power-hat-updated').textContent=power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry';}
 
 function setCapabilityVisibility(id,visible){const control=$('#'+id),container=control?.closest('label');if(container)container.classList.toggle('capability-hidden',!visible);if(control)control.disabled=!visible;}
@@ -785,20 +906,14 @@ function updateReceiverCapabilityControls(){
 	updateFPVControls();
 }
 
-function plutoConnectionKind(device){const value=(device.transport||device.deviceArguments||'').toLowerCase();return value.includes('usb:')?'usb':value.includes('ip:')||value.includes('network')?'network':'auto';}
 function plutoConnectionControl(device){
-	if(device.kind!=='PlutoSDR'||!device.connected)return '';
-	const peers=state.devices.filter(item=>item.kind==='PlutoSDR'&&item.connected&&((device.serial&&item.serial===device.serial)||(!device.serial&&item.name===device.name))),available=new Map(peers.map(item=>[plutoConnectionKind(item),item]));
-	const key=`gpsdr-pluto-connection-${device.serial||device.name}`,saved=localStorage.getItem(key)||plutoConnectionKind(device);
-	return `<label class="hardware-mode">Connection<select class="pluto-connection-mode" data-preference-key="${escapeHTML(key)}"><option value="auto" ${saved==='auto'?'selected':''}>Automatic</option><option value="usb" ${saved==='usb'?'selected':''} ${available.has('usb')?'':'disabled'}>USB${available.has('usb')?'':' · unavailable'}</option><option value="network" ${saved==='network'?'selected':''} ${available.has('network')?'':'disabled'}>Ethernet / network${available.has('network')?'':' · unavailable'}</option></select><small>${escapeHTML(device.transport||'Driver-selected connection')}</small></label>`;
+ if(device.kind!=='PlutoSDR'||!device.transports?.length)return '';
+ return `<label class="hardware-mode">Connection<select class="pluto-connection-mode" data-device-id="${escapeHTML(device.id)}" ${state.status?.running?'disabled':''}>${device.transports.some(option=>option.uri===device.transport)?'':`<option value="" selected disabled>Saved connection unavailable</option>`}${device.transports.map(option=>`<option value="${escapeHTML(option.uri)}" ${option.uri===device.transport?'selected':''}>${escapeHTML(option.label)}</option>`).join('')}</select><small>${escapeHTML(device.transport||'Driver-selected connection')} · saved on the Pi</small></label>`;
 }
-
-$('#device-grid').addEventListener('change',event=>{
-	const select=event.target.closest('.pluto-connection-mode');if(!select)return;
-	localStorage.setItem(select.dataset.preferenceKey,select.value);
-	const card=select.closest('.hardware-card'),title=card?.querySelector('h3')?.textContent||'PlutoSDR';
-	const candidates=state.devices.filter(device=>device.kind==='PlutoSDR'&&device.connected),chosen=select.value==='auto'?candidates[0]:candidates.find(device=>plutoConnectionKind(device)===select.value);
-	if(chosen){for(const picker of $$('select'))if([...picker.options].some(option=>option.value===chosen.id))picker.value=chosen.id;toast(`${title} will use ${select.value==='network'?'Ethernet / network':select.value==='usb'?'USB':'the available connection'}`);}else toast('That connection is not currently available',true);
+$('#device-grid').addEventListener('change',async event=>{
+ const select=event.target.closest('.pluto-connection-mode');if(!select)return;
+ select.disabled=true;
+ try{await api('/api/devices/pluto-transport',{method:'PUT',body:JSON.stringify({deviceID:select.dataset.deviceId,uri:select.value})});await refreshAll();toast('Pluto connection saved');}catch(error){toast(error.message,true);renderHardware();}finally{select.disabled=false;}
 });
 
 function hardwareRangeText(device){return device.frequencyMinimumHz&&device.frequencyMaximumHz?`${formatFrequency(device.frequencyMinimumHz)}–${formatFrequency(device.frequencyMaximumHz)} nominal · ${device.frequencyRangeNote||'model-dependent range'}`:'Frequency range reported by the installed driver';}
@@ -859,15 +974,18 @@ function renderTuner() {
   const select = $('#tuner-device');
 	const liveSelect = $('#live-radio-device');
   if (!select) return;
+	updateTunerModeAvailability();
   const connected = state.devices.filter(device => device.connected && device.kind !== 'Simulator');
-  const signature = connected.map(device => device.id).join();
+  const ready = connected.filter(device => device.available);
+  const signature = ready.map(device => `${device.id}:${device.available}`).join();
   if (select.dataset.signature !== signature) {
-    select.innerHTML = connected.length ? connected.map(device => `<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device,connected))}</option>`).join('') : '<option value="">No receiver</option>';
+    select.innerHTML = ready.length ? ready.map(device => `<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device,ready))}</option>`).join('') : '<option value="">No ready receiver</option>';
 		if (liveSelect) liveSelect.innerHTML = select.innerHTML;
     select.dataset.signature = signature;
   }
   const tuning = state.status?.running && state.status?.activeProfileID === 'quick-tune';
 	const tunedChannel = state.mixer.find(item => item.id === 'quick-tune-channel')?.channel;
+	renderTunerVFOs(tuning, tunedChannel);
 	if (tuning && tunedChannel) {
 		if (document.activeElement !== $('#tuner-frequency') && $('#tuner-frequency').dataset.pending !== 'true') {
 			const listenMHz = (tunedChannel.frequencyHz / 1e6).toFixed(6);
@@ -881,13 +999,21 @@ function renderTuner() {
 	}
 	const telemetry=state.status?.receiverTelemetry, receiving=!!telemetry?.signalDetected, overloaded=!!telemetry?.overloaded;
 	for (const prefix of ['live','tuner']) { const light=$('#'+prefix+'-signal-light')?.parentElement; if(light){light.classList.toggle('active',receiving);light.classList.toggle('overloaded',overloaded);} const label=$('#'+prefix+'-signal-text'); if(label) label.textContent=overloaded?`Overload ${Number(telemetry.clippedPercent).toFixed(1)}%`:receiving?'Signal':'No signal'; }
-  $('#tuner-start').disabled = !connected.length;
-	$('#tuner-start').textContent=tuning&&$('#tuner-lock-center').checked?'Apply VFO':tuning?'Retune':'Tune';
+  $('#tuner-start').disabled = !ready.length || tunerSubmitting;
+	$('#tuner-start').textContent=tunerSubmitting?'Tuning…':tuning&&$('#tuner-lock-center').checked?'Apply VFO':tuning?'Retune':'Tune';
   $('#tuner-stop').disabled = !tuning;
   const hardwareMHz=state.spectrum?.centerFrequencyHz?(state.spectrum.centerFrequencyHz/1e6).toFixed(6):'starting',listenMHz=Number($('#tuner-frequency').value||0).toFixed(6);
 	const intelligence=state.status?.signalAnalysis, analysisText=intelligence?.modulation&&intelligence.modulation!=='UNKNOWN'?` · ${intelligence.modulation} ${Math.round((intelligence.confidence||0)*100)}%`:'';
+	const detectionActive=!!(intelligence?.modulation||intelligence?.signalFamily||intelligence?.summary);
+	$('#tuner-decoder-state').textContent=detectionActive?'Evidence':'Idle';
+	$('#tuner-decoder-state').className=`chip ${detectionActive?'ready':''}`;
+	$('#tuner-detected-modulation').textContent=intelligence?.modulation||'—';
+	$('#tuner-detected-confidence').textContent=Number.isFinite(Number(intelligence?.confidence))?`${Math.round(Number(intelligence.confidence)*100)}%`:'—';
+	$('#tuner-detected-protocol').textContent=intelligence?.signalFamily||'Not confirmed';
+	$('#tuner-detected-activity').textContent=detectionActive?(intelligence?.summary||'Recent evidence'):'—';
+	$('#tuner-decoder-detail').textContent=detectionActive?((intelligence.evidence||[]).join(' · ')||'Waveform evidence is available; protocol confirmation still requires a valid decoder frame or authoritative match.'):'Start the tuner to expose detection and decoder evidence.';
 	const appliedDevice=state.devices.find(item=>item.id===telemetry?.deviceID),applied=telemetry?.sampleRateHz?`${(telemetry.sampleRateHz/1e6).toFixed(2)} MS/s · ${appliedDevice?.kind==='HackRF'?`LNA ${telemetry.lnaGainDB} · VGA ${telemetry.vgaGainDB} · amp ${telemetry.ampEnabled?'on':'off'}`:`gain ${Number(telemetry.gainDB).toFixed(1)} dB`}`:'';
-	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${applied?` · Applied ${applied}`:''}${analysisText}` : connected.length ? 'Ready to tune.' : 'Connect a receiver, then refresh Hardware.';
+	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${applied?` · Applied ${applied}`:''}${analysisText}` : ready.length ? 'Ready to tune.' : connected.length ? 'A receiver is connected but its driver is not ready. Open Hardware and refresh it.' : 'Connect a receiver, then refresh Hardware.';
   const snapshot = state.spectrum;
   if (snapshot?.binsDBFS?.length) {
 		const sorted=[...snapshot.binsDBFS].sort((a,b)=>a-b),noise=sorted[Math.floor(sorted.length*.25)]??-120,peak=Math.max(...snapshot.binsDBFS),snr=Math.max(0,peak-noise);
@@ -903,6 +1029,23 @@ function renderTuner() {
   }
 }
 
+function tunerPassbandContains(frequencyHz) {
+  const snapshot=state.spectrum, bandwidth=Number($('#tuner-bandwidth')?.value||12.5)*1000;
+  return !!(snapshot?.startFrequencyHz && frequencyHz-bandwidth/2>=snapshot.startFrequencyHz && frequencyHz+bandwidth/2<=snapshot.endFrequencyHz);
+}
+function renderTunerVFOs(tuning, primary) {
+  const list=$('#tuner-vfo-list'); if(!list)return;
+  const items=[{id:'primary',frequencyHz:Number(primary?.frequencyHz||$('#tuner-frequency')?.value*1e6||0),mode:primary?.mode||$('#tuner-mode')?.value||'auto',primary:true},...tunerVFOs];
+  list.innerHTML=items.map(item=>`<div class="tuner-vfo-card ${item.primary?'selected':''}" data-vfo-id="${escapeHTML(item.id)}"><button class="tuner-vfo-select" type="button" data-vfo-select="${escapeHTML(item.id)}"><strong>${formatFrequency(item.frequencyHz)}</strong><small>${escapeHTML(String(item.mode).toUpperCase())}${item.primary?' · main':''}</small></button><span class="tuner-vfo-state">${tuning?'Ready':'Queued'}</span>${item.primary?'':'<button class="tuner-vfo-delete" type="button" data-vfo-delete="'+escapeHTML(item.id)+'" title="Remove this virtual tuner" aria-label="Remove virtual tuner">×</button>'}</div>`).join('');
+}
+function addTunerVFO(frequencyHz) {
+  if(!Number.isFinite(frequencyHz)||!tunerPassbandContains(frequencyHz)) return toast('That frequency is outside the active receiver bandwidth.',true);
+  if(tunerVFOs.some(item=>Math.abs(item.frequencyHz-frequencyHz)<1)||Math.abs(Number($('#tuner-frequency').value)*1e6-frequencyHz)<1)return toast('That frequency is already tuned.');
+  tunerVFOs.push({id:crypto.randomUUID(),frequencyHz,mode:$('#tuner-mode').value,bandwidthHz:Number($('#tuner-bandwidth').value)*1000});
+  renderTuner(); toast(`Added virtual tuner at ${formatFrequency(frequencyHz)}`);
+}
+function selectTunerVFO(id){const item=tunerVFOs.find(vfo=>vfo.id===id);if(!item)return;setTunerListenFrequency(item.frequencyHz,{apply:!!(state.status?.running&&state.status?.activeProfileID==='quick-tune'),preserveCenter:true});$('#tuner-mode').value=item.mode;$('#tuner-bandwidth').value=item.bandwidthHz/1000;renderTuner();}
+
 function tunerRequest() {
   const deviceID=$('#tuner-device').value,device=state.devices.find(item=>item.id===deviceID),hackrf=device?.kind==='HackRF';
   return {deviceID,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
@@ -917,6 +1060,23 @@ function tunerRequest() {
 
 const decoderModeMap={digital:'dsd-fme',dmr:'dmr',p25:'dsd-fme',nxdn:'nxdn',nxdn48:'nxdn48',nxdn96:'nxdn96','d-star':'d-star',ysf:'ysf',m17:'m17',pocsag:'multimon-ng',acars:'acarsdec','ads-b':'dump1090','rtl-433':'rtl-433',ais:'ais'};
 function decoderForSelectedMode(mode){return decoderModeMap[String(mode||'').toLowerCase()]||'';}
+function updateTunerModeAvailability(){
+	const select=$('#tuner-mode'); if(!select)return;
+	const ready=new Set(state.decoders.filter(decoder=>decoder.state==='ready').map(decoder=>decoder.id));
+	for(const option of select.options){
+		const decoder=decoderForSelectedMode(option.value),available=!decoder||ready.has(decoder);
+		option.disabled=!available;
+		option.title=available?'':`${option.text} requires its decoder in Hardware`;
+	}
+	const selected=select.selectedOptions[0];
+	if(selected?.disabled){
+		tunerModeAvailabilityNote=`${selected.text} is not ready on this box. Switched to Auto; open Hardware to repair or refresh the decoder.`;
+		select.value='auto';
+		const liveMode=$('#live-mode'); if(liveMode)liveMode.value='auto';
+	}
+	const note=$('#tuner-mode-note');
+	if(note){note.textContent=tunerModeAvailabilityNote;note.classList.toggle('hidden',!tunerModeAvailabilityNote);}
+}
 function profileModeOptions(){return '<option value="auto">Auto</option><option value="am">AM</option><option value="nfm">NFM</option><option value="wfm">WFM</option><option value="digital">Digital auto</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option>'}
 function profileDecoderOptions(){return '<option value="">Auto / analog</option><option value="dmr">DMR · DSD-FME</option><option value="dsd-fme">Digital voice · DSD-FME</option><option value="nxdn">NXDN · DSD-FME</option><option value="d-star">D-STAR · DSD-FME</option><option value="ysf">YSF · DSD-FME</option><option value="m17">M17 · DSD-FME</option><option value="rtl-433">rtl_433 sensors</option><option value="dump1090">ADS-B / Mode S</option><option value="multimon-ng">POCSAG / FLEX</option><option value="acarsdec">ACARS</option><option value="ais">AIS</option>'}
 
@@ -1583,7 +1743,9 @@ renderTunerDigits();
 $('#tuner-frequency').addEventListener('input', event => renderTunerDigits(Number(event.target.value||0)));
 $('#tuner-readout').addEventListener('click',event=>{const button=event.target.closest('[data-tuner-digit]');if(!button)return;const delta=Math.pow(10,Number(button.dataset.tunerDigit))*Number(button.dataset.direction)*1e6;setTunerListenFrequency(Number($('#tuner-frequency').value)*1e6+delta,{preserveCenter:true});});
 $('#tuner-mode').addEventListener('change', event => {
-	$('#tuner-bandwidth').value = event.target.value === 'wfm' ? '180' : event.target.value === 'am'||event.target.value==='acars' ? '10' : '12.5';
+	tunerModeAvailabilityNote='';
+	const bandwidthByMode={wfm:'180',am:'10',acars:'25',pocsag:'25','ads-b':'2000','rtl-433':'250',ais:'25'};
+	$('#tuner-bandwidth').value = bandwidthByMode[event.target.value]||'12.5';
 	$('#live-mode').value=event.target.value;$('#live-bandwidth').value=$('#tuner-bandwidth').value;
 	if(event.target.value==='wfm'){ $('#tuner-lna').value='32'; $('#tuner-vga').value='24'; $('#tuner-squelch').value='4'; $('#tuner-agc').checked=true; $('#tuner-monitor-open').checked=true; }
 	queueReceiverControls();
@@ -1606,12 +1768,19 @@ $$('#view-live .receiver-control-grid input, #view-live .receiver-control-grid s
 $$('#view-tuner .radio-controls input, #view-tuner .radio-controls select, #tuner-gain, #tuner-rate').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',queueReceiverControls));
 $('#tuner-form').addEventListener('submit', async event => {
   event.preventDefault();
+	if (tunerSubmitting) return;
+	tunerSubmitting = true;
+	renderTuner();
 	const request = tunerRequest();
 	try { void startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(request)});delete $('#tuner-frequency').dataset.pending;rememberTunerFrequency(request);toast(request.lockCenter&&state.status?.activeProfileID==='quick-tune'?'Software VFO moved':'Tuner started'); await refreshAll(); }
   catch(error) { stopLiveAudio(); toast(error.message,true); }
+	finally { tunerSubmitting = false; renderTuner(); }
 });
 $('#transmit-dry-run').addEventListener('change', renderTransmit);
 $('#transmit-source').addEventListener('change',renderTransmit);
+$('#open-desktop').addEventListener('click',async()=>{if(!await confirmAction({title:'Open the Linux desktop?',subtitle:'GP-SDR stays running in the background.',message:'Use the Return to GP-SDR icon on the desktop when you are finished.',confirmLabel:'Open desktop'}))return;try{await api('/api/system/display',{method:'POST',body:JSON.stringify({action:'desktop'})});toast('Opening desktop…');}catch(error){toast(error.message,true);}});
+$('#system-restart').addEventListener('click',async()=>{if(!await confirmAction({title:'Restart the Pi?',subtitle:'GP-SDR and the touchscreen will be briefly unavailable.',message:'Active receivers and processing will stop, then the case will restart into the touchscreen kiosk.',confirmLabel:'Restart Pi'}))return;try{await api('/api/system/power',{method:'POST',body:JSON.stringify({action:'reboot'})});toast('Restarting the Pi…');}catch(error){toast(error.message,true);}});
+$('#system-shutdown').addEventListener('click',async()=>{if(!await confirmAction({title:'Shut down the Pi?',subtitle:'Wait for the touchscreen to turn off before using the case battery switch.',message:'This stops GP-SDR cleanly and protects recordings and the data drive.',confirmLabel:'Shut down Pi'}))return;try{await api('/api/system/power',{method:'POST',body:JSON.stringify({action:'shutdown'})});toast('Shutting down safely…');}catch(error){toast(error.message,true);}});
 $('#expert-transmit-toggle').addEventListener('click',async()=>{if(expertTransmitMode){expertTransmitMode=false;localStorage.removeItem('gpsdr-expert-transmit-v1');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode disabled');return;}if(!await confirmAction({title:'Enable expert transmit mode?',subtitle:'One acknowledgement, remembered on this Mac.',message:'GP-SDR will remember your transmit acknowledgement on this Mac and stop asking for it before each job. RF can cause interference or damage equipment. Local-only control, device validation, health blocks, emergency stop, and the 60-second ceiling remain enforced.',confirmLabel:'Enable expert mode'}))return;expertTransmitMode=true;localStorage.setItem('gpsdr-expert-transmit-v1','true');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode enabled');});
 $('#transmit-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -1717,6 +1886,20 @@ function updateMapperReceiverSelection(){
   note.textContent=all?`${radios.length} receivers · each range is clamped to its hardware limits`:device?`${hardwareRangeText(device)}${device.healthWarning?' · Diagnostic warning; receive enabled':''}`:'No receiver selected. Refresh after connecting a radio.';
   note.classList.toggle('warning',!!device?.healthWarning&&!all);
   $('#mapper-refresh-receivers').disabled=!!state.status?.running||mapperActiveJobs().length>0;
+	queueMapperAssignmentPreview();
+}
+function queueMapperAssignmentPreview(){
+	const root=$('#mapper-assignment-preview'),all=$('#mapper-all-receivers')?.checked;
+	if(!root)return;
+	if(!all){root.replaceChildren();root.classList.add('hidden');return;}
+	root.classList.remove('hidden');root.textContent='Calculating receiver assignments…';
+	clearTimeout(mapperPreviewTimer);mapperPreviewTimer=setTimeout(()=>void refreshMapperAssignmentPreview(),180);
+}
+async function refreshMapperAssignmentPreview(){
+	const root=$('#mapper-assignment-preview');if(!root||!$('#mapper-all-receivers')?.checked)return;
+	const request=++mapperPreviewRequest,config={mode:mapperWorkflowValue(),startHz:Number($('#mapper-start').value)*1e6,endHz:Number($('#mapper-end').value)*1e6,stepHz:Number($('#mapper-step').value)*1000};
+	if(!(config.stepHz>0&&config.endHz>=config.startHz)){root.textContent='Enter a valid range to preview assignments.';return;}
+	try{const assignments=await api('/api/mapper/jobs/preview',{method:'POST',body:JSON.stringify({config})});if(request!==mapperPreviewRequest)return;root.innerHTML=assignments.length?`<strong>Receiver assignments</strong>${assignments.map(item=>`<span>${escapeHTML(item.deviceName||item.deviceID)} · ${formatFrequency(item.startHz)}–${formatFrequency(item.endHz)}${item.targets?` · ${item.targets.toLocaleString()} targets`:''}</span>`).join('')}`:'No connected receiver can cover this range.';}catch(error){if(request===mapperPreviewRequest)root.textContent=`Assignment preview unavailable: ${error.message}`;}
 }
 $('#mapper-device').addEventListener('change',updateMapperReceiverSelection);
 $('#mapper-refresh-receivers').addEventListener('click',async()=>{const button=$('#mapper-refresh-receivers');button.disabled=true;try{state.devices=await api('/api/devices/refresh',{method:'POST'});await refreshAll();toast('Receivers refreshed');}catch(error){toast(error.message,true);}finally{updateMapperReceiverSelection();}});
@@ -1750,6 +1933,7 @@ $('#analyzer-reset-view').addEventListener('click',()=>{analyzerView={startHz:an
 $('#analyzer-graphs').addEventListener('wheel',event=>{if(!analyzerStatus.binsDBFS?.length)return;event.preventDefault();const range=analyzerVisibleRange(),span=range.endHz-range.startHz,rect=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),anchor=range.startHz+span*ratio,newSpan=Math.max((analyzerStatus.endHz-analyzerStatus.startHz)/32768,Math.min(analyzerStatus.endHz-analyzerStatus.startHz,span*(event.deltaY>0?1.35:.72)));let start=anchor-newSpan*ratio;start=Math.max(analyzerStatus.startHz,Math.min(analyzerStatus.endHz-newSpan,start));analyzerView={startHz:start,endHz:start+newSpan};renderSpectrumAnalyzer();},{passive:false});
 let analyzerDrag=null;$('#analyzer-graphs').addEventListener('pointerdown',event=>{const range=analyzerVisibleRange();analyzerDrag={x:event.clientX,startHz:range.startHz,endHz:range.endHz};event.currentTarget.setPointerCapture(event.pointerId);});$('#analyzer-graphs').addEventListener('pointermove',event=>{const range=analyzerVisibleRange(),rect=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),frequency=range.startHz+(range.endHz-range.startHz)*ratio,index=Math.round((frequency-analyzerStatus.startHz)/(analyzerStatus.endHz-analyzerStatus.startHz)*Math.max(0,(analyzerStatus.binsDBFS?.length||1)-1)),level=analyzerStatus.binsDBFS?.[index];$('#analyzer-hover').textContent=`${formatFrequency(frequency)}${Number.isFinite(level)?` · ${Number(level).toFixed(1)} dBFS`:''}`;if(analyzerDrag){const span=analyzerDrag.endHz-analyzerDrag.startHz,shift=-(event.clientX-analyzerDrag.x)/Math.max(1,rect.width)*span;let start=Math.max(analyzerStatus.startHz,Math.min(analyzerStatus.endHz-span,analyzerDrag.startHz+shift));analyzerView={startHz:start,endHz:start+span};renderSpectrumAnalyzer();}});for(const type of ['pointerup','pointercancel','pointerleave'])$('#analyzer-graphs').addEventListener(type,()=>{analyzerDrag=null;});
 $('#mapper-all-receivers').addEventListener('change',updateMapperReceiverSelection);updateMapperReceiverSelection();
+for(const id of ['mapper-start','mapper-end','mapper-step'])$('#'+id).addEventListener('input',queueMapperAssignmentPreview);
 $('#mapper-schedule-enabled').addEventListener('change',updateMapperScheduleControls);updateMapperScheduleControls();
 $('#mapper-analysis-run').addEventListener('click',async()=>{try{const concurrency=Number($('#analysis-concurrency')?.value||0);state.analysisStatus=await api('/api/analysis/start',{method:'POST',body:JSON.stringify({concurrency})});toast(state.analysisStatus.pending?`Deferred compute started · ${state.analysisStatus.concurrency||1} parallel`:'No captures are waiting');await refreshAll();}catch(error){toast(error.message,true);}});
 $('#mapper-analysis-stop').addEventListener('click',async()=>{try{state.analysisStatus=await api('/api/analysis/stop',{method:'POST',body:'{}'});toast('Deferred compute stopping');await refreshAll();}catch(error){toast(error.message,true);}});
@@ -1848,6 +2032,23 @@ $('#app-update-auto').checked=localStorage.getItem('gpsdr-update-auto')!=='false
 $('#local-ai-form').addEventListener('submit',async event=>{event.preventDefault();try{state.localAI=await api('/api/local-ai',{method:'PUT',body:JSON.stringify({enabled:$('#local-ai-enabled').checked,profile:$('#local-ai-profile').value,model:$('#local-ai-model').value.trim(),contextLength:Number($('#local-ai-context').value),endpoint:$('#local-ai-endpoint').value.trim(),minimumConfidence:Number($('#local-ai-confidence').value)})});renderLocalAI();toast(state.localAI.state==='ready'?'Local model analysis ready':'Local model settings saved');}catch(error){toast(error.message,true);}});
 $('#local-ai-benchmark').addEventListener('click',async()=>{try{const models=[...$('#local-ai-benchmark-models').selectedOptions].map(option=>option.value);state.localAIBenchmark=await api('/api/local-ai/benchmark',{method:'POST',body:JSON.stringify({models})});renderLocalAI();toast('Model benchmark started');}catch(error){toast(error.message,true);}});
 $('#learning-form').addEventListener('submit',async event=>{if(event.submitter?.value!=='confirm')return;event.preventDefault();try{const frequencyHz=Number($('#learning-frequency').value),body={modulation:$('#learning-modulation').value.trim(),protocol:$('#learning-protocol').value.trim(),notes:$('#learning-notes').value.trim()};if(frequencyHz>0)await api('/api/mapper/confirm',{method:'POST',body:JSON.stringify({...body,frequencyHz})});else await api('/api/local-ai/learning',{method:'POST',body:JSON.stringify({...body,eventID:$('#learning-event-id').value,retainCaptures:$('#learning-retain').checked})});$('#learning-dialog').close();$('#learning-frequency').value='';toast('Confirmed sample added to local learning');await refreshAll();}catch(error){toast(error.message,true);}});
+$('#login-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const password = $('#login-password').value;
+  const submit = $('#login-submit');
+  submit.disabled = true;
+  $('#login-error').textContent = '';
+  try {
+    await api('/api/auth/login', {method:'POST', body:JSON.stringify({password})});
+    $('#login-password').value = '';
+    serverToken = '';
+    $('#login-dialog').close();
+    toast('Signed in');
+    await refreshAll();
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+  } finally { submit.disabled = false; }
+});
 resetMapperJob();
 refreshAll().then(()=>{if($('#app-update-auto').checked&&window.gpsdrNativeCapabilities?.includes('appUpdater'))window.webkit?.messageHandlers?.gpsdrNative?.postMessage({action:'checkForUpdates',currentVersion:state.status?.version||''});});
 setInterval(async()=>{
@@ -1862,21 +2063,34 @@ async function pollSpectrum() {
 	const mapperRunning=state.view==='mapper'&&mapperActiveJobs().length>0;
 	if(!document.hidden&&state.view==='analyzer'){try{analyzerStatus=await api('/api/spectrum-analyzer');renderSpectrumAnalyzer();}catch(_){}}
 	else if(!document.hidden && ((state.status?.running&&(state.view==='live'||state.view==='tuner'||state.view==='band'))||mapperRunning||state.view==='rfmonitor')){try{if(state.view==='rfmonitor'||state.view==='mapper'){state.spectra=await api('/api/spectra?bins='+displayPrefs.detail);if(state.view==='rfmonitor')renderRFMonitor();else renderMapperRF();}else{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);if(state.view==='tuner')renderTuner();if(state.view==='band')renderBandMonitor();drawSpectrum();drawWaterfall();}}catch(_){ }}
-	setTimeout(pollSpectrum,Math.max(16,1000/displayPrefs.fps));
+	// On the Pi, browser canvas work must yield to live PCM playback. Keep the
+	// user's display preference when audio is idle, but cap visual polling while
+	// the audio graph is active so graph smoothness cannot crowd out playback.
+	const audioActive=liveAudio.context?.state==='running'&&liveAudio.controller;
+	const visualFPS=audioActive&&displayPrefs.audioPriority?Math.min(displayPrefs.fps,displayPrefs.audioFPS):displayPrefs.fps;
+	const spectrumDelay=audioActive&&displayPrefs.audioPriority?Math.max(16,1000/visualFPS):Math.max(16,1000/displayPrefs.fps);
+	// Preserve the 60 Hz-capable idle path: Math.max(16,1000/displayPrefs.fps)
+	setTimeout(pollSpectrum,spectrumDelay);
 }
 pollSpectrum();
 
 function saveDisplayPrefs(){localStorage.setItem('gpsdr-display-v2',JSON.stringify(displayPrefs));$('#display-smoothing-value').textContent=displayPrefs.smoothing+'%';$$('#live-waterfall,#waterfall,#mapper-waterfall,#band-waterfall').forEach(canvas=>{canvas.dataset.lastFrame='';canvas.width=0;});if(!displayPrefs.peakHold)[$('#spectrum'),$('#tuner-spectrum'),$('#mapper-spectrum'),$('#band-spectrum')].forEach(canvas=>spectrumPeaks.delete(canvas));drawSpectrum();drawWaterfall();}
 for(const [id,key,number] of [['display-fps','fps',true],['display-quality','quality',true],['display-detail','detail',true],['display-smoothing','smoothing',true]]){const control=$('#'+id);control.value=displayPrefs[key];control.addEventListener('input',()=>{displayPrefs[key]=number?Number(control.value):control.value;saveDisplayPrefs();});}
+$('#display-audio-priority').checked=displayPrefs.audioPriority!==false;$('#display-audio-priority').addEventListener('change',event=>{displayPrefs.audioPriority=event.target.checked;saveDisplayPrefs();});
+$('#display-audio-fps').value=String(displayPrefs.audioFPS);$('#display-audio-fps').addEventListener('change',event=>{displayPrefs.audioFPS=Math.max(1,Math.min(12,Number(event.target.value)||4));saveDisplayPrefs();});
 $('#display-peak-hold').checked=!!displayPrefs.peakHold;$('#display-peak-hold').addEventListener('change',event=>{displayPrefs.peakHold=event.target.checked;saveDisplayPrefs();});
 $('#display-markers').checked=displayPrefs.markers!==false;$('#display-markers').addEventListener('change',event=>{displayPrefs.markers=event.target.checked;saveDisplayPrefs();});
 function frequencyAtPointer(event){const snapshot=state.spectrum;if(!snapshot?.binsDBFS?.length)return null;const rect=event.currentTarget.getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));return {fraction,frequencyHz:snapshot.startFrequencyHz+fraction*(snapshot.endFrequencyHz-snapshot.startFrequencyHz)};}
-function setVFOFromPointer(event){const point=frequencyAtPointer(event);if(!point)return;const active=state.status?.running&&state.status?.activeProfileID==='quick-tune';setTunerListenFrequency(point.frequencyHz,{apply:active,preserveCenter:active});toast(`${active?'Software VFO':'Tuner set to'} ${(point.frequencyHz/1e6).toFixed(6)} MHz${active?' · hardware center held':''}`);}
+function setVFOFromPointer(event){const point=frequencyAtPointer(event);if(!point)return;const active=state.status?.running&&state.status?.activeProfileID==='quick-tune';if(event.metaKey||event.ctrlKey){addTunerVFO(point.frequencyHz);return;}setTunerListenFrequency(point.frequencyHz,{apply:active,preserveCenter:active});toast(`${active?'Software VFO':'Tuner set to'} ${(point.frequencyHz/1e6).toFixed(6)} MHz${active?' · hardware center held':''}`);}
 $('#tuner-spectrum').addEventListener('click',setVFOFromPointer);$('#waterfall').addEventListener('click',setVFOFromPointer);
+$('#tuner-add-vfo').addEventListener('click',()=>addTunerVFO(Number($('#tuner-frequency').value)*1e6));
+$('#tuner-vfo-list').addEventListener('click',event=>{const select=event.target.closest('[data-vfo-select]'),remove=event.target.closest('[data-vfo-delete]');if(select){selectTunerVFO(select.dataset.vfoSelect);return;}if(remove){tunerVFOs=tunerVFOs.filter(item=>item.id!==remove.dataset.vfoDelete);renderTuner();toast('Virtual tuner removed');}});
 $('#tuner-spectrum').addEventListener('mousemove',event=>{const point=frequencyAtPointer(event);if(!point)return;spectrumCursors.set(event.currentTarget,point);const index=Math.min(state.spectrum.binsDBFS.length-1,Math.max(0,Math.round(point.fraction*(state.spectrum.binsDBFS.length-1)))),db=state.spectrum.binsDBFS[index];$('#tuner-cursor').textContent=`${(point.frequencyHz/1e6).toFixed(6)} MHz · ${db.toFixed(1)} dBFS`;drawSpectrumCanvas(event.currentTarget);});
 $('#tuner-spectrum').addEventListener('mouseleave',event=>{spectrumCursors.delete(event.currentTarget);$('#tuner-cursor').textContent='Hover for frequency';drawSpectrumCanvas(event.currentTarget);});
 $('#band-spectrum').addEventListener('mousemove',event=>{const point=frequencyAtPointer(event);if(!point)return;spectrumCursors.set(event.currentTarget,point);const index=Math.min(state.spectrum.binsDBFS.length-1,Math.max(0,Math.round(point.fraction*(state.spectrum.binsDBFS.length-1)))),db=state.spectrum.binsDBFS[index];$('#band-spectrum-cursor').textContent=`${(point.frequencyHz/1e6).toFixed(6)} MHz · ${db.toFixed(1)} dBFS`;drawSpectrumCanvas(event.currentTarget);});
 $('#band-spectrum').addEventListener('mouseleave',event=>{spectrumCursors.delete(event.currentTarget);$('#band-spectrum-cursor').textContent='Hover for frequency';drawSpectrumCanvas(event.currentTarget);});
+$('#band-spectrum').addEventListener('click',event=>{const point=frequencyAtPointer(event);if(!point||!bandMonitorIsRunning())return;bandWindowCenterHz=point.frequencyHz;startBandMonitor().then(()=>toast('Band window moved')).catch(error=>toast(error.message,true));});
+$('#band-spectrum').addEventListener('wheel',event=>{if(!bandMonitorIsRunning())return;event.preventDefault();const span=Number(state.spectrum?.endFrequencyHz||0)-Number(state.spectrum?.startFrequencyHz||0);if(!(span>0))return;bandWindowCenterHz=Number(state.spectrum.centerFrequencyHz)+(event.deltaY>0?span*.65:-span*.65);clearTimeout(bandApplyTimer);bandApplyTimer=setTimeout(()=>startBandMonitor().then(()=>toast('Band window moved')).catch(error=>toast(error.message,true)),180);},{passive:false});
 $('#tuner-frequency').addEventListener('keydown',event=>{if(event.key!=='ArrowUp'&&event.key!=='ArrowDown')return;event.preventDefault();const direction=event.key==='ArrowUp'?1:-1,next=Math.max(.001,Number(event.currentTarget.value)+direction*Number($('#tuner-step').value));setTunerListenFrequency(next*1e6,{preserveCenter:true});});
 $('#tuner-bookmark').addEventListener('click',async()=>{const frequencyHz=Number($('#tuner-frequency').value)*1e6,mode=$('#tuner-mode').value;if(!Number.isFinite(frequencyHz)||frequencyHz<=0)return toast('Enter a valid tuner frequency',true);const label=`${(frequencyHz/1e6).toFixed(6)} MHz ${mode.toUpperCase()}`,profile={schemaVersion:1,id:crypto.randomUUID(),name:`Saved · ${label}`,summary:'Saved from the GP-SDR tuner',ranges:[],channels:[{id:crypto.randomUUID(),name:label,frequencyHz,bandwidthHz:Number($('#tuner-bandwidth').value)*1000,mode,decoder:null,enabled:true,priority:5}],deviceAssignments:[{id:crypto.randomUUID(),deviceID:null,role:'channelBank',target:'Saved channel'}],p25Systems:[],settings:{noiseMarginDB:8,revisitSeconds:20,recordAudio:true,recordIQForUnknown:true,transcribeVoice:false,maxRecordingDays:30},builtIn:false};try{await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});toast('Channel saved to Profiles');await refreshAll();}catch(error){toast(error.message,true);}});
 $('#tuner-history').addEventListener('change',event=>{const item=tunerHistory.find(entry=>String(entry.frequencyHz)===event.target.value);if(!item)return;setTunerListenFrequency(item.frequencyHz,{apply:false});$('#tuner-mode').value=item.mode;$('#tuner-bandwidth').value=item.bandwidthHz/1e3;});
@@ -1887,5 +2101,9 @@ applyMasterAudio(false);
 saveDisplayPrefs();
 
 $('#relay-save')?.addEventListener('click',()=>saveRelay().catch(error=>toast(error.message,true)));
+$('#relay-system-audio')?.addEventListener('change',async event=>{const control=event.target;control.disabled=true;try{state.relay=await api('/api/relay/system-audio',{method:'PUT',body:JSON.stringify({enabled:control.checked})});renderRelay();toast('Relay audio mode saved');}catch(error){control.checked=!!state.relay?.systemAudio;toast(error.message,true);}finally{control.disabled=!!state.relay?.active;}});
+$('#relay-speaker-mute')?.addEventListener('change',async event=>{const control=event.target;control.disabled=true;try{state.relay=await api('/api/relay/speaker-mute',{method:'PUT',body:JSON.stringify({muted:control.checked})});renderRelay();toast(control.checked?'Box speakers muted':'Box speakers unmuted');}catch(error){control.checked=!!state.relay?.speakerMuted;toast(error.message,true);}finally{control.disabled=false;}});
+$('#relay-output-volume')?.addEventListener('input',event=>{$('#relay-output-volume-value').textContent=event.target.value+'%';});
+$('#relay-output-volume')?.addEventListener('change',async event=>{const control=event.target,previous=state.relay?.outputVolume??.2;control.disabled=true;try{state.relay=await api('/api/relay/volume',{method:'PUT',body:JSON.stringify({volume:Number(control.value)/100})});$('#relay-output-volume-value').textContent=Math.round(state.relay.outputVolume*100)+'%';toast('Relay output volume saved');}catch(error){control.value=String(Math.round(previous*100));$('#relay-output-volume-value').textContent=control.value+'%';toast(error.message,true);}finally{control.disabled=false;}});
 $('#relay-start')?.addEventListener('click',async()=>{try{state.relay=await api('/api/relay/start',{method:'POST',body:'{}'});renderRelay();toast('Relay ready');}catch(error){toast(error.message,true);}});
 $('#relay-stop')?.addEventListener('click',async()=>{try{state.relay=await api('/api/relay/stop',{method:'POST',body:'{}'});renderRelay();toast('Relay stopped');}catch(error){toast(error.message,true);}});

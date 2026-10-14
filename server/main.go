@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -32,7 +33,26 @@ func main() {
 	token := flag.String("token", "", "access token required by non-local clients")
 	openBrowser := flag.Bool("open", false, "open the web console in the default browser")
 	repairMedia := flag.Bool("repair-media", false, "reconcile saved recording references without starting receivers; stop the app first")
+	passwordHashStdin := flag.Bool("password-hash-stdin", false, "read one password from standard input and print a password hash")
 	flag.Parse()
+	if *passwordHashStdin {
+		password, err := io.ReadAll(io.LimitReader(os.Stdin, 1025))
+		if err != nil {
+			log.Fatal(err)
+		}
+		hash, err := app.NewPasswordHash(strings.TrimSpace(string(password)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(hash)
+		return
+	}
+	// Service managers keep credentials in an EnvironmentFile. Prefer that
+	// path to placing the token in ExecStart, where it is visible in process
+	// listings and service diagnostics.
+	if strings.TrimSpace(*token) == "" {
+		*token = strings.TrimSpace(os.Getenv("GPSDR_WEB_TOKEN"))
+	}
 	if *repairMedia {
 		store, err := app.NewEventStore(filepath.Join(*data, "Data"))
 		if err != nil {
@@ -53,15 +73,18 @@ func main() {
 		log.Printf("Network access token: %s", *token)
 	}
 	addressHost := displayHost(*host)
+	// The runtime/status API must never echo the access token. Authenticated
+	// reverse proxies inject it as a header; direct clients may supply it
+	// explicitly without having it copied into logs, status, or history.
 	url := fmt.Sprintf("http://%s:%d/", addressHost, *port)
-	if *token != "" {
-		url += "?token=" + *token
-	}
-	runtimeState, err := app.NewRuntime(*data, url, *demo)
-	if err != nil {
+	// Serve the touchscreen shell before rebuilding persisted state. On a Pi
+	// with a sizeable capture history that restoration can take over a minute.
+	server := app.NewServer(nil, web.Files, *host, uint16(*port), *token)
+	if err := server.SetPasswordAuthentication(strings.TrimSpace(os.Getenv("GPSDR_WEB_PASSWORD_HASH")), os.Getenv("GPSDR_TRUST_PROXY_HEADERS") == "1"); err != nil {
 		log.Fatal(err)
 	}
-	server := app.NewServer(runtimeState, web.Files, *host, uint16(*port), *token)
+	log.Printf("GP-SDR %s", app.Version)
+	log.Printf("Web console: %s", url)
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		if *openBrowser {
@@ -69,12 +92,16 @@ func main() {
 		}
 	}()
 	go func() {
-		log.Printf("GP-SDR %s", app.Version)
-		log.Printf("Web console: %s", url)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
+	runtimeState, err := app.NewRuntime(*data, url, *demo)
+	if err != nil {
+		log.Fatal(err)
+	}
+	server.SetRuntime(runtimeState)
+	log.Printf("GP-SDR runtime ready")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop

@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css?v=1.5.0-rc34">
   <link rel="stylesheet" href="/console.css?v=1.5.0-rc34">
+  <link rel="stylesheet" href="/touch-console.css?v=1.5.0-rc34">
   <link rel="stylesheet" href="/explore.css?v=1.5.0-rc34">
 </head>
 <body>
@@ -63,16 +64,16 @@
         <button class="nav-item" data-view="relay" title="Route selected decoded audio to the analog relay radio">
           <span class="nav-icon">⇄</span><span>Radio relay</span>
         </button>
-        <button class="nav-item" data-view="relay" title="Reserved for the future RF lab relay and switching box">
-          <span class="nav-icon">⇄</span><span>RF relay</span>
-        </button>
         <button class="nav-item" data-view="settings" title="Server, storage, and application information">
           <span class="nav-icon">⚙︎</span><span>Settings</span>
+        </button>
+        <button class="nav-item" data-view="desktop" title="Use the regular Linux desktop on this touchscreen">
+          <span class="nav-icon">▣</span><span>Desktop</span>
         </button>
       </nav>
       <div class="sidebar-foot">
         <span id="side-dot" class="status-dot"></span>
-        <span id="side-status">Connecting</span>
+        <span id="side-status">Starting</span>
       </div>
     </aside>
 
@@ -80,7 +81,7 @@
       <header class="topbar">
         <div>
           <h1 id="view-title">Live</h1>
-          <p id="view-subtitle">Receiver and channel mixer</p>
+          <p id="view-subtitle">Preparing saved radios, decoders, and models</p>
         </div>
         <div class="top-actions">
           <details id="power-status" class="power-status" hidden>
@@ -257,11 +258,11 @@
           <article class="panel tuner-controls tuner-command-panel">
             <form id="tuner-form">
               <div class="tuner-command-row">
-                <div class="tuner-readout"><span>Listen frequency</span><div class="tuner-digit-readout"><strong id="tuner-readout" aria-label="462.675000 megahertz">462.675000</strong><small>MHz</small></div><small class="tuner-readout-help">Click above or below a digit to step it</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
+                <div class="tuner-readout"><span>Listen frequency</span><div class="tuner-digit-readout"><strong id="tuner-readout" aria-label="462.675000 megahertz">462.675000</strong><small>MHz</small></div><small class="tuner-readout-help">Use the frequency field below for touch entry, or the arrows above and below a digit to step it</small><div class="signal-state"><i id="tuner-signal-light"></i><span id="tuner-signal-text">No signal</span></div></div>
                 <label class="tuner-receiver-field">Receiver<select id="tuner-device" title="SDR used for direct tuning"></select></label>
-                <label>Mode / decoder<select id="tuner-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><optgroup label="Digital voice"><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></optgroup><optgroup label="Data and signaling"><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option></optgroup></select></label>
-                <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="250" step="0.5" value="12.5" title="Audio channel bandwidth"></label>
-                <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Start</button><button id="tuner-stop" type="button">Stop</button><button id="tuner-bookmark" type="button" title="Save the current frequency as a reusable scan profile">Save</button></div>
+                <label>Mode / decoder<select id="tuner-mode" title="Choose analog demodulation or a digital decoder"><option value="auto">Auto</option><option value="nfm">NFM</option><option value="am">AM</option><option value="wfm">WFM</option><optgroup label="Digital voice"><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="nxdn96">NXDN96</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option></optgroup><optgroup label="Data and signaling"><option value="pocsag">POCSAG / FLEX</option><option value="acars">ACARS</option><option value="ads-b">ADS-B / Mode S</option><option value="rtl-433">rtl_433 sensors</option><option value="ais">AIS</option></optgroup></select></label>
+                <label>Bandwidth · kHz<input id="tuner-bandwidth" type="number" min="1" max="2500" step="0.5" value="12.5" title="Channel bandwidth; ADS-B requires 2,000 kHz"></label>
+                <div class="tuner-actions"><button id="tuner-start" class="primary" type="submit">Start</button><button id="tuner-stop" type="button">Stop</button><button id="tuner-add-vfo" type="button" title="Add an in-band virtual tuner">＋ VFO</button><button id="tuner-bookmark" type="button" title="Save the current frequency as a reusable scan profile">Save</button></div>
               </div>
               <div class="tuner-vfo-row">
                 <label>Listen VFO · MHz<input id="tuner-frequency" type="number" min="0.001" step="0.000001" value="462.675" required title="Software-demodulated frequency; Up and Down use the selected tuning step"></label>
@@ -270,7 +271,9 @@
                 <label>Recent<select id="tuner-history" title="Return to a recently tuned frequency"><option value="">No recent frequencies</option></select></label>
                 <label class="check-line"><input id="tuner-lock-center" type="checkbox"> Lock hardware center</label>
               </div>
+              <p id="tuner-mode-note" class="tuner-mode-note hidden" role="status"></p>
             </form>
+            <div class="tuner-vfo-shelf" aria-live="polite"><div class="tuner-vfo-shelf-head"><strong>Virtual tuners</strong><span>⌘/Ctrl-click the spectrum to add</span></div><div id="tuner-vfo-list" class="tuner-vfo-list"></div></div>
             <div class="radio-controls tuner-grouped-controls"><div class="tuner-control-dock">
               <div class="tuner-dock-section"><h3>Receiver</h3><div class="tuner-dock-grid"><label>Sample rate<select id="tuner-rate" title="Receiver sample rate; Auto chooses a safe value"><option value="0">Auto</option><option value="1000000">1.0 MS/s</option><option value="2000000">2.0 MS/s</option><option value="2400000">2.4 MS/s</option><option value="3200000">3.2 MS/s</option><option value="8000000">8.0 MS/s</option><option value="10000000">10 MS/s</option><option value="20000000">20 MS/s</option><option value="24000000">24 MS/s · Pluto</option><option value="30720000">30.72 MS/s · Pluto</option><option value="40000000">40 MS/s · Pluto</option><option value="50000000">50 MS/s · Pluto</option><option value="61440000">61.44 MS/s · Pluto maximum</option></select></label><label>Gain · dB<input id="tuner-gain" type="number" min="0" max="73" step="1" value="20" title="Receiver gain"></label><label>LNA · dB<select id="tuner-lna"><option>0</option><option>8</option><option>16</option><option selected>24</option><option>32</option><option>40</option></select></label><label>VGA · dB<input id="tuner-vga" type="number" min="0" max="62" step="2" value="20"></label></div></div>
               <div class="tuner-dock-section"><h3>Signal</h3><div class="tuner-dock-grid"><label>Squelch · dB<input id="tuner-squelch" type="number" min="0" max="60" step="1" value="8"></label><label>Noise reduction<select id="tuner-noise" title="Local low-latency speech noise reduction"><option value="off">Off</option><option value="voice" selected>Voice</option><option value="strong">Strong</option></select></label><label>PPM<input id="tuner-ppm" type="number" min="-200" max="200" value="0"></label><label>Q balance<input id="tuner-iq-gain" type="number" min="0.5" max="1.5" step="0.001" value="1"></label><label>IQ phase · °<input id="tuner-iq-phase" type="number" min="-20" max="20" step="0.1" value="0"></label></div></div>
@@ -281,12 +284,17 @@
           <div class="tuner-displays">
             <article class="panel spectrum-panel tuner-spectrum-panel">
               <div class="panel-head"><div><h2>Spectrum</h2><span id="tuner-span">No IQ data</span></div><span id="tuner-cursor" class="frequency-caption">Hover for frequency</span><span id="tuner-center" class="frequency-caption">—</span></div>
-              <canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum; click to move the software listening frequency" title="Click a signal to listen there without moving the hardware center"></canvas>
+              <div class="tuner-spectrum-scroll"><canvas id="tuner-spectrum" height="190" aria-label="Tuner spectrum; click to move the software listening frequency" title="Click a signal to listen there without moving the hardware center"></canvas></div>
             </article>
             <article class="panel waterfall-panel">
               <div class="panel-head"><div><h2>Waterfall</h2><span>Newest samples appear at the top</span></div><div class="waterfall-scale"><i></i><span>−110</span><span>−20 dBFS</span></div></div>
-              <canvas id="waterfall" height="330" aria-label="Live waterfall display"></canvas>
+              <div class="tuner-waterfall-scroll"><canvas id="waterfall" height="330" aria-label="Live waterfall display"></canvas></div>
               <div class="frequency-axis"><span id="waterfall-start">—</span><span id="waterfall-mid">—</span><span id="waterfall-end">—</span></div>
+            </article>
+            <article class="panel tuner-detection-panel" aria-live="polite">
+              <div class="panel-head"><div><h2>Detection &amp; decoding</h2><span>Live evidence from the tuned channel</span></div><span id="tuner-decoder-state" class="chip">Idle</span></div>
+              <div class="tuner-detection-grid"><div><span>Modulation</span><strong id="tuner-detected-modulation">—</strong></div><div><span>Confidence</span><strong id="tuner-detected-confidence">—</strong></div><div><span>Protocol</span><strong id="tuner-detected-protocol">—</strong></div><div><span>Last activity</span><strong id="tuner-detected-activity">—</strong></div></div>
+              <p id="tuner-decoder-detail" class="tuner-decoder-detail">Start the tuner to expose detection and decoder evidence.</p>
             </article>
           </div>
         </div>
@@ -382,6 +390,7 @@
             <label>Job name<input id="mapper-job-name" maxlength="60" placeholder="UHF discovery"></label>
             <label class="mapper-receiver-field">Receiver<div class="receiver-picker"><select id="mapper-device" aria-label="Mapper receiver"></select><button id="mapper-refresh-receivers" type="button" title="Refresh connected receivers when idle" aria-label="Refresh Mapper receivers">↻</button></div></label><p id="mapper-receiver-note" class="mapper-receiver-note" role="status"></p>
             <label class="check-line mapper-all-receivers" title="Create one independent job on every connected receiver and run them together"><input id="mapper-all-receivers" type="checkbox"> Use all connected receivers</label>
+			<div id="mapper-assignment-preview" class="mapper-assignment-preview hidden" aria-live="polite"></div>
             <fieldset id="mapper-workflow" class="mapper-workflow-toggle">
               <legend>Workflow</legend>
               <div role="radiogroup" aria-label="Mapper workflow">
@@ -544,9 +553,23 @@
       <section id="view-relay" class="view">
         <div class="section-actions"><div><h2>Radio relay</h2><p>Forward selected decoded audio to the analog handheld radio.</p></div><div><span id="relay-state" class="chip">Stopped</span></div></div>
         <article class="panel relay-panel"><div class="panel-head"><div><h2>Relay routing</h2><span>Each enabled source is mixed into the USB audio output.</span></div><div class="relay-actions"><button id="relay-stop" type="button">Stop</button><button id="relay-start" class="primary" type="button">Start relay</button></div></div>
+          <label class="check-line relay-system-audio"><input id="relay-system-audio" type="checkbox"> Transmit system audio</label>
+          <label class="check-line relay-speaker-mute"><input id="relay-speaker-mute" type="checkbox"> Mute box speakers</label>
+          <p class="range-sync-detail">System audio includes GP-SDR, SDR++, and desktop audio played through the Pi system output. Speaker mute does not affect relay audio. PTT releases after silence and briefly cycles every 20 seconds.</p>
+          <fieldset id="relay-manual-options" class="relay-manual-options">
           <div id="relay-streams" class="relay-streams"><div class="empty-state compact">Loading audio streams…</div></div>
-          <div class="relay-settings"><label>USB audio device<input id="relay-audio-device" value="plughw:2,0" placeholder="plughw:2,0"></label><label>Sample rate<select id="relay-audio-rate"><option value="8000">8 kHz · P25/voice</option><option value="16000">16 kHz</option></select></label><label>Segment limit<input id="relay-segment" value="30" type="number" min="1" max="30" step="1"> seconds</label><button id="relay-save" type="button">Save routing</button></div>
+          </fieldset>
+          <div class="relay-output-volume"><label for="relay-output-volume">USB relay output volume</label><input id="relay-output-volume" type="range" min="0" max="100" step="1" value="20" aria-describedby="relay-output-volume-help"><output id="relay-output-volume-value" for="relay-output-volume">20%</output><p id="relay-output-volume-help">Controls only audio sent to the relay radio. Saved automatically and restored after reboot.</p></div>
+          <fieldset id="relay-manual-options-settings" class="relay-manual-options"><div class="relay-settings"><label>USB audio device<input id="relay-audio-device" value="plughw:CARD=A,DEV=0" placeholder="plughw:CARD=A,DEV=0"></label><label>Sample rate<select id="relay-audio-rate"><option value="8000">8 kHz · P25/voice</option><option value="16000">16 kHz</option></select></label><label>Segment limit<input id="relay-segment" value="20" type="number" readonly aria-label="Fixed relay segment limit in seconds"> seconds</label><button id="relay-save" type="button">Save routing</button></div></fieldset>
           <p id="relay-detail" class="range-sync-detail">Relay is stopped. PTT remains low until the relay is started.</p>
+        </article>
+      </section>
+
+      <section id="view-desktop" class="view">
+        <article class="panel settings-card desktop-mode-card">
+          <div class="settings-card-head"><div><h2>Linux desktop</h2><p>Open the full touchscreen desktop for SDR++, terminal tools, file management, and other traditional Linux apps.</p></div><span class="chip ready">XFCE</span></div>
+          <div class="range-sync-actions"><button id="open-desktop" class="primary" type="button">Open desktop</button></div>
+          <p class="range-sync-detail">GP-SDR and active receiver work keep running. Use the <strong>Return to GP-SDR</strong> icon on the desktop to come back to this touch console.</p>
         </article>
       </section>
 
@@ -604,6 +627,8 @@
           <header class="settings-section-title"><div><h2>Display</h2><p>Spectrum, waterfall, and rendering controls.</p></div></header>
           <article class="panel settings-card display-card"><h2>Display</h2><div class="display-settings">
 		    <label>Spectrum refresh<select id="display-fps" title="Refresh rate shared by Live, Tuner, Mapper, and RF Monitor spectrum/waterfall displays"><option value="1">1 Hz · lowest load</option><option value="2">2 Hz</option><option value="5">5 Hz</option><option value="8" selected>8 Hz</option><option value="12">12 Hz</option><option value="20">20 Hz</option><option value="30">30 Hz · smooth</option><option value="40">40 Hz · high load</option><option value="60">60 Hz · near real time</option></select><small>Applies to every spectrum and waterfall. Faster refresh increases browser and server load but does not change SDR sample rate.</small></label>
+		    <label class="check-line"><input id="display-audio-priority" type="checkbox" checked> Prioritize steady audio</label>
+		    <label>Graph refresh during audio<select id="display-audio-fps"><option value="1">1 Hz · lowest load</option><option value="2">2 Hz</option><option value="4" selected>4 Hz · balanced</option><option value="6">6 Hz</option><option value="8">8 Hz · higher load</option><option value="12">12 Hz · highest load</option></select><small>When enabled, live audio limits graph polling to this rate so canvas work yields CPU time to playback.</small></label>
 		    <label>Waterfall quality<select id="display-quality"><option value="0.75" selected>Efficient</option><option value="1">Standard</option><option value="1.5">High</option><option value="2">Maximum</option><option value="3">3× · performance</option></select></label>
 		    <label>Spectrum detail<select id="display-detail"><option value="256">Fast</option><option value="512" selected>Detailed</option><option value="1024">High</option><option value="2048">Very high</option><option value="4096">4096 bins · performance</option></select></label>
 		    <label>Trace smoothing<input id="display-smoothing" type="range" min="0" max="90" step="5" value="20"><output id="display-smoothing-value">20%</output></label>
@@ -614,7 +639,8 @@
 		    <button id="display-peak-reset" type="button">Reset peak hold</button>
 		  </div><p class="range-sync-detail">Changes apply immediately and are saved on this device.</p></article>
           <header class="settings-section-title"><div><h2>System</h2><p>Web access, application information, and storage limits.</p></div></header>
-          <article class="panel settings-card system-card"><h2>App &amp; web access</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl><p class="range-sync-detail">Core scanning and logs stay on this computer. The web app uses the private network link above.</p></article>
+          <article class="panel settings-card power-card"><div class="settings-card-head"><div><h2>System power</h2><p>Stop receivers and shut down cleanly before switching off the case battery.</p></div><span class="chip warning">Case control</span></div><div class="range-sync-actions"><button id="system-restart" type="button">Restart Pi</button><button id="system-shutdown" class="danger" type="button">Shut down Pi</button></div><p class="range-sync-detail">Shutdown safely stops GP-SDR and writes storage before power is removed. Restart returns to the touchscreen kiosk automatically.</p></article>
+		  <article class="panel settings-card system-card"><h2>App &amp; web access</h2><dl><dt>Address</dt><dd><a id="setting-address" href="#" target="_blank" rel="noreferrer">—</a></dd><dt>Access</dt><dd>LAN · token protected</dd><dt>Version</dt><dd id="setting-version">—</dd><dt>Architecture</dt><dd>Universal-ready</dd></dl><p class="range-sync-detail">Core scanning and logs stay on this computer. The web app uses the private network link above.</p></article>
 		  <article class="panel settings-card update-card"><div class="settings-card-head"><div><h2>Software update</h2><p>Install verified releases without replacing your data.</p></div><span id="app-update-state" class="chip">Not checked</span></div><div class="range-sync-actions"><button id="app-update-button" class="primary" type="button">Check for updates</button><a id="app-update-release" class="setup-link hidden" href="https://github.com/DragonKeeperAlex/GP-SDR/releases/latest" target="_blank" rel="noreferrer">View release ↗</a><label class="check-line"><input id="app-update-auto" type="checkbox" checked> Check when GP-SDR opens</label></div><p id="app-update-detail" class="range-sync-detail">The native Mac app can download, verify, install, and restart GP-SDR. Settings, Mapper results, recordings, and profiles stay in Application Support.</p><details id="app-update-notes" class="range-sync-format hidden"><summary>Release notes</summary><pre id="app-update-notes-body"></pre></details></article>
 		  <article class="panel settings-card expert-card"><div class="settings-card-head"><div><h2>Expert transmit mode</h2><p>Skip the repeated transmit acknowledgement on this Mac.</p></div><span id="expert-transmit-state" class="chip">Off</span></div><button id="expert-transmit-toggle" type="button">I know what I’m doing</button><p class="range-sync-detail">This convenience mode remembers your acknowledgement locally. It does not bypass local-only access, hardware/range validation, the emergency stop, firmware-health blocks, or the 60-second transmission ceiling.</p></article>
 		  <article class="panel settings-card storage-card"><h2>Storage</h2><dl><dt>Total used</dt><dd id="storage-total">—</dd><dt>Recordings</dt><dd id="storage-recordings">—</dd><dt>IQ evidence</dt><dd id="storage-iq">—</dd><dt>Journal + profiles</dt><dd id="storage-journal">—</dd><dt>Original IQ archive</dt><dd id="storage-iq-archive">—</dd><dt>IQ analyzing</dt><dd id="storage-iq-pending">—</dd><dt>IQ retained</dt><dd id="storage-iq-retained">—</dd><dt>IQ rejected</dt><dd id="storage-iq-quarantine">—</dd></dl><form id="storage-policy-form" class="display-settings"><label class="check-line"><input id="storage-auto-cleanup" type="checkbox"> Automatic cleanup</label><label class="check-line"><input id="storage-auto-remove-rejected" type="checkbox" checked> Remove rejected IQ</label><label>Rejected IQ recovery<select id="storage-rejected-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="48">2 days</option><option value="72">3 days</option><option value="168">7 days</option></select></label><label>Keep captures<select id="storage-max-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="0">No age limit</option></select></label><label>Recording cap · GB<input id="storage-recording-cap" type="number" min="0" max="2048" step="1" value="15" title="Zero disables this cap"></label><label>IQ cap · GB<input id="storage-iq-cap" type="number" min="0" max="2048" step="1" value="10" title="Zero disables this cap"></label><label>Capture journal cap · MB<input id="storage-capture-journal-cap" type="number" min="0" max="1024" step="1" value="128" title="Newest raw capture records are retained. Zero disables this cap."></label><button class="primary" type="submit">Save limits</button><button id="storage-clean-now" type="button">Clean eligible data</button></form><p id="storage-checked" class="range-sync-detail">Calculating local storage…</p><p class="range-sync-detail"><strong>Results are separate.</strong> Cleanup removes eligible IQ data, recordings, and excess capture-journal diagnostics; the journal keeps its newest complete records. Mapper results, event history, transcripts, decoded metadata, profiles, calibration, and channel data remain until you explicitly clear their corresponding data. Original archives and pending IQ retain their existing protection rules.</p></article>
@@ -731,6 +757,22 @@
       <footer><button value="cancel">Cancel</button><button class="primary" value="confirm">Add confirmed sample</button></footer>
     </form>
   </dialog>
+
+  <dialog id="login-dialog" class="confirm-dialog" aria-labelledby="login-dialog-title" aria-describedby="login-dialog-message">
+    <form id="login-form">
+      <header><div><h2 id="login-dialog-title">Sign in to GP-SDR</h2><p id="login-dialog-message">Enter the receiver password to continue.</p></div></header>
+      <div class="dialog-body display-settings">
+        <label id="login-password-field">Password<input id="login-password" type="password" autocomplete="current-password" minlength="12" required></label>
+        <p id="login-error" class="range-sync-detail" role="alert"></p>
+      </div>
+      <footer><button id="login-submit" class="primary" type="submit">Sign in</button></footer>
+    </form>
+  </dialog>
+
+  <section id="touch-keyboard" class="touch-keyboard hidden" aria-label="On-screen keyboard" aria-hidden="true">
+    <div class="touch-keyboard-head"><span id="touch-keyboard-label">Keyboard</span><button id="touch-keyboard-close" type="button" aria-label="Hide keyboard" title="Hide keyboard">Hide</button></div>
+    <div id="touch-keyboard-keys" class="touch-keyboard-keys"></div>
+  </section>
 
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js?v=1.5.0-rc34"></script>
