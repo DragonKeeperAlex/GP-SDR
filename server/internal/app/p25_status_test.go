@@ -9,6 +9,15 @@ import (
 	"testing"
 )
 
+func TestP25IdleStatusUsesDefaultOP25Engine(t *testing.T) {
+	t.Setenv("GPSDR_P25_ENGINE", "")
+	manager := &OP25Manager{}
+	status := manager.Status()
+	if status.Engine != "OP25" {
+		t.Fatalf("default idle P25 engine = %q, want OP25", status.Engine)
+	}
+}
+
 func TestOP25StatusReportsAppliedCaptureRate(t *testing.T) {
 	done := make(chan struct{})
 	manager := &OP25Manager{command: &exec.Cmd{Path: "op25"}, done: done, captureRateHz: 2_400_000}

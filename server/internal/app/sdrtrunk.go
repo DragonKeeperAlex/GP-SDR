@@ -390,6 +390,10 @@ func (m *OP25Manager) Status() P25Status {
 			return status
 		}
 	}
+	configured := strings.ToLower(strings.TrimSpace(os.Getenv("GPSDR_P25_ENGINE")))
+	if configured != "sdrtrunk" {
+		return m.op25Status()
+	}
 	if executable, err := findSDRTrunk(); err == nil {
 		return P25Status{State: "ready", Engine: "SDRTrunk", Executable: &executable, Note: "SDRTrunk P25 Phase 1/2 trunk following is ready."}
 	}

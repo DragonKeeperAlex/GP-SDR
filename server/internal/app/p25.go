@@ -476,7 +476,7 @@ func (m *OP25Manager) op25Status() P25Status {
 		}
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
-	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+	return P25Status{State: "setup", Engine: "OP25", Note: "The bundled P25 receiver is missing from this package."}
 }
 
 // p25FrontendState reports the values written to the live OP25 receiver
