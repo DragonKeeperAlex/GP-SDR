@@ -50,59 +50,6 @@ function renderTunerHistory(){const select=$('#tuner-history');if(!select)return
 function rememberTunerFrequency(request){const label=`${(request.frequencyHz/1e6).toFixed(6)} MHz · ${String(request.mode).toUpperCase()}`;tunerHistory=[{frequencyHz:request.frequencyHz,mode:request.mode,bandwidthHz:request.bandwidthHz,label},...tunerHistory.filter(item=>Math.abs(item.frequencyHz-request.frequencyHz)>1)].slice(0,12);localStorage.setItem('gpsdr-tuner-history',JSON.stringify(tunerHistory));renderTunerHistory();}
 const expandedMapperFrequencies = new Set();
 
-const touchKeyboard = (() => {
-  const root = $('#touch-keyboard');
-  const keys = $('#touch-keyboard-keys');
-  const label = $('#touch-keyboard-label');
-  if (!root || !keys || !label) return { bind() {} };
-  let target = null;
-  let closing = false;
-  const textKeys = ['q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m',' ','-','.',','];
-  const numberKeys = ['1','2','3','4','5','6','7','8','9','0','.','-'];
-  const isEligible = input => input instanceof HTMLInputElement && !input.disabled && !input.readOnly && !['hidden','checkbox','radio','range','file','color','date','time','datetime-local'].includes(input.type);
-  const render = input => {
-    const numeric = ['number','tel'].includes(input.type) || input.inputMode === 'numeric' || input.inputMode === 'decimal';
-    const list = numeric ? numberKeys : textKeys;
-    label.textContent = numeric ? 'Number keypad' : 'Keyboard';
-    keys.innerHTML = list.map(key => `<button type="button" data-key="${key === ' ' ? 'space' : escapeHTML(key)}" aria-label="${key === ' ' ? 'Space' : escapeHTML(key)}">${key === ' ' ? 'Space' : escapeHTML(key)}</button>`).join('') + '<button type="button" class="touch-keyboard-action" data-key="backspace" aria-label="Backspace">⌫</button><button type="button" class="touch-keyboard-action" data-key="enter">Done</button>';
-  };
-  const show = input => {
-    if (!isEligible(input)) return;
-    target = input;
-    closing = false;
-    render(input);
-    root.classList.remove('hidden');
-    root.setAttribute('aria-hidden', 'false');
-  };
-  const hide = () => {
-    target = null;
-    root.classList.add('hidden');
-    root.setAttribute('aria-hidden', 'true');
-  };
-  const write = key => {
-    if (!target || !document.contains(target)) return hide();
-    if (key === 'enter') { target.blur(); return hide(); }
-    const start = target.selectionStart ?? target.value.length;
-    const end = target.selectionEnd ?? start;
-    if (key === 'backspace') target.value = target.value.slice(0, Math.max(0, start - 1)) + target.value.slice(end);
-    else target.value = target.value.slice(0, start) + (key === 'space' ? ' ' : key) + target.value.slice(end);
-    const position = key === 'backspace' ? Math.max(0, start - 1) : start + (key === 'space' ? 1 : key.length);
-    try { target.setSelectionRange(position, position); } catch (_) {}
-    target.dispatchEvent(new Event('input', {bubbles:true}));
-    target.dispatchEvent(new Event('change', {bubbles:true}));
-  };
-  keys.addEventListener('pointerdown', event => event.preventDefault());
-  keys.addEventListener('click', event => { const button = event.target.closest('button[data-key]'); if (button) write(button.dataset.key); });
-  $('#touch-keyboard-close')?.addEventListener('click', hide);
-  document.addEventListener('focusin', event => show(event.target));
-  document.addEventListener('focusout', event => {
-    if (!target || event.target !== target || closing) return;
-    closing = true;
-    setTimeout(() => { closing = false; if (document.activeElement !== target) hide(); }, 0);
-  });
-  return { bind() {} };
-})();
-
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (serverToken) headers['X-GP-SDR-Token'] = serverToken;

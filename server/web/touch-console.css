@@ -75,13 +75,3 @@
 .tuner-mode-note { margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--warning,#e2aa43); color:var(--muted); background:rgba(226,170,67,.08); }
 .mapper-assignment-preview { display:grid; gap:4px; margin:0 0 10px; padding:10px; border:1px solid var(--line-soft); border-radius:10px; background:rgba(73,213,170,.06); color:var(--muted); font-size:.86rem; }
 .mapper-assignment-preview strong { color:var(--text); }
-
-/* The touchscreen keyboard is only revealed while an editable field is focused. */
-.touch-keyboard { position:fixed; z-index:1000; right:12px; bottom:12px; width:min(680px,calc(100vw - 24px)); padding:10px; border:1px solid var(--line-soft); border-radius:12px; background:#10161d; box-shadow:0 16px 38px rgba(0,0,0,.55); }
-.touch-keyboard.hidden { display:none; }
-.touch-keyboard-head { display:flex; justify-content:space-between; align-items:center; margin:0 0 8px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
-.touch-keyboard-head button { min-height:32px; padding:4px 10px; }
-.touch-keyboard-keys { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:6px; }
-.touch-keyboard-keys button { min-height:44px; padding:6px; font:600 16px/1 system-ui,sans-serif; }
-.touch-keyboard-keys .touch-keyboard-action { grid-column:span 2; }
-@media (max-width:700px) { .touch-keyboard { right:6px; bottom:6px; width:calc(100vw - 12px); padding:7px; } .touch-keyboard-keys { gap:4px; } .touch-keyboard-keys button { min-height:40px; font-size:14px; } }

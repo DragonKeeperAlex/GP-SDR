@@ -744,34 +744,3 @@ func TestUnifiedInterfaceKeepsControlsVisibleAndAutoContextual(t *testing.T) {
 		}
 	}
 }
-
-func TestTouchKeyboardOnlyAppearsForEditableInputs(t *testing.T) {
-	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cssData, err := os.ReadFile(filepath.Join("..", "..", "web", "touch-console.css"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	index, app, css := string(indexData), string(appData), string(cssData)
-	for _, required := range []string{`id="touch-keyboard" class="touch-keyboard hidden"`, `id="touch-keyboard-keys"`, `id="touch-keyboard-close"`} {
-		if !strings.Contains(index, required) {
-			t.Fatalf("touch keyboard markup %q is missing", required)
-		}
-	}
-	for _, required := range []string{"document.addEventListener('focusin'", "isEligible", "!['hidden','checkbox','radio','range','file','color','date','time','datetime-local'].includes(input.type)", "target.blur(); return hide()"} {
-		if !strings.Contains(app, required) {
-			t.Fatalf("touch keyboard behavior %q is missing", required)
-		}
-	}
-	for _, required := range []string{".touch-keyboard.hidden { display:none; }", ".touch-keyboard { position:fixed;"} {
-		if !strings.Contains(css, required) {
-			t.Fatalf("touch keyboard presentation %q is missing", required)
-		}
-	}
-}

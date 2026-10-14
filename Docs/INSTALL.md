@@ -222,7 +222,9 @@ token for recovery and automation. Generate a password hash by sending the
 password over standard input (it is never placed in a command argument):
 
 ```bash
-printf '%s' 'choose-a-long-unique-password' | ./gp-sdr -password-hash-stdin
+read -rsp 'GP-SDR browser password: ' GPSDR_NEW_PASSWORD; echo
+printf '%s' "$GPSDR_NEW_PASSWORD" | ./gp-sdr -password-hash-stdin
+unset GPSDR_NEW_PASSWORD
 ```
 
 Set the resulting value as `GPSDR_WEB_PASSWORD_HASH` in the service
@@ -230,6 +232,25 @@ environment file, then restart GP-SDR. Password sessions are HTTPS-only and
 expire after 12 hours. If TLS is terminated by a reverse proxy that you
 administer, set `GPSDR_TRUST_PROXY_HEADERS=1` only when that proxy reliably
 sets `X-Forwarded-Proto: https`; otherwise leave it unset.
+
+## Touchscreen keyboard on the Pi
+
+The touchscreen uses the Pi's Wayland keyboard, not a keyboard built into
+GP-SDR. Use the Wayfire display session, which supports the keyboard overlay;
+`squeekboard` opens automatically when Chromium focuses a text field:
+
+```bash
+sudo apt-get install squeekboard
+sudo install -D -m 0644 Scripts/pi/gp-sdr-wayfire.ini /home/sdr/.config/wayfire.ini
+sudo chown sdr:sdr /home/sdr/.config/wayfire.ini
+sudo install -D -m 0755 Scripts/pi/gp-sdr-kiosk.sh /usr/local/bin/gp-sdr-kiosk
+sudo install -D -m 0755 Scripts/pi/gp-sdr-start-wayfire /usr/local/lib/gp-sdr/start-wayfire
+sudo install -D -m 0755 Scripts/pi/gp-sdr-display-session /usr/local/lib/gp-sdr/display-session
+sudo install -D -m 0644 Scripts/pi/gp-sdr-desktop.service /etc/systemd/system/gp-sdr-desktop.service
+sudo systemctl daemon-reload
+sudo systemctl disable --now gp-sdr-kiosk
+sudo systemctl enable --now gp-sdr-desktop
+```
 
 ## Verify a download
 

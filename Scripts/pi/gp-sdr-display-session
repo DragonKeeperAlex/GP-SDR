@@ -1,0 +1,14 @@
+#!/bin/sh
+# Root-owned mode switch for the touchscreen only. GP-SDR continues running.
+set -eu
+case "${1:-}" in
+  desktop)
+    /usr/bin/systemctl stop gp-sdr-kiosk.service || true
+    exec /usr/bin/systemctl start gp-sdr-desktop.service
+    ;;
+  kiosk)
+    /usr/bin/systemctl stop gp-sdr-desktop.service || true
+    exec /usr/bin/systemctl start gp-sdr-kiosk.service
+    ;;
+  *) exit 64 ;;
+esac
