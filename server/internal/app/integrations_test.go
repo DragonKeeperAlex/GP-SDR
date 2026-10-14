@@ -102,6 +102,41 @@ func TestOP25HonorsPerSystemReceiverTarget(t *testing.T) {
 	}
 }
 
+func TestOP25UsesEverySelectedReceiverAsAnIndependentCallPath(t *testing.T) {
+	profile := ScanProfile{P25Systems: []P25SystemConfig{
+		{ID: "east", Name: "East", Enabled: true, ControlChannelsHz: []float64{774456250}},
+		{ID: "west", Name: "West", Enabled: true, ControlChannelsHz: []float64{773906250}},
+	}}
+	ids := []string{"hackrf", "rtl", "pluto"}
+	targets := []string{"east", "west", "east"}
+	devices := []SDRDevice{
+		{ID: ids[0], Kind: "HackRF"},
+		{ID: ids[1], Kind: "RTL-SDR"},
+		{ID: ids[2], Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr"},
+	}
+	plan := make([]ReceiverPlanItem, len(ids))
+	for index := range ids {
+		plan[index] = ReceiverPlanItem{DeviceID: &ids[index], Target: &targets[index]}
+	}
+	data, err := buildOP25ConfigurationWithPlan(profile, devices, plan, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config op25Configuration
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Devices) != 3 || len(config.Channels) != 3 || len(config.Audio.Instances) != 3 {
+		t.Fatalf("selected receiver plan did not create three call paths: %#v", config)
+	}
+	for index, channel := range config.Channels {
+		want := []string{"East", "West", "East"}[index]
+		if channel.TrunkingSystem != want {
+			t.Fatalf("call path %d routes to %q; want %q", index, channel.TrunkingSystem, want)
+		}
+	}
+}
+
 func TestOP25HackRFUsesOffsetCalibrationAndGainOverrides(t *testing.T) {
 	lna, vga := 32, 24
 	profile := ScanProfile{P25Systems: []P25SystemConfig{{ID: "site", Name: "Site", Enabled: true, ControlChannelsHz: []float64{774456250}}}}

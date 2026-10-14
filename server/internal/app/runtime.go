@@ -787,6 +787,12 @@ func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiv
 	if len(assignments) == 0 {
 		assignments = []DeviceAssignment{{ID: NewID(), Role: "channelBank"}}
 	}
+	if len(enabledP25Systems(profile)) > 0 {
+		// A P25 trunk follower can use one receiver for control and voice traffic.
+		// Selecting one radio must therefore create one receiver reservation, not
+		// pin each logical profile role to the same physical device.
+		assignments = []DeviceAssignment{{ID: NewID(), Role: "control", Target: ptr("P25 control")}}
+	}
 	for index := range assignments {
 		selected := deviceID
 		assignments[index].DeviceID = &selected

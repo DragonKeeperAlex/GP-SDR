@@ -51,3 +51,30 @@ func TestStartOnDeviceUsesRuntimeOnlyOpenMonitor(t *testing.T) {
 		t.Fatal("band start persisted the runtime-only monitor flag")
 	}
 }
+
+func TestStartOnDevicePinsOneReceiverForP25(t *testing.T) {
+	runtime, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Stop()
+	var profile ScanProfile
+	for _, candidate := range runtime.Profiles.All() {
+		if candidate.Name == "San Ramon · EBRCS P25" {
+			profile = candidate
+			break
+		}
+	}
+	if profile.ID == "" {
+		t.Fatal("built-in EBRCS profile missing")
+	}
+	if err := runtime.StartOnDevice(profile.ID, "demo-hackrf", nil); err != nil {
+		t.Fatalf("selected single-receiver P25 start failed: %v", err)
+	}
+	runtime.mu.RLock()
+	plan := append([]ReceiverPlanItem(nil), runtime.plan...)
+	runtime.mu.RUnlock()
+	if len(plan) != 1 || plan[0].Role != "control" || plan[0].DeviceID == nil || *plan[0].DeviceID != "demo-hackrf" {
+		t.Fatalf("P25 selection did not reserve one control receiver: %#v", plan)
+	}
+}

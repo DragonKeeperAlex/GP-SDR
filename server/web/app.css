@@ -393,6 +393,12 @@ dt, dd { min-width:0; padding: 7px 0; border-bottom: 1px solid var(--line-soft);
 .decoder-profile small, .decoder-event-list small { max-width: 260px; margin-top: 3px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
 .decoder-profile b, .decoder-event-list b { color: var(--muted); font-size: 9px; font-weight: 550; }
 .decoder-event-list > div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 13px; border-bottom: 1px solid var(--line-soft); }
+.p25-receiver-plan { margin:0; padding:8px 12px 10px; border:0; border-bottom:1px solid var(--line-soft); }
+.p25-receiver-plan legend { padding:0; color:var(--text); font-size:12px; font-weight:600; }
+.p25-receiver-plan legend small, .p25-toolbar label small { color:var(--dim); font-size:10px; font-weight:400; }
+.p25-receiver-plan > div { display:flex; flex-wrap:wrap; gap:6px 14px; margin:6px 0; }
+.p25-receiver-plan .check-line { min-height:40px; padding:3px 8px; border:1px solid var(--line-soft); border-radius:6px; background:var(--panel-raised); }
+.p25-receiver-plan > small { display:block; color:var(--dim); font-size:10px; }
 .p25-overview { overflow: hidden; }
 .p25-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(132px,1fr)); border-bottom: 1px solid var(--line-soft); }
 .p25-metrics > div { padding: 12px 14px; border-right: 1px solid var(--line-soft); }
