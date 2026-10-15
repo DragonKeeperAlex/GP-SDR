@@ -1045,7 +1045,7 @@ function renderDecoders() {
   if (!nav || !detail) return;
   // Preserve an open menu or focused control across polling updates.
   if (detail.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
-  if (!state.decoders.some(item => item.id === state.selectedDecoderID)) state.selectedDecoderID = state.decoders[0]?.id || 'analog';
+  if (state.decoders.length && !state.decoders.some(item => item.id === state.selectedDecoderID)) state.selectedDecoderID = state.decoders[0].id;
   nav.innerHTML = state.decoders.map(decoder => `<button class="decoder-nav-item ${decoder.id === state.selectedDecoderID ? 'active' : ''}" data-decoder-id="${escapeHTML(decoder.id)}" aria-pressed="${decoder.id === state.selectedDecoderID}">
     <i class="${escapeHTML(decoder.state)}"></i><span><strong>${escapeHTML(decoder.name)}</strong><small>${escapeHTML(decoder.standards.slice(0,2).join(' · '))}</small></span></button>`).join('');
   const decoder = state.decoders.find(item => item.id === state.selectedDecoderID);
@@ -1077,7 +1077,7 @@ function renderP25DecoderWorkspace() {
 	const activeP25DeviceID=activeP25DeviceIDs[0]||'';
 	const displayedP25DeviceID=activeP25DeviceID||state.p25DeviceID;
 	const p25Receiver=state.devices.find(item=>item.id===displayedP25DeviceID);
-  const multiReceiverMode=state.p25DeviceID==='__multi__';
+  const multiReceiverMode=state.p25DeviceID==='__multi__'||activeP25DeviceIDs.length>1;
   const availableP25Receivers=state.devices.filter(item=>item.connected&&item.available);
   const receiverPlanLabel=activeP25DeviceIDs.length ? `${activeP25DeviceIDs.length} assigned receiver${activeP25DeviceIDs.length===1?'':'s'}` : multiReceiverMode ? `${state.p25ReceiverIDs.length} selected receiver${state.p25ReceiverIDs.length===1?'':'s'}` : state.p25DeviceID ? '1 selected receiver' : 'Use profile assignments';
   const multiReceiverChoices=multiReceiverMode&&!p25Running ? `<fieldset class="p25-receiver-plan"><legend>Receiver plan <small>${escapeHTML(receiverPlanLabel)}</small></legend><div>${availableP25Receivers.map(item=>`<label class="check-line"><input class="p25-receiver-plan-choice" type="checkbox" value="${escapeHTML(item.id)}" ${state.p25ReceiverIDs.includes(item.id)?'checked':''}>${escapeHTML(receiverLabel(item))}</label>`).join('')}</div><label class="p25-control-preference">Preferred control receiver<select id="p25-control-receiver"><option value="">Automatic</option>${availableP25Receivers.filter(item=>state.p25ReceiverIDs.includes(item.id)).map(item=>`<option value="${escapeHTML(item.id)}" ${state.p25ControlDeviceID===item.id?'selected':''}>${escapeHTML(receiverLabel(item))}</option>`).join('')}</select></label><small>OP25 assigns control and voice roles to selected receivers. Receiver count does not guarantee simultaneous call capacity.</small></fieldset>` : '';
