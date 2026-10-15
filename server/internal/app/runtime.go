@@ -1449,10 +1449,21 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 	ticker := time.NewTicker(750 * time.Millisecond)
 	defer ticker.Stop()
 	previous := make(map[string]P25ActiveCall)
+	var frames <-chan AudioFrame
+	unsubscribe := func() {}
+	if r.audioHub != nil {
+		frames, unsubscribe = r.audioHub.Subscribe()
+	}
+	defer unsubscribe()
+	archives := make(map[string]*p25CallArchive)
 	for {
 		select {
 		case <-stop:
 			return
+		case frame := <-frames:
+			for _, archive := range archives {
+				archive.Append(frame)
+			}
 		case <-ticker.C:
 			if status := r.P25Status(); status.State == "error" {
 				note := status.Note
@@ -1473,6 +1484,9 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 			for _, call := range calls {
 				key := p25CallKey(call)
 				current[key] = call
+				if _, active := previous[key]; !active && !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls {
+					archives[key] = newP25CallArchive(call.StreamIndex)
+				}
 			}
 			for key, call := range previous {
 				if _, active := current[key]; active {
@@ -1506,7 +1520,15 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 					Analysis: &SignalIntelligence{Engine: decoderEngine + " frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
 						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: decoderEngine + " reported a " + protocol + " voice call."}}
 				_ = r.Events.Append(event)
-				if !call.Grant.Encrypted {
+				if archive := archives[key]; archive != nil {
+					delete(archives, key)
+					if path, err := archive.Save(r.dataDirectory, call.Grant.GroupID, call.StartedAt); err == nil {
+						_ = r.Events.UpdateAudioPath(event.ID, path)
+						if profile.Settings.TranscribeVoice {
+							go r.transcribeEvent(stop, event.ID, float64(call.Grant.FrequencyHz), path)
+						}
+					}
+				} else if !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls {
 					go r.attachP25Recording(stop, profile, call, event.ID)
 				}
 			}

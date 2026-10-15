@@ -58,7 +58,7 @@ func mergeOP25Calls(previous map[int]P25ActiveCall, updates []map[string]json.Ra
 				delete(result, index)
 				continue
 			}
-			call := P25ActiveCall{Grant: p25GrantState{System: channel.System, Protocol: "P25 Phase 1", GroupID: *channel.Group, SourceID: channel.Source, FrequencyHz: uint32(channel.Frequency), Emergency: channel.Emergency != 0}, StartedAt: now, LastHeardAt: now, Following: true}
+			call := P25ActiveCall{StreamIndex: index, Grant: p25GrantState{System: channel.System, Protocol: "P25 Phase 1", GroupID: *channel.Group, SourceID: channel.Source, FrequencyHz: uint32(channel.Frequency), Emergency: channel.Emergency != 0}, StartedAt: now, LastHeardAt: now, Following: true}
 			if channel.Slot != nil {
 				call.Grant.Protocol = "P25 Phase 2"
 			}

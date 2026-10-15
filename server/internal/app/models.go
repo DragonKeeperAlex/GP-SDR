@@ -133,6 +133,10 @@ type SurveySettings struct {
 	RecordAudio        bool    `json:"recordAudio"`
 	RecordIQForUnknown bool    `json:"recordIQForUnknown"`
 	TranscribeVoice    bool    `json:"transcribeVoice"`
+	// P25ArchiveCalls enables local WAV capture for unencrypted P25 calls.
+	// It stays separate from general survey recording so P25 storage is opt-in.
+	P25ArchiveCalls    bool    `json:"p25ArchiveCalls,omitempty"`
+	P25SilentMode      bool    `json:"p25SilentMode,omitempty"`
 	MaxRecordingDays   int     `json:"maxRecordingDays"`
 	P25SampleRateHz    int     `json:"p25SampleRateHz,omitempty"`
 	P25AmpMode         string  `json:"p25AmpMode,omitempty"`

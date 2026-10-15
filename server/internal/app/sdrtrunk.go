@@ -47,6 +47,8 @@ type p25GrantState struct {
 }
 
 type P25ActiveCall struct {
+	// StreamIndex maps OP25's channel_update key to p25-stream-N audio.
+	StreamIndex  int                `json:"-"`
 	Grant        p25GrantState      `json:"grant"`
 	Talkgroup    *P25TalkgroupState `json:"talkgroup,omitempty"`
 	DeviceSerial string             `json:"device_serial"`
