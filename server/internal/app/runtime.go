@@ -1460,7 +1460,11 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 		select {
 		case <-stop:
 			return
-		case frame := <-frames:
+		case frame, ok := <-frames:
+			if !ok {
+				frames = nil
+				continue
+			}
 			for _, archive := range archives {
 				archive.Append(frame)
 			}
