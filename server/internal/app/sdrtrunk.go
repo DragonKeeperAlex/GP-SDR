@@ -768,7 +768,7 @@ func rtlSDRSampleRateName(rate int) (string, bool) {
 }
 
 func isHackRFSampleRate(rate int) bool {
-	return rate == 5_000_000 || rate == 8_000_000 || rate == 10_000_000 || rate == 20_000_000
+	return rate == 8_000_000 || rate == 10_000_000 || rate == 20_000_000
 }
 
 func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, conservative bool) int {
@@ -776,14 +776,13 @@ func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, 
 	hasRTL := p25AssignmentsContainKind(assigned, "RTL-SDR")
 	if hasHackRF && !hasRTL {
 		if conservative {
-			return 5_000_000
+			return minimumHackRFSampleRate
 		}
 		if isHackRFSampleRate(profile.Settings.P25SampleRateHz) {
 			return profile.Settings.P25SampleRateHz
 		}
-		// Match OP25's safe automatic HackRF rate. Explicit 8/10/20 MS/s
-		// selections remain valid for users with a tested USB/RF path.
-		return 5_000_000
+		// Match OP25 while retaining the HackRF 8 MS/s operating floor.
+		return minimumHackRFSampleRate
 	}
 	if hasRTL && !hasHackRF {
 		if _, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
@@ -796,8 +795,6 @@ func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, 
 
 func hackRFSampleRateName(rate int) string {
 	switch rate {
-	case 5_000_000:
-		return "RATE_5_0"
 	case 8_000_000:
 		return "RATE_8_0"
 	case 20_000_000:

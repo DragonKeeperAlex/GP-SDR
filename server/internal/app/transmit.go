@@ -179,6 +179,9 @@ func (r *Runtime) Transmit(request TransmitRequest) (TransmitStatus, error) {
 	// Generate a bounded IQ file before starting hardware. The dry-run path is
 	// useful for validating modulation and file size without RF output.
 	transmitRate := 2_000_000
+	if strings.EqualFold(device.Kind, "HackRF") {
+		transmitRate = minimumHackRFSampleRate
+	}
 	samples := int(math.Round(request.DurationSecond * float64(transmitRate)))
 	if samples < 1 {
 		samples = transmitRate
@@ -245,7 +248,7 @@ func (r *Runtime) runTransmit(ctx context.Context, request TransmitRequest, devi
 			if err != nil {
 				runErr = errors.New("hackrf_transfer is not installed")
 			} else {
-				args := []string{"-t", iqPath, "-f", strconv.FormatInt(int64(request.FrequencyHz), 10), "-s", "2000000", "-x", strconv.Itoa(request.TXGainDB)}
+				args := []string{"-t", iqPath, "-f", strconv.FormatInt(int64(request.FrequencyHz), 10), "-s", strconv.Itoa(minimumHackRFSampleRate), "-x", strconv.Itoa(request.TXGainDB)}
 				if device.Serial != nil && *device.Serial != "" {
 					args = append(args, "-d", *device.Serial)
 				}

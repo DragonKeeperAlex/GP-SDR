@@ -2,7 +2,8 @@
 
 Priority reset requested October 15, 2026. This is the next development priority,
 ahead of further P25 patches and unrelated feature expansion. Status: milestone
-1 in progress; the session evidence contract is implemented. The full replacement
+1 in progress; input transport is verified on all three radios and milestone 3
+interface work has started. The full replacement
 and independent three-radio RF acceptance are not complete.
 
 Rebuild GP-SDR's P25 session management, receiver coordination, status, audio
@@ -108,7 +109,12 @@ passes short end-to-end checks. Keep long soak and listening gates explicit.
 
 ## Execution rules
 
-Implement in milestone order. Complete reversible development, short meaningful
+October 15 user adjustment: first confirm changing RF reaches the decoder from
+each receiver, then advance milestone 3. Defer independent P25 reception tests
+until the large antenna can be used on HackRF and RTL; only Pluto currently has
+the large antenna. This does not waive those reception/call acceptance gates.
+
+Complete reversible development, short meaningful
 tests and documentation before reporting a milestone complete; identify any
 remaining live RF or user-dependent gate explicitly. Preserve existing work and
 data. Maintain RF-01 through RF-09 and UI-01 through UI-04 in the master backlog;
@@ -172,3 +178,60 @@ this plan changes priority, not historical acceptance evidence.
 Milestone 1 remains open for independent RTL/HackRF control and voice, receiver
 capability/setup work, replayable RF vectors, and full lifecycle/error acceptance.
 Milestones 2–4 are not marked complete by this foundation work.
+
+## October 15 input-path gate and field interface increment
+
+- Receive-only inline probes in the installed OP25 flowgraph checked 8,192
+  finite, changing IQ samples per device and counted symbols forwarded directly
+  into its real frame assembler. Each receiver ran independently for two 2-second
+  observation windows using the saved Central site's device settings. In the
+  second window: Pluto advanced 4,784,128 IQ samples and 9,599 decoder symbols;
+  HackRF a447 advanced 9,612,538 and 9,244; RTL advanced 4,761,514 and 9,609.
+  Hardware rates reported 2,399,998 / 5,000,000 / 2,400,000 samples/s respectively.
+  All three passed this input-path gate; this is not a valid-frame or voice claim.
+- A combined flowgraph also delivered changing IQ from all three devices.
+  Unassigned voice receivers intentionally produced no decoder symbols while
+  idle; independent runs activated each receiver's demodulator before requiring
+  advancing assembler input. Do not interpret scheduler idleness as failed RF.
+- `Scripts/pi/p25_decoder_input_check.py` is a bounded diagnostic, not persistent
+  instrumentation. It preserves source configuration, rejects c5cb, keeps only
+  a small sample in RAM, forwards the original stream, and creates no IQ/audio
+  files. Stop P25 before using it; pass the exact installed runtime config and
+  one device name. Private results/logs remain on the Pi, outside Git.
+- Field console now separates Operate, Setup, Diagnostics and Recordings.
+  Operation keeps system selection, start/stop, browser listen/mute, startup
+  silence, reception, receiver count, call assignments and archive summary.
+  Setup holds receiver planning, capture/gain controls, recording preferences,
+  saved control candidates with honest source labels, and the system editor.
+  Diagnostics retains per-radio settings and adds last decoded-control age.
+- Recordings shows recent loaded, unencrypted P25 audio with system, talkgroup,
+  date/time, duration, receiver and transcript; search and playback reuse the
+  existing archive paths. It is limited to the loaded activity history, with an
+  explicit full-history entry. Full archive pagination, persistent transcript
+  queue status/retry and guaranteed concurrent-call identity remain open.
+- One responsive interface, minimum 44px action targets, larger checkboxes,
+  wrapping tools and no built-in keyboard. Panel switches preserve form nodes;
+  focused form controls remain protected from polling replacement.
+
+### HackRF operating minimum and verification
+
+- User requirement: HackRF operates at a minimum of 8 MS/s throughout GP-SDR.
+  OP25 and SDRTrunk automatic/fallback P25 rates are now 8 MS/s; 5 MS/s is no
+  longer offered for HackRF. Tuner, survey, Mapper, wideband, calibration and
+  comparison, spectrum analyzer and FPV paths honor the floor for native and Soapy devices. The capture
+  boundary rejects lower native/Soapy requests. HackRF transmit fixture/sample
+  generation and native output also use 8 MS/s; no RF transmission was performed.
+- A repeated isolated HackRF a447 input check at an actual 8,000,000 samples/s
+  passed: 8,192 finite changing IQ samples, 15,955,296 additional IQ samples and
+  9,599 symbols forwarded into the real OP25 assembler over two seconds. This
+  supersedes 5 MS/s as the operating test configuration, not its historical data.
+- Firefox desktop and 1280×800 responsive checks exercised panels, profile
+  selection, recording draft retention, system editor entry, search/no-match,
+  muted saved-audio playback and full-history navigation. Start/Stop/restart
+  returned the saved three-radio session; browser listen/mute was exercised
+  with master output muted. Physical touch and subjective audio remain open.
+- Targeted P25/web/rate checks and ARM64 build passed; no raw test samples, call
+  recordings, transcripts or credentials are included in the Git increment.
+
+The full Go suite passed after updating the simulated analog fixture to use
+the same 8 MS/s HackRF input as the runtime; the ARM64 build also passed.

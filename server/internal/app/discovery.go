@@ -69,6 +69,7 @@ var discoverPhysicalDevices = func() []SDRDevice {
 func applyNominalFrequencyRange(device *SDRDevice) {
 	switch device.Kind {
 	case "HackRF":
+		device.SampleRateMinimumHz = max(device.SampleRateMinimumHz, minimumHackRFSampleRate)
 		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e6, 6e9
 		device.FrequencyRangeNote = "Nominal HackRF One tuning range"
 	case "RTL-SDR", "RTL-TCP":

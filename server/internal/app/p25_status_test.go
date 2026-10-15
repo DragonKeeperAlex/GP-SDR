@@ -29,8 +29,8 @@ func TestOP25StatusReportsAppliedCaptureRate(t *testing.T) {
 
 func TestEffectiveOP25DeviceRateDoesNotReuseIncompatibleSharedProfileRate(t *testing.T) {
 	profile := ScanProfile{Settings: SurveySettings{P25SampleRateHz: 2_400_000}}
-	if got := effectiveOP25DeviceRate(profile, SDRDevice{Kind: "HackRF"}); got != 5_000_000 {
-		t.Fatalf("HackRF shared 2.4 MS/s profile rate = %d, want 5000000", got)
+	if got := effectiveOP25DeviceRate(profile, SDRDevice{Kind: "HackRF"}); got != 8_000_000 {
+		t.Fatalf("HackRF shared 2.4 MS/s profile rate = %d, want 8000000", got)
 	}
 	if got := effectiveOP25DeviceRate(profile, SDRDevice{Kind: "RTL-SDR"}); got != 2_400_000 {
 		t.Fatalf("RTL-SDR shared profile rate = %d, want 2400000", got)

@@ -30,7 +30,7 @@ func TestConnectedReceiverCapture(t *testing.T) {
 	}
 	rates := []int{2_400_000}
 	if kind == "HackRF" {
-		rates = []int{5_000_000, 10_000_000, 20_000_000}
+		rates = []int{8_000_000, 10_000_000, 20_000_000}
 	}
 	for _, rate := range rates {
 		for _, frequency := range []int64{100_100_000, 462_600_000, 772_768_750} {

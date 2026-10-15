@@ -83,9 +83,9 @@ func TestWidebandSpecHonorsExplicitSafeHackRFRate(t *testing.T) {
 	profile := ScanProfile{Channels: []ChannelDefinition{
 		{ID: "a", FrequencyHz: 98_100_000, BandwidthHz: 180_000, Mode: "wfm", Enabled: true},
 		{ID: "b", FrequencyHz: 98_300_000, BandwidthHz: 180_000, Mode: "wfm", Enabled: true},
-	}, Settings: SurveySettings{SampleRateHz: 5_000_000}}
+	}, Settings: SurveySettings{SampleRateHz: 8_000_000}}
 	spec, _, ok := widebandSpec(profile, SDRDevice{Kind: "HackRF", SampleRateLimit: &limit})
-	if !ok || spec.SampleRateHz != 5_000_000 {
-		t.Fatalf("explicit safe HackRF band-monitor rate = %+v, ok=%v; want 5 MS/s", spec, ok)
+	if !ok || spec.SampleRateHz != 8_000_000 {
+		t.Fatalf("explicit safe HackRF band-monitor rate = %+v, ok=%v; want 8 MS/s", spec, ok)
 	}
 }

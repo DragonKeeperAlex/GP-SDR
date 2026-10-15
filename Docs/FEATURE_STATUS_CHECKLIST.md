@@ -473,3 +473,15 @@ Fixed in this work tranche (bounded software scope only):
 - 2026-09-19 decoder inventory: all advertised Pi decoder components currently
   report ready alongside the three connected receivers. Real over-air frame
   acceptance is still required for every non-analog protocol.
+
+- 2026-10-15 P25 input/UI increment: Pluto, HackRF a447 and RTL independently
+  passed changing-IQ and advancing real OP25 assembler-input checks (2+2 seconds
+  each). This accepts input transport only. Per user, defer final RTL/HackRF
+  P25 reception until the large antenna is available. Started milestone 3 with
+  Operate/Setup/Diagnostics/Recordings, browser audio toggle, recent-call search
+  and 44px actions. RF-01/02/04/05/06 and overall UI-01/02 remain open. See
+  `P25_REBUILD_PLAN.md` for measurements and remaining acceptance.
+- 2026-10-15 user rate requirement: HackRF minimum 8 MS/s, including P25
+  defaults/fallbacks and native/Soapy capture validation. Repeated a447 input
+  check at 8 MS/s passed (15,955,296 IQ samples and 9,599 decoder symbols advanced
+  in two seconds). Other receiver rates remain independent.

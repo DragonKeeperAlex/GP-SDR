@@ -83,7 +83,7 @@ func defaultChannelDwell(decoder *string) time.Duration {
 }
 
 func liveSampleRate(device SDRDevice, target surveyTarget) int {
-	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
+	if device.Kind == "HackRF" {
 		// Keep useful guard room for multiple software VFOs and DC-spike avoidance.
 		// Ten MS/s remains substantially lighter than forcing the 20 MS/s ceiling
 		// during every always-on scan.
@@ -131,6 +131,12 @@ func supportedUserSampleRate(rate int) bool {
 }
 
 func compatibleUserSampleRate(device SDRDevice, requested, automatic int) int {
+	if device.Kind == "HackRF" {
+		automatic = max(automatic, minimumHackRFSampleRate)
+		if requested > 0 && requested < minimumHackRFSampleRate {
+			return minimumHackRFSampleRate
+		}
+	}
 	if requested == 0 {
 		return automatic
 	}
@@ -141,7 +147,7 @@ func compatibleUserSampleRate(device SDRDevice, requested, automatic int) int {
 	if device.SampleRateLimit != nil {
 		maximum = int(math.Min(float64(maximum), *device.SampleRateLimit))
 	}
-	if requested > maximum || (device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") && requested < 2_000_000) {
+	if requested > maximum || (device.Kind == "HackRF" && requested < minimumHackRFSampleRate) {
 		return automatic
 	}
 	return requested
@@ -1426,12 +1432,9 @@ func widebandSpec(profile ScanProfile, device SDRDevice) (CaptureSpec, []Channel
 	rates := selectableCaptureRates()
 	minimumRate, maximumRate := 225_000, maximumCaptureRate(device)
 	preferredMinimumRate := minimumRate
-	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
-		// Keep a generous capture width for automatic channel-bank monitoring,
-		// but do not silently reject a valid user-selected lower HackRF rate.
-		// P25 and narrow two-channel monitor cases benefit from 5 MS/s when the
-		// bank fits, and the Hardware page must reflect the applied choice.
-		minimumRate = 2_000_000
+	if device.Kind == "HackRF" {
+		// Automatic plans retain headroom; explicit rates must stay at least 8 MS/s.
+		minimumRate = minimumHackRFSampleRate
 		preferredMinimumRate = 10_000_000
 	}
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") {
@@ -1613,8 +1616,8 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		rate = liveSampleRate(device, surveyTarget{Mode: request.Mode})
 		rate = automaticTunerSampleRate(device, request, rate)
 	}
-	if device.Kind == "HackRF" && !strings.HasPrefix(device.Driver, "SoapySDR:") && rate < 2_000_000 {
-		rate = 2_000_000
+	if device.Kind == "HackRF" && rate < minimumHackRFSampleRate {
+		rate = minimumHackRFSampleRate
 	}
 	if device.Kind == "RTL-SDR" && !strings.HasPrefix(device.Driver, "SoapySDR:") && (rate < 225_000 || rate > 3_200_000) {
 		rate = 1_000_000

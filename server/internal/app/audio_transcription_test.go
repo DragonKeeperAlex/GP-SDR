@@ -50,7 +50,7 @@ func TestTunerPublishesAnalogAudio(t *testing.T) {
 	}
 	directory := t.TempDir()
 	iqPath := filepath.Join(directory, "iq.raw")
-	if err := os.WriteFile(iqPath, syntheticFM(2_000_000, .025, -450_000, 1_000, 75_000), 0o600); err != nil {
+	if err := os.WriteFile(iqPath, syntheticFM(8_000_000, .025, -1_800_000, 1_000, 75_000), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	helper := filepath.Join(directory, "hackrf_transfer")
@@ -70,7 +70,7 @@ func TestTunerPublishesAnalogAudio(t *testing.T) {
 	go func() {
 		defer close(done)
 		runtimeState.tunerLoop(stop, ScanProfile{Settings: SurveySettings{NoiseMarginDB: 6}}, SDRDevice{ID: "test", Kind: "HackRF"},
-			TunerRequest{FrequencyHz: 98_100_000, Mode: "wfm", BandwidthHz: 180_000, SampleRateHz: 2_000_000, MonitorOpen: true}, nil)
+			TunerRequest{FrequencyHz: 98_100_000, Mode: "wfm", BandwidthHz: 180_000, SampleRateHz: 8_000_000, MonitorOpen: true}, nil)
 	}()
 	select {
 	case frame := <-frames:

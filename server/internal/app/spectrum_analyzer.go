@@ -162,6 +162,9 @@ func (r *Runtime) runSpectrumAnalyzerPass(state *spectrumAnalyzerState, request 
 	if rate <= 0 || rate > maximum {
 		rate = maximum
 	}
+	if device.Kind == "HackRF" {
+		rate = max(rate, minimumHackRFSampleRate)
+	}
 	if rate < 225000 {
 		rate = 225000
 	}

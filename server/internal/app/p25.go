@@ -284,11 +284,8 @@ func effectiveOP25DeviceRate(profile ScanProfile, device SDRDevice) int {
 		if isHackRFSampleRate(requested) {
 			return requested
 		}
-		// 5 MS/s leaves enough bandwidth for a P25 control/voice channel while
-		// avoiding the USB and CPU pressure that made the automatic 10 MS/s
-		// choice miss a known live control channel on the Pi. Higher rates remain
-		// available when the user explicitly selects one.
-		return 5_000_000
+		// Preserve the HackRF 8 MS/s minimum with the lowest compliant Pi load.
+		return minimumHackRFSampleRate
 	case "RTL-SDR":
 		if _, ok := rtlSDRSampleRateName(requested); ok {
 			return requested

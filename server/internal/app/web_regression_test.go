@@ -591,7 +591,7 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	for _, required := range []string{
 		"status.controlChannelHz", `id="p25-order"`, "Most recent", "Most received",
 		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:''",
-		"const p25Action=", "P25 searching…", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "P25 audio enabled",
+		"Control decoded", "Searching for control", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "Listening in this browser", "This browser is muted",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("P25 mixer status or activity-order behavior %q is missing", required)
