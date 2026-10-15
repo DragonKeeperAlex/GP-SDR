@@ -11,6 +11,14 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 ## Partially implemented or awaiting acceptance
 
+October 15, 2026: P25 replacement is the next development priority. The
+[four rebuild milestones](P25_REBUILD_PLAN.md) cover independent receiver proof,
+coordinated calls, the field interface, and recording/recovery. Planning is
+complete; receiver session/status foundation implementation is in progress.
+Independent Pluto control/PCM was reconfirmed on October 15; RTL/HackRF control
+and voice, concurrency, complete interface replacement and recovery remain open.
+
+
 - [ ] RF-01 Clear P25 audio: PCM bridge works; subjective continuity/intelligibility acceptance remains.
 - [x] Bounded Pi P25 hardware stream evidence: the dedicated Pluto profile
   locked 774.45625 MHz and OP25 delivered 4,684 8 kHz PCM frames to the

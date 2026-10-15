@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,10 +36,15 @@ type P25Status struct {
 	// ReceiverDeviceIDs is the live P25 assignment, not merely a profile
 	// preference. The web client uses it to avoid rendering controls for a
 	// previously selected receiver after a P25 session has started elsewhere.
-	ReceiverDeviceIDs []string `json:"receiverDeviceIDs,omitempty"`
+	ReceiverDeviceIDs []string            `json:"receiverDeviceIDs,omitempty"`
+	Receivers         []P25ReceiverStatus `json:"receivers,omitempty"`
+	TelemetryState    string              `json:"telemetryState,omitempty"`
+	StartedAt         *time.Time          `json:"startedAt,omitempty"`
+	ObservedAt        *time.Time          `json:"observedAt,omitempty"`
 }
 
 type OP25Manager struct {
+	op25Receivers []P25ReceiverStatus
 	mu            sync.Mutex
 	restartMu     sync.Mutex
 	command       *exec.Cmd
@@ -168,6 +174,16 @@ func assignedDevices(plan []ReceiverPlanItem, devices []SDRDevice) []SDRDevice {
 			seen[device.ID] = true
 		}
 	}
+	// OP25 initially gives control coverage to the first eligible channel in
+	// each system. Honor the operator's preferred control role instead of the
+	// discovery/checkbox order; the decoder may reassign roles during recovery.
+	control := make(map[string]bool)
+	for _, assignment := range plan {
+		if assignment.DeviceID != nil && assignment.Role == "control" {
+			control[*assignment.DeviceID] = true
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return control[items[i].ID] && !control[items[j].ID] })
 	return items
 }
 
@@ -367,6 +383,7 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 	m.engine, m.apiURL = "OP25", nil
 	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
 	m.op25Calls = nil
+	m.op25Receivers = op25ReceiverConfiguration(config, assignedDevices(plan, devices))
 	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
 	m.sessionStart = time.Now()
 	m.mu.Unlock()
@@ -412,6 +429,7 @@ func (m *OP25Manager) stopProcess() {
 	sockets := m.audioSockets
 	m.audioSockets = nil
 	m.command, m.done, m.log, m.profileID, m.configPath = nil, nil, nil, nil, nil
+	m.op25Receivers = nil
 	m.mu.Unlock()
 	for _, socket := range sockets {
 		_ = socket.Close()
@@ -433,7 +451,19 @@ func (m *OP25Manager) stopProcess() {
 
 func (m *OP25Manager) op25Status() P25Status {
 	m.mu.Lock()
+	observedCommand := m.command
+	m.mu.Unlock()
+	var updates []map[string]json.RawMessage
+	if observedCommand != nil {
+		updates = readOP25Updates()
+	}
+	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Stop/restart can happen during the HTTP request. Never project the old
+	// child's observations onto its replacement, and never block Stop on HTTP.
+	if m.command != observedCommand {
+		updates = nil
+	}
 	if m.command != nil {
 		select {
 		case <-m.done:
@@ -461,7 +491,9 @@ func (m *OP25Manager) op25Status() P25Status {
 			Reception: "searching", Note: "OP25 is checking the configured P25 control channels.", ReceiverDeviceIDs: p25ReceiverDeviceIDs(m.plan, m.devices)}
 		status.AudioState, status.AudioFrames, status.AudioSampleRateHz, status.AudioLastFrameAt = audioState, m.audioFrames, 8000, audioLastAt
 		status.FrontendState = p25FrontendState(m.profile, m.plan, m.devices)
-		if frequency, ok := readOP25ControlStatus(); ok {
+		if len(m.op25Receivers) > 0 {
+			summarizeOP25Session(&status, m.op25Receivers, updates, m.sessionStart, time.Now())
+		} else if frequency, ok := op25ControlStatusFromUpdates(updates); ok {
 			status.Reception = "locked"
 			status.ControlChannelHz = frequency
 			status.ControlSource = "OP25 decoded control messages"
@@ -528,7 +560,10 @@ func p25ReceiverDeviceIDs(plan []ReceiverPlanItem, devices []SDRDevice) []string
 // OP25 can decode control traffic without an enabled talkgroup receiving a
 // voice grant. Use its local decoded state rather than a voice-only log marker.
 func readOP25ControlStatus() (float64, bool) {
-	updates := readOP25Updates()
+	return op25ControlStatusFromUpdates(readOP25Updates())
+}
+
+func op25ControlStatusFromUpdates(updates []map[string]json.RawMessage) (float64, bool) {
 	for _, update := range updates {
 		var kind string
 		_ = json.Unmarshal(update["json_type"], &kind)
@@ -560,6 +595,9 @@ func readOP25Updates() []map[string]json.RawMessage {
 		return nil
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil
+	}
 	var updates []map[string]json.RawMessage
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&updates); err != nil {
 		return nil

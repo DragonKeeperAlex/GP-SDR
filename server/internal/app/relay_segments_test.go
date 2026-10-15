@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-func TestRelaySegmentsUseThirtySecondWindows(t *testing.T) {
+func TestRelaySegmentsUseTwentySecondWindows(t *testing.T) {
 	got := RelaySegments(65*time.Second, 0)
-	want := []time.Duration{30 * time.Second, 30 * time.Second, 5 * time.Second}
+	want := []time.Duration{20 * time.Second, 20 * time.Second, 20 * time.Second, 5 * time.Second}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("segments = %v, want %v", got, want)
 	}

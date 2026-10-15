@@ -10,6 +10,7 @@ import (
 var Version = "1.5.0-rc34"
 
 type SDRDevice struct {
+	Transports                []PlutoTransport   `json:"transports,omitempty"`
 	ID                        string             `json:"id"`
 	Name                      string             `json:"name"`
 	Kind                      string             `json:"kind"`
@@ -156,14 +157,15 @@ type SurveySettings struct {
 }
 
 type BandReceiverSettings struct {
-	SampleRateHz int     `json:"sampleRateHz"`
-	GainDB       float64 `json:"gainDB"`
-	LNAGainDB    int     `json:"lnaGainDB"`
-	VGAGainDB    int     `json:"vgaGainDB"`
-	AmpEnabled   bool    `json:"ampEnabled"`
-	AutoGain     bool    `json:"autoGain"`
-	SquelchDB    float64 `json:"squelchDB"`
-	DCRemoval    bool    `json:"dcRemoval"`
+	CenterFrequencyHz float64 `json:"centerFrequencyHz,omitempty"`
+	SampleRateHz      int     `json:"sampleRateHz"`
+	GainDB            float64 `json:"gainDB"`
+	LNAGainDB         int     `json:"lnaGainDB"`
+	VGAGainDB         int     `json:"vgaGainDB"`
+	AmpEnabled        bool    `json:"ampEnabled"`
+	AutoGain          bool    `json:"autoGain"`
+	SquelchDB         float64 `json:"squelchDB"`
+	DCRemoval         bool    `json:"dcRemoval"`
 }
 
 type ScanProfile struct {
@@ -326,6 +328,7 @@ type RuntimeStatus struct {
 	Storage              StorageStatus       `json:"storage"`
 	HealthNotices        []HealthNotice      `json:"healthNotices"`
 	PowerHat             PiPowerHatStatus    `json:"powerHat"`
+	SystemHealth         SystemHealth        `json:"systemHealth"`
 }
 
 type StorageStatus struct {

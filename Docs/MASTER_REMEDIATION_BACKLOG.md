@@ -114,11 +114,30 @@ Platform priority confirmed September 16, 2026: Raspberry Pi is the primary deve
 
 ## Execution order and dependencies
 
+October 15, 2026 priority override: the user requested a complete P25 section
+rebuild with dependable PlutoSDR, working HackRF and RTL-SDR support. Follow
+[P25 rebuild milestones](P25_REBUILD_PLAN.md) as the next priority. Rebuild
+session/receiver coordination, evidence-based status, call/audio identity and
+the field interface; preserve existing profiles, recordings and rollback.
+Existing RF acceptance items remain open. This supersedes the earlier ordering
+below for active development and does not mark any milestone complete.
+
+
 Next release ordering requested September 16: start with tuner, Band Monitor and interface reliability (UI-01 through UI-07), then hardware support, decoders/AI, clear audio/P25, and Mapper completion. Prioritize broken major features over small enhancements. Pi remains the active deployment target; mobile ports remain paused. All acceptance gates below still apply.
 
 Start with easy bounded fixes and regression tests, then work toward difficult hardware/architecture items. Core priorities: dependable P25 audio/HackRF lock, Mapper correctness/storage, comprehensive UI acceptance, multi-receiver operation. Do not let cosmetic completion substitute for RF acceptance. Listed mobile/TX/video items remain on this backlog but follow core reliability. User-dependent physical signals, notice acknowledgements, signing/entitlement requirements must be tracked honestly, not treated as passed.
 
 ## Evidence log
+
+- 2026-10-15 RF-01/RF-02/RF-05/RF-06/UI-04: started the
+  [P25 rebuild](P25_REBUILD_PLAN.md). Added per-receiver session configuration
+  and decoded-role evidence, fresh/session-specific control-lock attribution,
+  preferred control ordering and preservation of multi-radio capture-setting
+  restarts. Short isolated Pluto Central reception decoded 774.456250 MHz and
+  delivered 270 PCM packets; RTL/HackRF control/voice remain unaccepted after
+  bounded checks. No concurrent-call, listening-quality or full rebuild
+  acceptance follows. Private Pi test artifacts retain the settings/results.
+
 
 - 2026-09-19 AI-02/transcription Pi runtime readiness: the installed Pi
   reports Ollama 0.34.0 active with lightweight `qwen2.5:1.5b` (Q4_K_M,

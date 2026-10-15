@@ -21,12 +21,16 @@ import (
 // leaves this computer: waveform classification and protocol decoders run
 // first, and the model receives only their bounded text metadata.
 type LocalAIConfig struct {
-	Enabled           bool   `json:"enabled"`
-	Endpoint          string `json:"endpoint"`
-	Model             string `json:"model"`
-	Profile           string `json:"profile"`
-	MinimumConfidence int    `json:"minimumConfidence"`
-	ContextLength     int    `json:"contextLength"`
+	Enabled             bool   `json:"enabled"`
+	Endpoint            string `json:"endpoint"`
+	Model               string `json:"model"`
+	Profile             string `json:"profile"`
+	MinimumConfidence   int    `json:"minimumConfidence"`
+	ContextLength       int    `json:"contextLength"`
+	RemoteEnabled       bool   `json:"remoteEnabled,omitempty"`
+	RemoteEndpoint      string `json:"remoteEndpoint,omitempty"`
+	RemoteModel         string `json:"remoteModel,omitempty"`
+	RemoteMinConfidence int    `json:"remoteMinimumConfidence,omitempty"`
 }
 
 type LocalAIStatus struct {
@@ -116,6 +120,17 @@ func normalizeLocalAIConfig(config LocalAIConfig) LocalAIConfig {
 	}
 	if config.ContextLength != 0 && (config.ContextLength < 2048 || config.ContextLength > 262144) {
 		config.ContextLength = 0
+	}
+	if config.RemoteEnabled {
+		if config.RemoteEndpoint == "" {
+			config.RemoteEndpoint = "http://127.0.0.1:11434"
+		}
+		if config.RemoteModel == "" {
+			config.RemoteModel = "qwen2.5:7b"
+		}
+		if config.RemoteMinConfidence < 10 || config.RemoteMinConfidence > 100 {
+			config.RemoteMinConfidence = config.MinimumConfidence
+		}
 	}
 	return config
 }
@@ -214,6 +229,8 @@ func (a *LocalAIAnalyzer) Update(config LocalAIConfig) (LocalAIStatus, error) {
 	return a.Status(), nil
 }
 
+const localAIRequestTimeout = 3 * time.Minute
+
 type localAIResponse struct {
 	SignalFamily string   `json:"signalFamily"`
 	Modulation   string   `json:"modulation"`
@@ -262,7 +279,7 @@ func (a *LocalAIAnalyzer) analyzeWithConfig(parent context.Context, event Transm
 	// reasoning stream. Qwen 3.5 can otherwise return only `thinking` and leave
 	// Ollama's `response` empty.
 	requestBody, _ := json.Marshal(map[string]any{"model": config.Model, "prompt": prompt, "stream": false, "think": false, "format": format, "options": map[string]any{"temperature": 0.1, "num_ctx": localAIContext(config)}})
-	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
+	ctx, cancel := context.WithTimeout(parent, localAIRequestTimeout)
 	defer cancel()
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, config.Endpoint+"/api/generate", bytes.NewReader(requestBody))
 	request.Header.Set("Content-Type", "application/json")
