@@ -136,20 +136,21 @@ type SurveySettings struct {
 	TranscribeVoice    bool    `json:"transcribeVoice"`
 	// P25ArchiveCalls enables local WAV capture for unencrypted P25 calls.
 	// It stays separate from general survey recording so P25 storage is opt-in.
-	P25ArchiveCalls    bool    `json:"p25ArchiveCalls,omitempty"`
-	P25SilentMode      bool    `json:"p25SilentMode,omitempty"`
-	MaxRecordingDays   int     `json:"maxRecordingDays"`
-	P25SampleRateHz    int     `json:"p25SampleRateHz,omitempty"`
-	P25AmpMode         string  `json:"p25AmpMode,omitempty"`
-	P25LNAGainDB       *int    `json:"p25LNAGainDB,omitempty"`
-	P25VGAGainDB       *int    `json:"p25VGAGainDB,omitempty"`
-	SampleRateHz       int     `json:"sampleRateHz,omitempty"`
-	GainDB             float64 `json:"gainDB,omitempty"`
-	LNAGainDB          *int    `json:"lnaGainDB,omitempty"`
-	VGAGainDB          *int    `json:"vgaGainDB,omitempty"`
-	AmpEnabled         *bool   `json:"ampEnabled,omitempty"`
-	AutoGain           bool    `json:"autoGain,omitempty"`
-	DCRemoval          *bool   `json:"dcRemoval,omitempty"`
+	P25ArchiveCalls  bool                           `json:"p25ArchiveCalls,omitempty"`
+	P25SilentMode    bool                           `json:"p25SilentMode,omitempty"`
+	MaxRecordingDays int                            `json:"maxRecordingDays"`
+	P25SampleRateHz  int                            `json:"p25SampleRateHz,omitempty"`
+	P25Receivers     map[string]P25ReceiverSettings `json:"p25Receivers,omitempty"`
+	P25AmpMode       string                         `json:"p25AmpMode,omitempty"`
+	P25LNAGainDB     *int                           `json:"p25LNAGainDB,omitempty"`
+	P25VGAGainDB     *int                           `json:"p25VGAGainDB,omitempty"`
+	SampleRateHz     int                            `json:"sampleRateHz,omitempty"`
+	GainDB           float64                        `json:"gainDB,omitempty"`
+	LNAGainDB        *int                           `json:"lnaGainDB,omitempty"`
+	VGAGainDB        *int                           `json:"vgaGainDB,omitempty"`
+	AmpEnabled       *bool                          `json:"ampEnabled,omitempty"`
+	AutoGain         bool                           `json:"autoGain,omitempty"`
+	DCRemoval        *bool                          `json:"dcRemoval,omitempty"`
 	// MonitorOpen is runtime-only. Band Monitor requests should keep the
 	// selected channel audible while it is below the scan/event threshold, but
 	// that choice must not leak into or mutate the saved scan profile.

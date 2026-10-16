@@ -235,3 +235,50 @@ Milestones 2–4 are not marked complete by this foundation work.
 
 The full Go suite passed after updating the simulated analog fixture to use
 the same 8 MS/s HackRF input as the runtime; the ARM64 build also passed.
+
+## October 15 receiver setup and archive browsing increment
+
+- Added optional profile settings keyed by physical receiver identity for OP25
+  capture rate, gain and frequency correction. HackRF exposes separate LNA/VGA
+  and amplifier controls; Pluto exposes PGA and RTL exposes LNA. Blank fields
+  retain the shared profile or saved calibration. Unsupported controls/rates
+  fail with an actionable error; HackRF remains at least 8 MS/s. Receiver tuning
+  uses explicit Save/Use profile defaults actions while stopped. Unsaved tuning
+  blocks Start instead of silently discarding changes. Other radios and global
+  calibration remain unchanged. SDRTrunk explicitly rejects these OP25-only
+  overrides rather than claiming to apply them.
+- Corrected the remaining SDRTrunk conservative tuner-file fallback from 5 to
+  8 MS/s. Valid wider saved rates are retained for wide systems; legacy rates
+  below the floor are replaced. The earlier rate-floor increment did not cover
+  this tuner-file branch.
+- Profile editor now shows and preserves receiver-to-system targets and handles
+  legacy numbered voice roles. Newly created P25 plans use canonical voice roles.
+  Receiver setup lists saved role/system assignments; running configuration is
+  shown separately from saved choices and is not described as hardware readback.
+  Single-radio front-end summaries now also use generated configuration.
+- Added authenticated `/api/p25/recordings` with filtering before limiting and
+  stable older-call cursors. Confirmed unencrypted saved P25 calls are independent
+  of survey volume and the general Activity search. The endpoint reads journal
+  metadata in memory, not audio files. The view has loading, retry, empty, older
+  history and last-refresh states. Recent calls refresh every five seconds only
+  while Recordings is visible; paging older calls pauses automatic replacement.
+- P25 screen refresh is capped at 1.5 seconds while form input stays protected
+  and button focus is restored. No persistent diagnostic RF probes were added.
+- Regression coverage verifies device identity after receiver reorder, explicit
+  zero gain and PPM persistence, invalid cross-device settings, archive filtering
+  past 175 unrelated events, cursor stability during incoming calls, stale-search
+  rejection, paging/retry and profile editor assignment preservation.
+
+The full field interface, RF reception and concurrency acceptance remain open.
+This increment does not establish simultaneous independent call identity,
+subjective voice quality, transcription queue recovery or physical touch feel.
+
+Verification for this increment: full Go suite and Node workspace regression
+checks passed. Firefox confirmed HackRF choices of 8/10/20 MS/s, saved 8 MS/s
+and LNA 8 without changing other receiver settings, Start protection for unsaved
+tuning, and archive search/no-match behavior. Desktop and 1280×800 layouts were
+inspected; physical touchscreen acceptance remains separate. Final field spacing
+was widened, and archive rendering is bounded to 500 loaded calls (search can
+still reach older journal entries). Live archive cursor requests returned distinct
+older IDs. Historical calls with missing receiver attribution or near-zero
+duration metadata remain an archive-identity issue for later P25 acceptance.

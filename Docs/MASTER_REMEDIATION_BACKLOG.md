@@ -705,3 +705,10 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   defaults/fallbacks and native/Soapy capture validation. Repeated a447 input
   check at 8 MS/s passed (15,955,296 IQ samples and 9,599 decoder symbols advanced
   in two seconds). Other receiver rates remain independent.
+
+- 2026-10-15 P25 setup/archive increment: per-radio OP25 rate/gain/PPM overrides
+  with explicit stopped-session saving, preserved receiver/system assignments,
+  canonical voice roles, and paged P25-only recordings independent of Activity
+  filters. Corrected remaining SDRTrunk tuner-file fallback to 8 MS/s. Bounded
+  regression checks pass; RF-01/02/04/05/06 and full UI-01/02/03/04 acceptance
+  remain open. See `P25_REBUILD_PLAN.md` for exact scope and limitations.

@@ -219,6 +219,17 @@ func validateProfile(profile ScanProfile) error {
 			return fmt.Errorf("unsupported P25 capture rate %d", rate)
 		}
 	}
+	if len(profile.Settings.P25Receivers) > 32 {
+		return errors.New("too many P25 receiver settings")
+	}
+	for id, settings := range profile.Settings.P25Receivers {
+		if strings.TrimSpace(id) == "" {
+			return errors.New("P25 receiver identity is required")
+		}
+		if err := validateP25ReceiverSettings(settings); err != nil {
+			return fmt.Errorf("P25 receiver %s: %w", id, err)
+		}
+	}
 	if area := profile.ReferenceArea; area != nil {
 		if !strings.EqualFold(strings.TrimSpace(area.Provider), "RadioReference") || area.Latitude < -90 || area.Latitude > 90 || area.Longitude < -180 || area.Longitude > 180 || area.RadiusMiles < 1 || area.RadiusMiles > 100 {
 			return errors.New("profile reference area is invalid")

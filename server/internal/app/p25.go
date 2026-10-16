@@ -239,6 +239,11 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 				return 0
 			}())
 		}
+		if settings, ok := profile.Settings.P25Receivers[device.ID]; ok {
+			if err := applyP25ReceiverSettings(&configuration.Devices[len(configuration.Devices)-1], device, settings); err != nil {
+				return nil, fmt.Errorf("P25 receiver %s: %w", device.Name, err)
+			}
+		}
 		system := systems[index%len(systems)]
 		for _, item := range plan {
 			if item.DeviceID == nil || *item.DeviceID != device.ID || item.Target == nil {

@@ -590,7 +590,7 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	app := string(appData)
 	for _, required := range []string{
 		"status.controlChannelHz", `id="p25-order"`, "Most recent", "Most received",
-		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:''",
+		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "saveP25ReceiverSettings", "updated.settings.p25Receivers[deviceID]=settings",
 		"Control decoded", "Searching for control", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "Listening in this browser", "This browser is muted",
 	} {
 		if !strings.Contains(app, required) {

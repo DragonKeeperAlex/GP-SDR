@@ -133,6 +133,9 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 		}
 		return m.startOP25(profile, plan, devices, dataDirectory)
 	}
+	if len(profile.Settings.P25Receivers) > 0 {
+		return errors.New("per-receiver P25 tuning requires OP25; select OP25 or clear receiver overrides")
+	}
 	if p25AssignmentsNeedOP25(assigned) {
 		return errors.New("SDRTrunk does not support the selected Soapy receiver; select OP25")
 	}
@@ -643,8 +646,8 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 
 // optimizeP25SampleRates applies a receiver-safe rate to each assigned tuner.
 // RTL-SDR defaults to SDRTrunk's stable 2.4 MS/s rate and accepts only rates
-// supported by its RTL2832 controller. HackRF retains the wider 10 MS/s auto
-// capture and 5 MS/s transport fallback. Saved HackRF gains are preserved unless
+// supported by its RTL2832 controller. HackRF uses an 8 MS/s automatic
+// capture and transport fallback. Saved HackRF gains are preserved unless
 // explicitly overridden; transport fallback disables the RF amplifier.
 func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigned []p25AssignedDevice, conservative bool) error {
 	minimum, maximum, found := p25ControlChannelSpan(profile)
@@ -661,7 +664,7 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 	}
 	hackRFRate := hackRFSampleRateName(profile.Settings.P25SampleRateHz)
 	if conservative {
-		hackRFRate = "RATE_5_0"
+		hackRFRate = "RATE_8_0"
 	}
 	rtlRate := "RATE_2_400MHZ"
 	if configured, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
@@ -696,7 +699,7 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 				tuner["vgagain"] = fmt.Sprintf("GAIN_%d", max(0, min(62, *gain))/2*2)
 				changed = true
 			}
-			if rate, ok := tuner["sampleRate"].(string); applyHackRFRate && (!ok || rate != hackRFRate) {
+			if rate, ok := tuner["sampleRate"].(string); (applyHackRFRate || !ok || (rate != "RATE_8_0" && rate != "RATE_10_0" && rate != "RATE_20_0")) && (!ok || rate != hackRFRate) {
 				tuner["sampleRate"] = hackRFRate
 				changed = true
 			}

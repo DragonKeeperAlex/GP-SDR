@@ -725,3 +725,19 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
   .p25-session-actions button { flex:1; }
   .p25-recordings-list article { flex-wrap:wrap; }
 }
+
+.p25-receiver-setup { padding:16px; border-bottom:1px solid var(--line-soft); }
+.p25-receiver-setup h3 { font-size:16px; margin:0 0 12px; }
+.p25-receiver-setup > label { display:block; max-width:440px; font-size:13px; color:var(--muted); }
+.p25-receiver-setup select, .p25-receiver-setup input { display:block; width:100%; margin-top:6px; }
+.p25-receiver-setup fieldset { border:0; padding:16px 0 0; margin:0; min-width:0; }
+.p25-tuning-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; }
+.p25-tuning-grid label { display:flex; flex-direction:column; gap:6px; color:var(--muted); font-size:13px; min-width:0; overflow-wrap:anywhere; }
+.p25-tuning-grid input, .p25-tuning-grid select { margin-top:auto; }
+.p25-tuning-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.p25-receiver-setup p, .p25-radio-summary, .p25-assignment-summary { color:var(--muted); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.p25-assignment-summary { margin-bottom:20px; }
+#p25-recordings-status { padding:0 16px; }
+#p25-recordings-older { margin:16px; }
+.editor-row.assignment { grid-template-columns:minmax(120px,1fr) minmax(140px,1fr) minmax(180px,1.5fr) 36px; }
+@media(max-width:760px) { .editor-row.assignment { grid-template-columns:1fr; } }

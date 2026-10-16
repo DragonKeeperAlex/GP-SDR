@@ -370,6 +370,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		job, err := s.runtime.Install(body.ComponentID)
 		writeResult(w, job, err, http.StatusAccepted)
+	case r.Method == "GET" && path == "/api/p25/recordings":
+		page, err := s.runtime.Events.P25Recordings(r.URL.Query().Get("q"), r.URL.Query().Get("before"), intQuery(r, "limit", 50))
+		writeResult(w, page, err, http.StatusOK)
 	case r.Method == "GET" && path == "/api/p25/status":
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":

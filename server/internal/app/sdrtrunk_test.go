@@ -219,7 +219,7 @@ func TestOptimizeP25SampleRatesHonorsExplicitHackRFWideRateAndFallback(t *testin
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
-	if !strings.Contains(string(data), `"RATE_5_0"`) {
+	if !strings.Contains(string(data), `"RATE_8_0"`) {
 		t.Fatalf("transport fallback was not applied: %s", data)
 	}
 }

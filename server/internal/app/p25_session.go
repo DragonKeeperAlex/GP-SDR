@@ -172,7 +172,7 @@ func summarizeOP25Session(status *P25Status, configured []P25ReceiverStatus, upd
 		status.Reception = "unknown"
 		status.Note = "Decoder telemetry is incomplete or unavailable; reception cannot be confirmed."
 	}
-	if len(status.Receivers) > 1 {
+	if len(status.Receivers) > 0 {
 		// Legacy clients must not label mixed devices using the first one's rate.
 		status.CaptureRateHz = status.Receivers[0].ConfiguredRateHz
 		parts := make([]string, 0, len(status.Receivers))
