@@ -755,3 +755,8 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   a new Start observed control lock after 4.54 seconds with 30 decoded messages.
   Three-radio silent collection restored at 2.4/8/2.4 MS/s. Sustained RF, physical
   USB/storage/power-loss, overlapping-call identity and listening gates remain.
+
+- 2026-10-16 P25 checkpoint follow-up: normal calls without PCM no longer leave
+  empty checkpoints that could fill recovery capacity. The unavailable-audio
+  metadata remains durable. Pi exFAT empty/recorded cleanup fixtures, full Go
+  and focused race/vet checks pass; final build is deployed.

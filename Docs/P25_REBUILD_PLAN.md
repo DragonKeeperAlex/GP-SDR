@@ -430,3 +430,12 @@ Deployed ARM64 SHA-256:
 Matching source, binaries, pre-change profile and rollback remain private in the
 Pi `p25-spool-20261016` operations directory. The exact staged source also passes
 the full Go suite. No call media, transcripts or credentials are committed.
+
+The final live check found empty checkpoints from call assignments without PCM.
+Normal finalization now removes those only after their unavailable-audio journal
+row is durable, while retaining checkpoints with audio when saving fails.
+Empty-call and recorded-call cleanup regressions pass locally and on Pi exFAT;
+full Go, focused race/vet and exact staged-source checks also pass.
+Final deployed ARM64 SHA-256:
+`d779a10588b371060c3468910c5541109aef79b310fbfbf64c7fd9eb612c1360`.
+The private operations directory retains the matching final source archive.

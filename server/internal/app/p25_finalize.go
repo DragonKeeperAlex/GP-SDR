@@ -79,7 +79,7 @@ func (r *Runtime) finishP25Call(stop <-chan struct{}, profile ScanProfile, call 
 	} else if archive == nil && !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls && event.Analysis.Engine != "OP25 frame decoder" {
 		go r.attachP25Recording(stop, profile, call, event.ID)
 	}
-	if archive != nil && archive.spool != nil && event.AudioPath != nil && queued {
+	if archive != nil && archive.spool != nil && (event.AudioPath != nil || len(archive.samples) == 0) && queued {
 		if err := archive.spool.remove(); err != nil {
 			r.setRuntimeError("P25 checkpoint cleanup: " + err.Error())
 		}

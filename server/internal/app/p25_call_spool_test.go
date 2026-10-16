@@ -187,6 +187,30 @@ func TestP25SpoolJournalFailureRetainsRecoverableAudio(t *testing.T) {
 	}
 }
 
+func TestP25SpoolNormalFinishCleansEmptyAndRecordedCalls(t *testing.T) {
+	for _, count := range []int{0, 8000} {
+		root := t.TempDir()
+		a, event := spoolFixture(t, root)
+		a.Append(AudioFrame{ChannelID: a.streamID, SampleRate: 8000, Samples: make([]int16, count)})
+		events, err := NewEventStore(filepath.Join(root, "Data"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := &Runtime{Events: events, dataDirectory: root, p25Transcription: newP25TranscriptionQueue(root, events, nil)}
+		profile := ScanProfile{}
+		profile.Settings.TranscribeVoice = true
+		call := P25ActiveCall{StreamIndex: 1, DeviceSerial: event.DeviceID, StartedAt: event.StartedAt, Grant: p25GrantState{System: *event.SystemName, GroupID: *event.TalkgroupID}}
+		r.finishP25Call(make(chan struct{}), profile, call, a)
+		files, err := os.ReadDir(filepath.Dir(a.spool.manifest))
+		if err != nil || len(files) != 0 {
+			t.Fatalf("normal finish leaked checkpoint for %d samples: %v files=%d", count, err, len(files))
+		}
+		if all := events.Recent(10); len(all) != 1 || (all[0].AudioPath != nil) != (count > 0) {
+			t.Fatalf("empty/recorded call metadata lost: %+v", all)
+		}
+	}
+}
+
 // Opt-in on an expendable, separately mounted <=2 MiB filesystem. Never fill
 // the real recording volume to exercise full-disk behavior.
 func TestP25SpoolRealENOSPCRetry(t *testing.T) {
