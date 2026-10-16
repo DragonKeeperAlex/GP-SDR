@@ -6,10 +6,12 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0b0d10">
   <title>GP-SDR</title>
+  <script src="/display-layout.js?v=1.5.0-rc34"></script>
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon-180.png">
   <link rel="stylesheet" href="/app.css?v=1.5.0-rc34">
   <link rel="stylesheet" href="/console.css?v=1.5.0-rc34">
+  <link rel="stylesheet" href="/browser-console.css?v=1.5.0-rc34">
   <link rel="stylesheet" href="/touch-console.css?v=1.5.0-rc34">
   <link rel="stylesheet" href="/explore.css?v=1.5.0-rc34">
 </head>
@@ -626,6 +628,7 @@
 		  </article>
           <header class="settings-section-title"><div><h2>Display</h2><p>Spectrum, waterfall, and rendering controls.</p></div></header>
           <article class="panel settings-card display-card"><h2>Display</h2><div class="display-settings">
+            <label>Interface layout<select id="display-layout"><option value="browser">Browser</option><option value="touch">Box touchscreen</option></select><small>Applies only to this screen. The box has separate touch controls and spacing.</small></label>
 		    <label>Spectrum refresh<select id="display-fps" title="Refresh rate shared by Live, Tuner, Mapper, and RF Monitor spectrum/waterfall displays"><option value="1">1 Hz · lowest load</option><option value="2">2 Hz</option><option value="5">5 Hz</option><option value="8" selected>8 Hz</option><option value="12">12 Hz</option><option value="20">20 Hz</option><option value="30">30 Hz · smooth</option><option value="40">40 Hz · high load</option><option value="60">60 Hz · near real time</option></select><small>Applies to every spectrum and waterfall. Faster refresh increases browser and server load but does not change SDR sample rate.</small></label>
 		    <label class="check-line"><input id="display-audio-priority" type="checkbox" checked> Prioritize steady audio</label>
 		    <label>Graph refresh during audio<select id="display-audio-fps"><option value="1">1 Hz · lowest load</option><option value="2">2 Hz</option><option value="4" selected>4 Hz · balanced</option><option value="6">6 Hz</option><option value="8">8 Hz · higher load</option><option value="12">12 Hz · highest load</option></select><small>When enabled, live audio limits graph polling to this rate so canvas work yields CPU time to playback.</small></label>

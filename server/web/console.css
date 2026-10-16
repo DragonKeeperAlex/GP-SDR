@@ -128,3 +128,10 @@ body[data-mapper-page="overview"] .mapper-control-panel,body[data-mapper-page="o
  .p25-toolbar label { min-width:100%; } .p25-metrics { grid-template-columns:1fr 1fr; }
  .band-command-grid { grid-template-columns:1fr 1fr; }.band-command-grid label:first-child { grid-column:1/-1; }.band-radio-controls { grid-template-columns:1fr 1fr; }.band-summary { grid-template-columns:1fr 1fr; }.band-display-panel #band-spectrum { height:150px; }.band-display-panel #band-waterfall { height:130px; }.band-channel-row { grid-template-columns:28px minmax(105px,1fr) minmax(110px,1fr) 28px 28px; }.band-channel-row .level-meter,.band-channel-row .mixer-volume { display:none; }
 }
+
+/* Shared workspace helpers, independent of display mode. */
+.desktop-mode-card { max-width: 760px; }
+.desktop-mode-card .primary { min-width: 220px; min-height: 54px; font-size: 1.05rem; }
+.tuner-mode-note { margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--warning,#e2aa43); color:var(--muted); background:rgba(226,170,67,.08); }
+.mapper-assignment-preview { display:grid; gap:4px; margin:0 0 10px; padding:10px; border:1px solid var(--line-soft); border-radius:10px; background:rgba(73,213,170,.06); color:var(--muted); font-size:.86rem; }
+.mapper-assignment-preview strong { color:var(--text); }

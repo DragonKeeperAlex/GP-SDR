@@ -52,3 +52,9 @@ processed automatically on the home server and applied once. Its audio remained
 on the Pi. Queue summary refreshes every five seconds while Settings is visible.
 No Windows host configuration was changed; SSH login/startup verification remains
 separate from this working Ollama connection.
+
+October 16 host follow-up: recovered the prior SSH login from the original setup
+chat and verified key-based access. The Windows host reports an RTX 5080 with
+16 GB VRAM, 128 GB RAM, and its existing LocalAI-Ollama task enabled with a boot
+trigger and currently running. The Ollama firewall rule permits the private LAN.
+No Windows settings changed; an unattended reboot was not exercised.

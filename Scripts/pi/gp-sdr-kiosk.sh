@@ -29,6 +29,6 @@ trap cleanup EXIT INT TERM
     --disable-features=Translate,MediaRouter --touch-events=enabled \
     --enable-features=UseOzonePlatform --ozone-platform=wayland \
     --user-data-dir=/home/sdr/.config/gp-sdr-kiosk \
-    "http://127.0.0.1:8073/" &
+    "http://127.0.0.1:8073/?display=touch" &
 browser_pid=$!
 wait "$browser_pid"

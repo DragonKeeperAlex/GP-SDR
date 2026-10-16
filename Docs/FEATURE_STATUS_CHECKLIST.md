@@ -509,3 +509,9 @@ Fixed in this work tranche (bounded software scope only):
   and exercised from the Pi. Queue safeguards and status updates added; local
   model settings retain remote configuration. This is not raw IQ/audio offload,
   RF-model accuracy or Windows unattended-startup acceptance; AI-07 remains open.
+
+- 2026-10-16 Settings repair: corrected implicit mobile grid columns and added
+  independent Browser / Box touchscreen layout modes. Live 456px and 1280×800
+  browser checks confirm proper card widths; box Settings actions measure 48px.
+  Layout choice is screen-local and does not alter RF/settings on other clients.
+  Physical display acceptance and the future visual redesign remain separate.

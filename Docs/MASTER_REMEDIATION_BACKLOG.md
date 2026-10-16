@@ -732,3 +732,13 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   the synthetic structured request; one real queued metadata job completed and
   was applied automatically. Raw IQ/audio offload and Windows startup remain
   separate gates. See `HOME_DEFERRED_COMPUTE.md`.
+
+- 2026-10-16 UI-01/02 browser/box separation: fixed the narrow Settings grid
+  (the update card's six-column span created implicit columns). All direct
+  Settings children use the single mobile track; System power spans the desktop
+  grid. Added explicit per-screen Browser / Box touchscreen selection, distinct
+  browser and touch stylesheets, and a local-console/kiosk touch default. Remote
+  browsers no longer inherit box rules from width or pointer detection. Live
+  in-app checks at 456px and 1280×800 confirm full-width cards without page
+  overflow and 48px Settings actions in box mode. Full Go suite passed. Physical
+  readability remains user acceptance; no full redesign or Group 4 completion.

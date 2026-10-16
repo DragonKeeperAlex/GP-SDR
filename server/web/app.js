@@ -2191,6 +2191,16 @@ async function pollSpectrum() {
 pollSpectrum();
 
 function saveDisplayPrefs(){localStorage.setItem('gpsdr-display-v2',JSON.stringify(displayPrefs));$('#display-smoothing-value').textContent=displayPrefs.smoothing+'%';$$('#live-waterfall,#waterfall,#mapper-waterfall,#band-waterfall').forEach(canvas=>{canvas.dataset.lastFrame='';canvas.width=0;});if(!displayPrefs.peakHold)[$('#spectrum'),$('#tuner-spectrum'),$('#mapper-spectrum'),$('#band-spectrum')].forEach(canvas=>spectrumPeaks.delete(canvas));drawSpectrum();drawWaterfall();}
+const layoutControl=$('#display-layout');
+layoutControl.value=document.documentElement.dataset.uiLayout;
+layoutControl.addEventListener('change',()=>{
+  const layout=layoutControl.value==='touch'?'touch':'browser';
+  document.documentElement.dataset.uiLayout=layout;
+  try{localStorage.setItem('gpsdr-ui-layout',layout);}catch(_){}
+  const url=new URL(location.href);url.searchParams.set('display',layout);
+  history.replaceState({},'',`${url.pathname}${url.search}${url.hash}`);
+  requestAnimationFrame(()=>{drawSpectrum();drawWaterfall();});
+});
 for(const [id,key,number] of [['display-fps','fps',true],['display-quality','quality',true],['display-detail','detail',true],['display-smoothing','smoothing',true]]){const control=$('#'+id);control.value=displayPrefs[key];control.addEventListener('input',()=>{displayPrefs[key]=number?Number(control.value):control.value;saveDisplayPrefs();});}
 $('#display-audio-priority').checked=displayPrefs.audioPriority!==false;$('#display-audio-priority').addEventListener('change',event=>{displayPrefs.audioPriority=event.target.checked;saveDisplayPrefs();});
 $('#display-audio-fps').value=String(displayPrefs.audioFPS);$('#display-audio-fps').addEventListener('change',event=>{displayPrefs.audioFPS=Math.max(1,Math.min(12,Number(event.target.value)||4));saveDisplayPrefs();});

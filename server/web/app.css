@@ -225,6 +225,7 @@ body:not([data-view="live"]):not([data-view="profiles"]) .profile-select-wrap,bo
 .radioreference-card { grid-column:1/-1; }
 .local-ai-card,.display-card { grid-column:1/-1; }
 .system-card,.update-card { grid-column:span 6; }
+.power-card { grid-column:1/-1; }
 .expert-card{grid-column:1/-1;min-height:0}.expert-card button{margin-top:8px}
 .storage-card { grid-column:1/-1; }
 .settings-card { min-width: 0; min-height: 150px; padding: 16px; }
@@ -554,7 +555,7 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
   .legend { display: none; }
   .spectrum-panel canvas { height: 165px; }
   .two-column, .settings-grid, .decoder-columns { grid-template-columns: 1fr; }
-  .settings-section-title,.range-sync-card,.local-database-card,.radioreference-card,.local-ai-card,.display-card,.system-card,.storage-card { grid-column:1; }
+  .settings-grid > * { grid-column:1/-1; }
   .display-settings,.local-ai-card .display-settings,.storage-card .display-settings { grid-template-columns:1fr 1fr; }
   .range-sync-form { grid-template-columns: 1fr; }
   .mapper-controls,.mapper-sheet-form,.remote-form,.characterization-form { grid-template-columns:1fr 1fr; }
