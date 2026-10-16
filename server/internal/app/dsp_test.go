@@ -19,6 +19,34 @@ func TestNFMDemodulatesToneWithFrequencyOffset(t *testing.T) {
 	}
 }
 
+func TestNFMDemodulatorSoftLimitsOverDeviationWithoutPCMRails(t *testing.T) {
+	const inputRate = 256_000
+	// The saved 452.3875 MHz evidence had clean IQ but PCM rails from a
+	// discriminator excursion beyond the nominal 5 kHz NFM deviation. Model
+	// that condition with a deliberately over-deviated FM tone.
+	data := syntheticFM(inputRate, .35, 0, 1_000, 12_000)
+	result, err := DemodulateIQ(data, ComplexSigned8, inputRate, 0, "nfm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peak := 0
+	for _, sample := range result.Audio {
+		value := int(sample)
+		if value < 0 {
+			value = -value
+		}
+		if value >= 32767 {
+			t.Fatalf("FM limiter emitted PCM rail: %d", sample)
+		}
+		if value > peak {
+			peak = value
+		}
+	}
+	if peak < 29_000 {
+		t.Fatalf("FM limiter attenuated over-deviation too aggressively: peak=%d", peak)
+	}
+}
+
 func TestContinuousDemodulationMatchesSingleCapture(t *testing.T) {
 	for _, mode := range []string{"nfm", "wfm", "am"} {
 		t.Run(mode, func(t *testing.T) {

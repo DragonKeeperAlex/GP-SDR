@@ -199,6 +199,7 @@ type ProfileReferenceArea struct {
 type TransmissionEvent struct {
 	P25StreamIndex      *int                 `json:"p25StreamIndex,omitempty"`
 	P25TDMASlot         *int                 `json:"p25TDMASlot,omitempty"`
+	P25AudioIncomplete  bool                 `json:"p25AudioIncomplete,omitempty"`
 	CaptureID           string               `json:"captureID,omitempty"`
 	CapturePolicy       string               `json:"capturePolicy,omitempty"`
 	MediaIssues         []string             `json:"mediaIssues,omitempty"`

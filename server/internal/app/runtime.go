@@ -1514,22 +1514,26 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 	previous := make(map[string]P25ActiveCall)
 	var frames <-chan AudioFrame
 	unsubscribe := func() {}
-	if r.audioHub != nil {
-		frames, unsubscribe = r.audioHub.Subscribe()
+	r.op25.mu.Lock()
+	recordPCM := profile.Settings.P25ArchiveCalls && r.op25.engine == "OP25"
+	r.op25.mu.Unlock()
+	recorder := newP25PCMRecorder(r, profile, stop)
+	if recordPCM && r.audioHub != nil {
+		frames, unsubscribe = r.audioHub.subscribeP25()
 	}
-	archives := make(map[string]*p25CallArchive)
-	// Stop and decoder exit must finalize buffered audio, not silently discard it.
 	defer func() {
 		unsubscribe()
 		if frames != nil {
 			for frame := range frames {
-				for _, archive := range archives {
-					archive.Append(frame)
-				}
+				recorder.accept(frame)
 			}
 		}
-		for key, call := range previous {
-			r.finishP25Call(stop, profile, call, archives[key])
+		if recordPCM {
+			recorder.finishAll()
+		} else {
+			for _, call := range previous {
+				r.finishP25Call(stop, profile, call, nil)
+			}
 		}
 	}()
 	for {
@@ -1541,15 +1545,9 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				frames = nil
 				continue
 			}
-			for _, archive := range archives {
-				archive.Append(frame)
-			}
+			recorder.accept(frame)
 		case <-ticker.C:
-			for _, archive := range archives {
-				if err := archive.checkpoint(); err != nil {
-					r.setRuntimeError("P25 audio checkpoint: " + err.Error())
-				}
-			}
+			recorder.checkpoint()
 			if status := r.P25Status(); status.State == "error" {
 				note := status.Note
 				if note == "" {
@@ -1564,24 +1562,18 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				continue
 			}
 			r.syncP25Mixer(profile, talkgroups, calls)
+			if recordPCM {
+				recorder.setCalls(calls)
+				continue
+			}
 			current := make(map[string]P25ActiveCall)
 			for _, call := range calls {
-				key := p25CallKey(call)
-				current[key] = call
-				if _, active := previous[key]; !active && !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls {
-					archive := newP25CallArchive(call.StreamIndex)
-					if err := archive.beginSpool(r.dataDirectory, r.p25CallEvent(call), profile.Settings.TranscribeVoice); err != nil {
-						r.setRuntimeError("P25 audio checkpoint unavailable: " + err.Error())
-					}
-					archives[key] = archive
-				}
+				current[p25CallKey(call)] = call
 			}
 			for key, call := range previous {
-				if _, active := current[key]; active {
-					continue
+				if _, active := current[key]; !active {
+					r.finishP25Call(stop, profile, call, nil)
 				}
-				r.finishP25Call(stop, profile, call, archives[key])
-				delete(archives, key)
 			}
 			previous = current
 		}

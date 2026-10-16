@@ -881,6 +881,9 @@ func (r *Runtime) processSurveyTargetCapture(stop <-chan struct{}, profile ScanP
 	analysis := SignalIntelligence{Modulation: "UNKNOWN", Engine: "deferred", Summary: "Original IQ saved; waveform analysis deferred"}
 	if !deferredArchive {
 		analysis = AnalyzeSignalIQ(data, format, rate, target.FrequencyHz-float64(spec.CenterFrequencyHz), target.BandwidthHz)
+		r.mu.RLock()
+		analysis = applyRFClassifier(TransmissionEvent{FrequencyHz: target.FrequencyHz, BandwidthHz: target.BandwidthHz, SignalDBFS: level.SignalDB, NoiseDBFS: level.NoiseDB, Modulation: analysis.Modulation, Analysis: &analysis}, analysis, r.rfClassifier)
+		r.mu.RUnlock()
 	}
 	if mapperRun != nil && target.Decoder == nil && analysis.Modulation == "DIGITAL" {
 		target.Decoder = ptr("dsd-fme")
@@ -1181,6 +1184,14 @@ func (r *Runtime) analyzeEventWithLocalAI(ctx context.Context, eventID string, f
 	}
 	analysis, err := r.localAI.Analyze(ctx, event)
 	if err != nil {
+		r.localAI.mu.RLock()
+		remoteEnabled := r.localAI.config.RemoteEnabled
+		r.localAI.mu.RUnlock()
+		if remoteEnabled && r.deepQueue != nil {
+			if _, _, queueErr := r.deepQueue.Enqueue(event); queueErr == nil {
+				go r.ProcessDeepAnalysis(context.Background(), 1)
+			}
+		}
 		return
 	}
 	_ = r.Events.UpdateAnalysis(eventID, analysis)
@@ -1726,6 +1737,9 @@ func (r *Runtime) tunerLoop(stop <-chan struct{}, profile ScanProfile, device SD
 		analysisFrames++
 		if analysisFrames == 1 || analysisFrames >= 10 {
 			latestAnalysis = AnalyzeSignalIQ(data, format, spec.SampleRateHz, request.FrequencyHz-float64(spec.CenterFrequencyHz), request.BandwidthHz)
+			r.mu.RLock()
+			latestAnalysis = applyRFClassifier(TransmissionEvent{FrequencyHz: request.FrequencyHz, BandwidthHz: request.BandwidthHz, Modulation: latestAnalysis.Modulation, Analysis: &latestAnalysis}, latestAnalysis, r.rfClassifier)
+			r.mu.RUnlock()
 			analysisFrames = 1
 		}
 		decoderID := strings.TrimSpace(request.Decoder)

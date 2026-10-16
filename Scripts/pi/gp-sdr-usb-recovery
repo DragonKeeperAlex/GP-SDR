@@ -1,0 +1,66 @@
+#!/bin/sh
+# Recover discovery after a transient USB drop without interrupting healthy SDR streams.
+set -eu
+# Pluto can stream over Ethernet with USB used only for power. USB presence
+# is required only for RTL and a non-excluded HackRF, not two HackRF units.
+sysfs_root=${GPSDR_USB_SYSFS_ROOT:-/sys/bus/usb/devices}
+hackrf=0
+rtl=0
+for device in "$sysfs_root"/*; do
+  [ -r "$device/idVendor" ] && [ -r "$device/idProduct" ] || continue
+  vendor=$(cat "$device/idVendor")
+  product=$(cat "$device/idProduct")
+  case "$vendor:$product" in
+    1d50:6089)
+      serial=$(cat "$device/serial" 2>/dev/null || true)
+      case "$serial" in
+        *c5cb|*C5CB|'') ;;
+        *) hackrf=1 ;;
+      esac ;;
+    0bda:2838) rtl=1 ;;
+  esac
+done
+missing=0
+[ "$hackrf" -eq 1 ] && [ "$rtl" -eq 1 ] || missing=1
+case "${1:-}" in
+  --check-only) exit "$missing" ;;
+  '') ;;
+  *) exit 64 ;;
+esac
+state_dir=/run/gp-sdr-usb-recovery
+mkdir -p "$state_dir"
+if [ "$missing" -eq 0 ]; then
+  rm -f "$state_dir/missing-count"
+  exit 0
+fi
+count=0
+[ -f "$state_dir/missing-count" ] && count=$(cat "$state_dir/missing-count" 2>/dev/null || printf 0)
+case "$count" in ''|*[!0-9]*) count=0 ;; esac
+[ "$count" -lt 3 ] || count=2
+count=$((count + 1))
+printf '%s\n' "$count" > "$state_dir/missing-count"
+logger -t gp-sdr-usb-recovery "SDR receiver missing (check $count/3); retaining active streams while waiting for reconnect"
+# Require three consecutive misses before re-probing the bus, avoiding resets for a brief cable or hub wobble.
+[ "$count" -ge 3 ] || exit 0
+# Never poke the buses while receivers are active, or while app state is
+# unknown. Missing-device diagnostics must not disrupt a healthy stream.
+if ! /usr/bin/python3 - <<'ACTIVE_CHECK'
+import json, urllib.request, sys
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8073/api/status", timeout=2) as response:
+        state = json.load(response)
+    sys.exit(1 if state.get("running", True) else 0)
+except Exception:
+    sys.exit(1)
+ACTIVE_CHECK
+then
+  logger -t gp-sdr-usb-recovery "receiver missing; deferring bus probe until GP-SDR is idle"
+  exit 0
+fi
+logger -t gp-sdr-usb-recovery "re-probing USB and PCI buses after persistent SDR device loss"
+/sbin/udevadm trigger --subsystem-match=usb --action=add || true
+/sbin/udevadm settle --timeout=15 || true
+printf '1\n' > /sys/bus/pci/rescan 2>/dev/null || true
+/sbin/udevadm trigger --subsystem-match=usb --action=add || true
+/sbin/udevadm settle --timeout=15 || true
+printf '0\n' > "$state_dir/missing-count"

@@ -21,6 +21,7 @@ func (m *OP25Manager) startOP25Audio(count int) error {
 		m.mu.Unlock()
 		go func(index int) {
 			buffer := make([]byte, 65536)
+			var sequence uint64
 			for {
 				n, _, err := socket.ReadFromUDP(buffer)
 				if err != nil {
@@ -28,14 +29,27 @@ func (m *OP25Manager) startOP25Audio(count int) error {
 				}
 				// OP25 reserves two-byte UDP packets for DRAIN/DROP flags.
 				// They are not one-sample PCM frames (sockaudio.py agrees).
-				if n <= 2 || n%2 != 0 {
+				if n == 2 {
+					flag := binary.LittleEndian.Uint16(buffer[:2])
+					if flag <= 1 {
+						sequence++
+						control := "drain"
+						if flag == 1 {
+							control = "drop"
+						}
+						m.audioHub.Publish(AudioFrame{ChannelID: fmt.Sprintf("p25-stream-%d", index), SampleRate: 8000, Control: control, Sequence: sequence, ReceivedAt: time.Now()})
+					}
+					continue
+				}
+				if n < 2 || n%2 != 0 {
 					continue
 				}
 				samples := make([]int16, n/2)
 				for i := range samples {
 					samples[i] = int16(binary.LittleEndian.Uint16(buffer[i*2:]))
 				}
-				m.audioHub.Publish(AudioFrame{ChannelID: fmt.Sprintf("p25-stream-%d", index), SampleRate: 8000, Samples: samples})
+				sequence++
+				m.audioHub.Publish(AudioFrame{ChannelID: fmt.Sprintf("p25-stream-%d", index), SampleRate: 8000, Samples: samples, Sequence: sequence, ReceivedAt: time.Now()})
 				m.mu.Lock()
 				m.audioFrames++
 				m.audioSamples += uint64(len(samples))

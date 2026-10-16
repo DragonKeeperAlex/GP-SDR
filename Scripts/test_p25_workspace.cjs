@@ -50,4 +50,6 @@ state.p25Recordings=[{id:'missing',label:'Dispatch',audioAvailable:false,mediaIs
 let cards=context.renderP25RecordingCards();assert(cards.includes('Audio unavailable'));assert(cards.includes('button disabled'));assert(cards.includes('Duration unknown'));
 state.p25Recordings=[{id:'saved',audioAvailable:true,audioPath:'fixture.wav',recordedDurationSeconds:2,durationSeconds:.001,transcriptionState:'failed',transcriptionError:'model offline'}];
 cards=context.renderP25RecordingCards();assert(cards.includes('2.0 s'));assert(cards.includes('Retry transcription'));assert(cards.includes('model offline'));
+state.p25Recordings=[{id:'partial',audioAvailable:true,audioPath:'fixture.wav',p25AudioIncomplete:true}];
+cards=context.renderP25RecordingCards();assert(cards.includes('Partial recording'));assert(cards.includes('audio queue gap'));
 console.log('P25 archive missing-audio, measured duration and retry presentation checks passed');

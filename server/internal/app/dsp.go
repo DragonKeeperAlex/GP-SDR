@@ -158,7 +158,12 @@ func (state *streamingDemodulator) Demodulate(data []byte, format SampleFormat, 
 			sample := audioAccumulator / float64(audioCount)
 			if mode != "am" {
 				filtered += deemphasisAlpha * (sample - filtered)
-				sample = filtered
+				// A wideband scan can encounter paging, digital, or over-deviated
+				// activity that is initially treated as NFM. The discriminator may
+				// then exceed its nominal deviation even though the original ADC IQ
+				// has headroom. Keep that from becoming destructive full-scale PCM
+				// clipping; the soft knee retains the excursion for later analysis.
+				sample = limitFMAudio(filtered)
 			}
 			audio = append(audio, floatPCM(sample))
 			audioAccumulator, audioCount = 0, 0
@@ -202,6 +207,27 @@ func powerDBFS(power float64) float64 {
 func floatPCM(value float64) int16 {
 	value = math.Max(-1, math.Min(1, value))
 	return int16(math.Round(value * 32767))
+}
+
+// limitFMAudio reserves PCM headroom after the FM discriminator. It is not an
+// RF/ADC overload correction: caller telemetry continues to report true IQ
+// clipping from the original samples. The exponential knee is transparent
+// below .75, gradually compresses large deviation excursions, and never emits
+// full-scale PCM rails that would hide the shape of a non-voice waveform.
+func limitFMAudio(value float64) float64 {
+	const knee = .75
+	const ceiling = .96
+	if value == 0 {
+		return 0
+	}
+	sign := 1.0
+	if value < 0 {
+		sign, value = -1, -value
+	}
+	if value <= knee {
+		return sign * value
+	}
+	return sign * (knee + (ceiling-knee)*(1-math.Exp(-(value-knee)/(ceiling-knee))))
 }
 
 func WriteMonoWAV(path string, samples []int16, sampleRate int) error {

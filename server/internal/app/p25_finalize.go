@@ -41,12 +41,24 @@ func (r *Runtime) p25CallEvent(call P25ActiveCall) TransmissionEvent {
 
 // Persist a call once, with the saved PCM duration rather than polling duration.
 func (r *Runtime) finishP25Call(stop <-chan struct{}, profile ScanProfile, call P25ActiveCall, archive *p25CallArchive) {
+	// An assignment without decoded PCM is not a saved voice call. Previously
+	// these generated unavailable-audio rows and unnecessary checkpoint writes.
+	if archive != nil && len(archive.samples) == 0 {
+		if archive.spool != nil {
+			if err := archive.spool.remove(); err != nil {
+				r.setRuntimeError("P25 checkpoint cleanup: " + err.Error())
+			}
+		}
+		return
+	}
 	event := r.p25CallEvent(call)
 	if archive != nil && !call.Grant.Encrypted {
 		if archive.eventID == "" {
 			archive.eventID = event.ID
 		}
 		event.ID = archive.eventID
+		event.MediaIssues = append(event.MediaIssues, archive.issues...)
+		event.P25AudioIncomplete = len(archive.issues) != 0
 		if err := archive.checkpoint(); err != nil {
 			r.setRuntimeError("P25 final checkpoint: " + err.Error())
 		}

@@ -439,3 +439,39 @@ full Go, focused race/vet and exact staged-source checks also pass.
 Final deployed ARM64 SHA-256:
 `d779a10588b371060c3468910c5541109aef79b310fbfbf64c7fd9eb612c1360`.
 The private operations directory retains the matching final source archive.
+
+
+### October 16 — P25 stream boundaries, home batch and integration audit
+
+Native OP25 DRAIN/DROP markers now reach recorder-only subscribers in order.
+DRAIN closes the current segment, DROP revokes buffered/checkpointed audio,
+and sequence gaps persist a partial-recording warning. Metadata without PCM no
+longer creates an empty voice recording. Stale/encrypted/unassigned PCM is rejected.
+Raw OP25 PCM still lacks packet-native call/talkgroup identity: this does not close
+sample-level attribution/encryption-transition or real overlapping-RF acceptance.
+
+Eight copied historical IQ captures (40 MB total) passed SHA-256 checks, completed
+native Windows DSP and local-model analysis without failure, and were imported
+into the Pi event history. Original paths/media/retention were preserved; journal
+backup is private. No new digital-frame or speech-accuracy acceptance is claimed.
+A separate resumable metadata-only home review covers 256 groups; it was still
+running at the last checkpoint (191 complete, 65 remaining, no reported error).
+
+The developed-feature audit integrated reviewed RTL stream recovery, Pluto
+transport selection, Mapper identity reconciliation, home-analysis fallback,
+FM discriminator limiting, tool detection and missing Pi helper source. See
+DEVELOPED_FEATURE_INTEGRATION_AUDIT.md for decisions and deferred prototypes.
+USB recovery recognizes one usable HackRF plus RTL, permits Ethernet Pluto,
+and defers bus probes while the app runs or its status is unknown. Pi status
+screen selects its framebuffer by panel identity and reports boot/data capacity.
+
+Validation: full Go suite and exact staged-source suite; focused race/vet;
+ARM64 and Windows builds; recorder/control/spool fixtures on actual Pi exFAT
+and Windows; UI contract checks; USB presence fixtures; sudoers syntax checks.
+These are bounded software checks, not RF overlap, listening, power-cut or
+physical-display acceptance. P25 is running with the saved three-radio silent
+profile; latest reception was searching. HackRF remains at least 8 MS/s.
+Deployed ARM64 SHA-256:
+`fa9c042672ff2fa277d6cd7b68924d9d7ad74fb3049ceedf00cc7af1ed5e2ab5`.
+Group 4 remains open for packet-native attribution and remaining acceptance gates.
+Credentials, recordings, transcripts and private batch manifests are excluded.

@@ -1,0 +1,1 @@
+sdr ALL=(root) NOPASSWD: /usr/local/lib/gp-sdr/display-session desktop, /usr/local/lib/gp-sdr/display-session kiosk

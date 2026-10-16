@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically check and re-probe GP-SDR USB receivers
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=gp-sdr-usb-recovery.service
+
+[Install]
+WantedBy=timers.target

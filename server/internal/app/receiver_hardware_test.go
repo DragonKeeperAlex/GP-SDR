@@ -18,9 +18,10 @@ func TestConnectedReceiverCapture(t *testing.T) {
 		kind = "HackRF"
 	}
 	defer shutdownLocalRTLSessions()
+	targetID := os.Getenv("GPSDR_TEST_DEVICE_ID")
 	var device SDRDevice
 	for _, d := range DiscoverDevices(false) {
-		if d.Connected && d.Available && d.Kind == kind {
+		if d.Connected && d.Available && d.Kind == kind && (targetID == "" || d.ID == targetID) {
 			device = d
 			break
 		}

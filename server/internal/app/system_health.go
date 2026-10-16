@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -64,10 +63,8 @@ func readSystemHealth(dataDirectory string) SystemHealth {
 			}
 		}
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dataDirectory, &stat); err == nil {
-		h.StorageTotal = stat.Blocks * uint64(stat.Bsize)
-		h.StorageFree = stat.Bavail * uint64(stat.Bsize)
+	if total, free, err := filesystemCapacity(dataDirectory); err == nil {
+		h.StorageTotal, h.StorageFree = total, free
 	}
 	for _, path := range []string{"/sys/class/thermal/thermal_zone0/temp", "/sys/class/thermal/thermal_zone1/temp"} {
 		if raw, err := os.ReadFile(path); err == nil {

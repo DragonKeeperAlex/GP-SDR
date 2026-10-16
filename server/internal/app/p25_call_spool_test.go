@@ -205,7 +205,8 @@ func TestP25SpoolNormalFinishCleansEmptyAndRecordedCalls(t *testing.T) {
 		if err != nil || len(files) != 0 {
 			t.Fatalf("normal finish leaked checkpoint for %d samples: %v files=%d", count, err, len(files))
 		}
-		if all := events.Recent(10); len(all) != 1 || (all[0].AudioPath != nil) != (count > 0) {
+		all := events.Recent(10)
+		if (count == 0 && len(all) != 0) || (count > 0 && (len(all) != 1 || all[0].AudioPath == nil)) {
 			t.Fatalf("empty/recorded call metadata lost: %+v", all)
 		}
 	}

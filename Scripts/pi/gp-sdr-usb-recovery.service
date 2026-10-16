@@ -1,0 +1,7 @@
+[Unit]
+Description=GP-SDR USB receiver recovery scan
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/gp-sdr/gp-sdr-usb-recovery

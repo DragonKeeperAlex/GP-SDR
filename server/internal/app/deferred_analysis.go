@@ -506,6 +506,11 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 			if r.mapper != nil {
 				r.mapper.SetDecodedMessages(event.FrequencyHz, candidate.DecoderID, messages)
 			}
+		} else if r.mapper != nil {
+			// A decoder that ran successfully but emitted no valid frames is useful
+			// negative evidence. Keep the requested decoder visible without treating
+			// its broad RF-band nomination as a protocol identification.
+			r.mapper.SetDecoderEvidence(event.FrequencyHz, candidate.DecoderID, "candidate", candidate.DecoderID+" completed with no valid frames", true)
 		}
 	}
 	if event.AudioPath != nil && ctx.Err() == nil && r.transcriber != nil {
@@ -540,6 +545,14 @@ func (r *Runtime) analyzeStoredEvent(event TransmissionEvent, stop <-chan struct
 			if current, ok := r.Events.Get(event.ID); ok {
 				analysis, err := r.localAI.Analyze(ctx, current)
 				if err != nil {
+					r.localAI.mu.RLock()
+					remoteEnabled := r.localAI.config.RemoteEnabled
+					r.localAI.mu.RUnlock()
+					if remoteEnabled && r.deepQueue != nil {
+						if _, _, queueErr := r.deepQueue.Enqueue(current); queueErr == nil {
+							go r.ProcessDeepAnalysis(context.Background(), 1)
+						}
+					}
 					return fmt.Errorf("local model analysis: %w", err)
 				}
 				_ = r.Events.UpdateAnalysis(event.ID, analysis)

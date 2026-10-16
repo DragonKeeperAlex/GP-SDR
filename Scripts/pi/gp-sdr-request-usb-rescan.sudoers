@@ -1,0 +1,1 @@
+sdr ALL=(root) NOPASSWD: /usr/local/lib/gp-sdr/request-usb-rescan

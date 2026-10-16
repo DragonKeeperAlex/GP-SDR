@@ -27,6 +27,7 @@ type p25SpoolManifest struct {
 	Version    int               `json:"version"`
 	Event      TransmissionEvent `json:"event"`
 	Transcribe bool              `json:"transcribe"`
+	Discarded  bool              `json:"discarded,omitempty"`
 }
 
 func (a *p25CallArchive) beginSpool(root string, event TransmissionEvent, transcribe bool) error {
@@ -105,6 +106,38 @@ func (s *p25CallSpool) remove() error {
 	return os.Remove(s.manifest)
 }
 
+func (s *p25CallSpool) discard() error {
+	// Persist revocation before unlinking, so a crash during cleanup cannot
+	// revive a decoder-discarded segment as a recording on the next startup.
+	data, err := os.ReadFile(s.manifest)
+	var meta p25SpoolManifest
+	if err == nil {
+		err = json.Unmarshal(data, &meta)
+	}
+	if err == nil {
+		meta.Discarded = true
+		data, err = json.Marshal(meta)
+	}
+	if err == nil {
+		file, openErr := os.OpenFile(s.manifest, os.O_WRONLY|os.O_TRUNC, 0600)
+		err = openErr
+		if err == nil {
+			_, err = file.Write(data)
+			if err == nil {
+				err = file.Sync()
+			}
+			err = errors.Join(err, file.Close())
+		}
+	}
+	// Unlink is also the fallback when the disk is full. If metadata could
+	// not be synced but unlink succeeds, nothing remains to recover.
+	removeErr := s.remove()
+	if removeErr == nil {
+		return nil
+	}
+	return errors.Join(err, removeErr)
+}
+
 var p25SpoolID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
 // Recover before workers start, one bounded call at a time. Failed/corrupt
@@ -154,6 +187,9 @@ func (r *Runtime) recoverP25CallSpool(dir, id string) error {
 		return fmt.Errorf("invalid metadata (preserved)")
 	}
 	event := meta.Event
+	if meta.Discarded {
+		return s.remove()
+	}
 	if event.ID != id || event.Encrypted || event.Simulated || event.TalkgroupID == nil || *event.TalkgroupID == 0 || event.P25StreamIndex == nil || *event.P25StreamIndex < 0 || event.StartedAt.IsZero() || !strings.HasPrefix(stringValue(event.ProtocolName), "P25") {
 		return fmt.Errorf("ineligible metadata (preserved)")
 	}
@@ -196,7 +232,8 @@ func (r *Runtime) recoverP25CallSpool(dir, id string) error {
 			return err
 		}
 		event.AudioPath, event.DurationSeconds, event.Recovered = &path, a.DurationSeconds(), true
-		event.MediaIssues = []string{"Recovered interrupted recording; audio after the last checkpoint may be missing"}
+		event.P25AudioIncomplete = true
+		event.MediaIssues = append(event.MediaIssues, "Recovered interrupted recording; audio after the last checkpoint may be missing")
 		if exists {
 			if err := r.Events.restoreP25CallAudio(id, event); err != nil {
 				return err
@@ -227,6 +264,7 @@ func (s *EventStore) restoreP25CallAudio(id string, recovered TransmissionEvent)
 	}
 	event := s.events[index]
 	event.AudioPath, event.DurationSeconds, event.Recovered = recovered.AudioPath, recovered.DurationSeconds, true
+	event.P25AudioIncomplete = recovered.P25AudioIncomplete
 	event.MediaIssues = recovered.MediaIssues
 	if err := appendDurableJSON(s.updatesPath(), event); err != nil {
 		return err

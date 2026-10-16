@@ -68,6 +68,21 @@ func TestBuildOP25ConfigurationUsesConservativeHackRFDefaults(t *testing.T) {
 	}
 }
 
+func TestBuildOP25ConfigurationHonorsRTLGainProfileSetting(t *testing.T) {
+	profile := ScanProfile{Settings: SurveySettings{GainDB: 20}, P25Systems: []P25SystemConfig{{ID: "system", Name: "P25", Enabled: true, ControlChannelsHz: []float64{774_456_250}}}}
+	data, err := BuildOP25Configuration(profile, []SDRDevice{{ID: "rtl", Kind: "RTL-SDR"}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config op25Configuration
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Devices) != 1 || config.Devices[0].Gains != "LNA:20" {
+		t.Fatalf("RTL profile gain was not forwarded: %#v", config.Devices)
+	}
+}
+
 func TestPlutoP25UsesSoapyOP25Input(t *testing.T) {
 	serial := "PLUTO123"
 	device := SDRDevice{ID: "pluto-1", Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", Serial: &serial, DeviceArguments: "driver=plutosdr,uri=usb:1.2.3"}

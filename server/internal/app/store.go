@@ -523,6 +523,15 @@ func (s *EventStore) UpdateAnalysis(id string, analysis SignalIntelligence) erro
 			analysis.Modulation = s.events[index].Modulation
 			analysis.SignalFamily = stringValue(s.events[index].ProtocolName)
 			analysis.Confidence = maxFloat(analysis.Confidence, s.events[index].Confidence)
+		} else if strings.Contains(strings.ToLower(stringValue(s.events[index].ProtocolName)), "candidate") &&
+			analysis.Modulation != "" && analysis.Modulation != "UNKNOWN" {
+			// A decoder selection is a hypothesis, not an identity. Once the
+			// measured waveform disagrees and no decoder frame exists, keep the
+			// event detail aligned with the combined Mapper result instead of
+			// retaining a stale "digital voice candidate" banner.
+			s.events[index].Modulation = analysis.Modulation
+			s.events[index].ProtocolName = nil
+			s.events[index].Label = ptr("Unclassified " + strings.ToLower(analysis.Modulation) + " signal")
 		}
 		s.events[index].Analysis = &analysis
 		s.events[index].Callsigns = mergeUniqueStrings(s.events[index].Callsigns, analysis.Callsigns)

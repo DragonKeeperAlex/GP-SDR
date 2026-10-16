@@ -16,6 +16,7 @@ type p25CallArchive struct {
 	truncated bool
 	eventID   string
 	spool     *p25CallSpool
+	issues    []string
 }
 
 func newP25CallArchive(index int) *p25CallArchive {

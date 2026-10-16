@@ -1,0 +1,2 @@
+# GP-SDR touchscreen power controls: only these exact system actions are allowed.
+sdr ALL=(root) NOPASSWD: /usr/local/lib/gp-sdr/system-power shutdown, /usr/local/lib/gp-sdr/system-power reboot

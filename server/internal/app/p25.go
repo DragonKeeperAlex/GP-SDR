@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -216,7 +217,7 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 	for index, device := range devices {
 		name := fmt.Sprintf("sdr%d", index)
 		rate := effectiveOP25DeviceRate(profile, device)
-		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25Gains(device),
+		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25GainsForProfile(profile, device),
 			Name: name, Rate: rate, UsablePercent: .85, Tunable: true})
 		if device.Calibration != nil {
 			configuration.Devices[len(configuration.Devices)-1].PPM = float64(device.Calibration.PPMCorrection)
@@ -660,6 +661,20 @@ func op25Gains(device SDRDevice) string {
 		return "PGA:45"
 	}
 	return "LNA:36"
+}
+
+func op25GainsForProfile(profile ScanProfile, device SDRDevice) string {
+	if device.Kind == "RTL-SDR" && profile.Settings.GainDB > 0 {
+		gain := int(math.Round(profile.Settings.GainDB))
+		if gain < 0 {
+			gain = 0
+		}
+		if gain > 49 {
+			gain = 49
+		}
+		return fmt.Sprintf("LNA:%d", gain)
+	}
+	return op25Gains(device)
 }
 
 func normalizedHex(value, fallback string) string {

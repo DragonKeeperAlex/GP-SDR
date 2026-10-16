@@ -22,9 +22,25 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
-FRAMEBUFFER = Path(os.environ.get("GPSDR_TFT_FRAMEBUFFER", "/dev/fb0"))
+def tft_framebuffer() -> Path:
+    configured = os.environ.get("GPSDR_TFT_FRAMEBUFFER", "auto")
+    if configured != "auto":
+        return Path(configured)
+    # DRM HDMI and the SPI panel can exchange fb0/fb1 across boots. Select the
+    # physical ILI9341 by kernel name, never by framebuffer number.
+    for info in Path("/sys/class/graphics").glob("fb*/name"):
+        try:
+            if "ili9341" in info.read_text().lower():
+                return Path("/dev") / info.parent.name
+        except OSError:
+            continue
+    return Path("/dev/fb1")
+
+
+FRAMEBUFFER = tft_framebuffer()
 WIDTH = int(os.environ.get("GPSDR_TFT_WIDTH", "240"))
 HEIGHT = int(os.environ.get("GPSDR_TFT_HEIGHT", "320"))
+ROTATION = int(os.environ.get("GPSDR_TFT_ROTATION", "0")) % 360
 REFRESH_SECONDS = max(1.0, float(os.environ.get("GPSDR_TFT_REFRESH_SECONDS", "1")))
 PAGE_TIMEOUT_SECONDS = max(5.0, float(os.environ.get("GPSDR_TFT_PAGE_TIMEOUT_SECONDS", "30")))
 DATA_ROOT = Path(os.environ.get("GPSDR_DATA_ROOT", "/mnt/gp-sdr-data"))
@@ -57,6 +73,14 @@ def command(args: list[str]) -> str:
 
 
 def gp_sdr_endpoint() -> tuple[str, str] | None:
+    """Find GP-SDR's loopback endpoint and its in-memory token, if any.
+
+    Older service definitions passed ``-token`` directly to GP-SDR.  The
+    deployed Pi service instead keeps ``GPSDR_WEB_TOKEN`` in its environment,
+    which is safer for process listings.  This read-only panel runs as the
+    same service user, so it can use either arrangement without persisting or
+    displaying the token.  A tokenless local service remains supported.
+    """
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
@@ -68,9 +92,19 @@ def gp_sdr_endpoint() -> tuple[str, str] | None:
             continue
         try:
             port_flag = next(flag for flag in ("-port", "--port") if flag in values)
-            token_flag = next(flag for flag in ("-token", "--token") if flag in values)
-            return f"http://127.0.0.1:{values[values.index(port_flag) + 1]}", values[values.index(token_flag) + 1]
-        except (StopIteration, ValueError, IndexError):
+            token = ""
+            for token_flag in ("-token", "--token"):
+                if token_flag in values:
+                    token = values[values.index(token_flag) + 1]
+                    break
+            if not token:
+                environment = (entry / "environ").read_bytes().split(b"\0")
+                for variable in environment:
+                    if variable.startswith(b"GPSDR_WEB_TOKEN="):
+                        token = variable.partition(b"=")[2].decode(errors="replace")
+                        break
+            return f"http://127.0.0.1:{values[values.index(port_flag) + 1]}", token
+        except (StopIteration, ValueError, IndexError, OSError):
             continue
     return None
 
@@ -80,7 +114,8 @@ def api(path: str) -> object | None:
     if endpoint is None:
         return None
     base, token = endpoint
-    request = urllib.request.Request(f"{base}{path}", headers={"X-GP-SDR-Token": token})
+    headers = {"X-GP-SDR-Token": token} if token else {}
+    request = urllib.request.Request(f"{base}{path}", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             return json.load(response)
@@ -146,19 +181,26 @@ def thermal() -> tuple[str, str]:
     return temperature, "OK" if throttle.endswith("0x0") else (throttle or "--")
 
 
-def free_space() -> str:
+def free_space(path: Path = DATA_ROOT) -> str:
     try:
-        stats = os.statvfs(DATA_ROOT)
+        stats = os.statvfs(path)
         gib = stats.f_bavail * stats.f_frsize / (1024**3)
-        return f"{gib:.1f} GiB free"
+        percent = 100 * stats.f_bavail / stats.f_blocks if stats.f_blocks else 0
+        return f"{gib:.0f}G free ({percent:.0f}%)"
     except OSError:
-        return "storage unavailable"
+        return "unavailable"
+
+
+def boot_space() -> str:
+    # The operating-system card needs independent monitoring from the GP-SDR
+    # data volume, which can be healthy while the 64 GB boot card fills up.
+    return free_space(Path("/"))
 
 
 def system_metrics() -> dict[str, str]:
     """Return lightweight, host-local telemetry for the status panel."""
     global _cpu_previous, _network_previous
-    result: dict[str, str] = {"cpu": "--", "ram": "--", "storage": free_space(), "network": "--", "rate": "--", "gpu": "--"}
+    result: dict[str, str] = {"cpu": "--", "ram": "--", "storage": free_space(), "boot": boot_space(), "network": "--", "rate": "--", "gpu": "--"}
     try:
         fields = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
         values = [int(value) for value in fields]
@@ -210,6 +252,8 @@ def short_name(device: dict[str, object]) -> str:
 
 
 def write_rgb565(image: Image.Image) -> None:
+    if ROTATION:
+        image = image.rotate(ROTATION)
     image = image.convert("RGB")
     pixels = image.load()
     packed = bytearray(WIDTH * HEIGHT * 2)
@@ -278,10 +322,11 @@ def dashboard(page: int = 0) -> Image.Image:
             text(draw, (12, 44), f"CPU  {metrics['cpu']}  {temperature}", "medium")
             text(draw, (12, 68), f"GPU V3D  {metrics['gpu']}", "small")
             text(draw, (12, 92), f"RAM  {metrics['ram']}", "medium")
-            text(draw, (12, 116), f"DISK  {metrics['storage']}", "small")
-            text(draw, (12, 140), f"NET  {metrics['network']}", "medium")
-            text(draw, (12, 164), f"RATE  {metrics['rate']}", "small")
+            text(draw, (12, 116), f"BOOT  {metrics['boot']}", "small")
+            text(draw, (12, 140), f"DATA  {metrics['storage']}", "small")
+            text(draw, (12, 164), f"NET  {metrics['network']}", "medium")
             text(draw, (12, 188), f"THROTTLE  {throttle}", "small", "#42d3a2" if throttle == "OK" else "#c05260")
+            return image
         if page:
             text(draw, (10, 212), f"Touch: next page • Overview in {int(PAGE_TIMEOUT_SECONDS)}s • {dt.datetime.now().strftime('%H:%M:%S')}", "tiny", "#8e9bad")
             return image
@@ -350,7 +395,7 @@ def dashboard(page: int = 0) -> Image.Image:
     temperature, throttle = thermal()
     metrics = system_metrics()
     text(draw, (10, 290), f"CPU {metrics['cpu']} {temperature} • RAM {metrics['ram']} • GPU {metrics['gpu']}", "tiny")
-    text(draw, (10, 304), f"{metrics['storage']} • NET {metrics['network']} {metrics['rate']} • {dt.datetime.now().strftime('%H:%M:%S')}", "tiny", "#8e9bad")
+    text(draw, (10, 304), f"BOOT {metrics['boot']} • DATA {metrics['storage']} • {dt.datetime.now().strftime('%H:%M:%S')}", "tiny", "#8e9bad")
     return image
 
 
