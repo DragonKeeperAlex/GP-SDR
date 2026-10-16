@@ -292,6 +292,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && path == "/api/local-ai/classifier/train":
 		result, err := s.runtime.TrainRFClassifier()
 		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "GET" && path == "/api/local-ai/deep-queue/status":
+		writeJSON(w, 200, s.runtime.deepQueue.summary())
 	case r.Method == "GET" && path == "/api/local-ai/deep-queue":
 		writeJSON(w, 200, s.runtime.DeepAnalysisQueue())
 	case r.Method == "POST" && path == "/api/local-ai/deep-queue":
@@ -372,7 +374,15 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, job, err, http.StatusAccepted)
 	case r.Method == "GET" && path == "/api/p25/recordings":
 		page, err := s.runtime.Events.P25Recordings(r.URL.Query().Get("q"), r.URL.Query().Get("before"), intQuery(r, "limit", 50))
+		s.runtime.p25Transcription.decorate(&page)
 		writeResult(w, page, err, http.StatusOK)
+	case r.Method == "POST" && path == "/api/p25/transcription/retry":
+		if s.runtime.p25Transcription == nil {
+			writeError(w, http.StatusServiceUnavailable, "P25 transcription queue unavailable")
+			return
+		}
+		err := s.runtime.p25Transcription.enqueue(r.URL.Query().Get("id"), true)
+		writeResult(w, map[string]bool{"queued": err == nil}, err, http.StatusAccepted)
 	case r.Method == "GET" && path == "/api/p25/status":
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":

@@ -65,3 +65,42 @@ func TestP25RecordingsFiltersBeforePagingAndIgnoresSurveyTraffic(t *testing.T) {
 		t.Fatal("invalid cursor accepted")
 	}
 }
+
+func TestP25RecordingsPreserveUnavailableAudio(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransmissionEvent{ID: "missing", ProtocolName: ptr("P25"), TalkgroupID: ptr(uint32(3255)), MediaIssues: []string{"Missing recording: old.wav"}}
+	if err := store.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.P25Recordings("", "", 50)
+	if err != nil || len(page.Calls) != 1 || page.Calls[0].AudioAvailable {
+		t.Fatalf("missing metadata hidden: %+v %v", page, err)
+	}
+}
+
+func TestP25ArchiveDerivesHistoricalDurationWithoutChangingJournal(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewEventStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := root + "/audio.wav"
+	if err := WriteMonoWAV(path, make([]int16, 16000), 8000); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(TransmissionEvent{ID: "old-duration", ProtocolName: ptr("P25"), TalkgroupID: ptr(uint32(3255)), AudioPath: &path, DurationSeconds: 0.001}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.P25Recordings("", "", 50)
+	if err != nil || !page.Calls[0].AudioAvailable || page.Calls[0].RecordedDurationSeconds == nil || *page.Calls[0].RecordedDurationSeconds != 2 {
+		t.Fatal("incorrect actual WAV duration")
+	}
+	original, _ := store.Get("old-duration")
+	if original.DurationSeconds != 0.001 {
+		t.Fatal("historical journal changed during read")
+	}
+}

@@ -326,3 +326,64 @@ at 2.4/8/2.4 MS/s. No credentials, recordings or transcripts are committed.
 The live store audit also reports 182 missing media references across the
 existing archive. Group 4 must distinguish unavailable media from playable
 calls, preserve their findings, and test recovery without inventing missing data.
+
+## October 16 recording and transcription recovery increment
+
+- OP25 calls now carry the generated receiver identity and TDMA slot. Call keys
+  include receiver/stream/slot; source or slot transitions start a distinct call.
+  Idle/control/held metadata is not promoted to voice. Old decoder replies are
+  discarded across a concurrent session replacement.
+- New recordings use unique stream-specific filenames, atomic finalization and
+  a synced WAV before publication. Saved duration comes from actual PCM samples.
+  Stop and decoder exit drain buffered frames and finalize active calls, with a
+  bounded storage wait before shutdown. Save/journal failures surface explicitly.
+  These changes do not add a persistent in-progress PCM spool: abrupt power loss
+  or SIGKILL can still lose the current in-memory segment.
+- Recordings preserves missing-media call metadata and disables unavailable
+  playback. Canonical WAV header duration corrects the displayed duration of
+  older recordings without rewriting historical journal entries. Receiver
+  attribution that was never recorded remains unknown.
+- Added a persistent, bounded 1,000-entry P25 transcription queue: one worker,
+  deduplication, pending/running/complete/no-speech/failed states, restart recovery
+  and explicit retry/manual queue actions. Failed/corrupt persistence is not
+  silently replaced. Audio files stay in place. Stopping monitoring does not
+  cancel transcription. On Linux ARM64, Whisper uses two threads and nice +10
+  when available, sharing the existing transcription semaphore.
+- Software checks include full Go tests, targeted P25 race tests, vet and archive
+  UI regressions. The staged source independently passed the full Go suite.
+  Eight focused fixture checks passed on the Pi's actual exFAT storage, including
+  write failures, distinct files, PCM duration, encrypted exclusion, missing
+  media, retry/restart/deduplication and corrupt-queue preservation. Fixtures
+  created no RF transmissions or live journal entries.
+
+Group 4 remains IN PROGRESS. Remaining gates: sample-level audio/call boundaries
+(the installed UDP stream has no call ID), measured overlapping real calls,
+physical radio/control loss and crash/reacquisition, forced-process/power-loss
+recording recovery, full/unavailable real storage behavior, and speech/listening
+acceptance. Do not call fixture metadata tests proof of real concurrent reception
+or guaranteed encryption-boundary audio exclusion.
+
+The in-app browser now provides authenticated UI testing without controlling the
+user's Firefox or laptop input. Keep the later customizable tiles/page grouping,
+visual styling and proper theming exploration deferred until after group 4 and
+its requested GPT-6 Astra review; compare mockups before implementation.
+
+October 16 follow-up: live queue testing found legacy MP3 calls were not accepted
+by the WAV-only transcriber. Added bounded local ffmpeg conversion into a
+private temporary WAV, preserving the MP3. Installed ffmpeg on the Pi; a
+synthetic MP3 conversion/preservation check passed there, and a previously
+failed historical call completed via the in-app Retry action. This proves
+pipeline execution, not subjective transcript correctness.
+
+At the user's request, home deferred evidence processing is now part of the
+active scope. See `HOME_DEFERRED_COMPUTE.md` for the metadata-only boundary,
+serial background processing, restart/backoff behavior and bounded checks.
+The broader tile/page/theme redesign remains deferred.
+
+Final recording/home-compute increment deployment (October 16): ARM64 SHA-256
+`7ddaed698fbad52780bdf82079555f6ca4623cabd4173de8bf9cc4adf97042df`.
+The private `p25-recovery-20261016` Pi operations directory retains rollback,
+matching candidate source, test runner and pre-change configuration. The shipped
+binary preserves the unrelated pre-existing local source baseline; the exact
+staged Git source separately passes the full test suite. No call media,
+transcripts, credentials or actual home endpoint configuration are committed.

@@ -498,3 +498,14 @@ Fixed in this work tranche (bounded software scope only):
   Added recovery guidance and setup/recordings shortcuts. Group 3 software UI
   handoff is documented in `P25_REBUILD_PLAN.md`; full RF/UI acceptance and group
   4 call/archive/transcription recovery remain open.
+
+- 2026-10-16 P25 archive/transcription: software fixes cover call keys and
+  receiver metadata, measured audio duration, Stop finalization, missing media,
+  and durable one-worker queue/retry. Pi storage fixtures pass. Group 4 and
+  RF-01/04/05/06/07 remain open; raw UDP call boundaries and abrupt loss are not
+  accepted by metadata/fixture tests.
+
+- 2026-10-16 home compute: private-network Ollama metadata analysis configured
+  and exercised from the Pi. Queue safeguards and status updates added; local
+  model settings retain remote configuration. This is not raw IQ/audio offload,
+  RF-model accuracy or Windows unattended-startup acceptance; AI-07 remains open.

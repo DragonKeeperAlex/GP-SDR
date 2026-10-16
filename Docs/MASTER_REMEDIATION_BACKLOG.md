@@ -718,3 +718,17 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   guidance and recordings/setup shortcuts. Bounded software checks and Firefox
   field workflow verified; see `P25_REBUILD_PLAN.md`. Group 4 call identity and
   queue/recovery work remains open, as do broader RF/UI acceptance gates.
+
+- 2026-10-16 P25 recording/recovery increment: receiver/stream/slot identity,
+  PCM-derived saved duration, unique atomic filenames, active-call finalization,
+  missing-media feedback and persistent bounded transcription retry queue.
+  Local and exact staged-source suites pass; eight short Pi exFAT fixture checks
+  pass. Group 4 remains in progress for sample-level attribution, abrupt loss,
+  physical recovery/concurrent RF and speech acceptance. See rebuild plan.
+
+- 2026-10-16 AI-07 user priority update: enabled home metadata analysis with
+  the already-installed Qwen 3.5 9B model. Added serial/independent processing,
+  bounded queue, restart recovery/backoff and apply-once results. The Pi passed
+  the synthetic structured request; one real queued metadata job completed and
+  was applied automatically. Raw IQ/audio offload and Windows startup remain
+  separate gates. See `HOME_DEFERRED_COMPUTE.md`.

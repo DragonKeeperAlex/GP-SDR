@@ -14,6 +14,7 @@ import (
 )
 
 type Runtime struct {
+	p25Transcription    *P25TranscriptionQueue
 	mediaRecovery       MediaRecoveryReport
 	mu                  sync.RWMutex
 	Profiles            *ProfileStore
@@ -26,6 +27,7 @@ type Runtime struct {
 	startedAt           *time.Time
 	active              *ScanProfile
 	stop                chan struct{}
+	p25MonitorDone      chan struct{}
 	demo                bool
 	webAddress          string
 	dataDirectory       string
@@ -34,6 +36,7 @@ type Runtime struct {
 	learning            *SignalLearningLibrary
 	rfClassifier        *RFClassifierModel
 	deepQueue           *DeepAnalysisQueue
+	deepWorkMu          sync.Mutex
 	lastError           *string
 	droppedSamples      uint64
 	op25                *OP25Manager
@@ -131,10 +134,41 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	runtimeState.p25Transcription = newP25TranscriptionQueue(dataDirectory, events, runtimeState.transcribeP25File)
+	runtimeState.p25Transcription.onComplete = func(eventID string) {
+		event, ok := events.Get(eventID)
+		if !ok {
+			return
+		}
+		localAI.mu.RLock()
+		remoteEnabled := localAI.config.RemoteEnabled
+		localAI.mu.RUnlock()
+		if remoteEnabled {
+			if _, _, err := runtimeState.deepQueue.Enqueue(event); err != nil {
+				runtimeState.setRuntimeError("Queue home analysis: " + err.Error())
+			}
+		} else {
+			runtimeState.analyzeEventWithLocalAI(context.Background(), eventID, event.FrequencyHz)
+		}
+	}
+	go runtimeState.p25Transcription.run(context.Background())
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			runtimeState.ProcessDeepAnalysis(context.Background(), 1)
+		}
+	}()
 	return runtimeState, nil
 }
 
-func (r *Runtime) LocalAIStatus() LocalAIStatus { return r.localAI.Status() }
+func (r *Runtime) LocalAIStatus() LocalAIStatus {
+	status := r.localAI.Status()
+	if status.Config.RemoteEnabled {
+		status.RemoteQueue = r.deepQueue.summary()
+	}
+	return status
+}
 func (r *Runtime) UpdateLocalAI(config LocalAIConfig) (LocalAIStatus, error) {
 	return r.localAI.Update(config)
 }
@@ -186,13 +220,25 @@ func (r *Runtime) EnqueueDeepAnalysis(eventID string) (DeepAnalysisJob, bool, er
 	return r.deepQueue.Enqueue(event)
 }
 func (r *Runtime) ProcessDeepAnalysis(ctx context.Context, limit int) []DeepAnalysisJob {
+	if r.deepQueue == nil {
+		return nil
+	}
+	if !r.deepWorkMu.TryLock() {
+		return r.deepQueue.List()
+	}
+	defer r.deepWorkMu.Unlock()
 	r.localAI.mu.RLock()
 	config := r.localAI.config
 	r.localAI.mu.RUnlock()
 	jobs := r.deepQueue.Process(ctx, config, limit)
 	for _, job := range jobs {
-		if job.Status == "complete" && job.Result != nil {
-			_ = r.Events.UpdateAnalysis(job.Event.ID, *job.Result)
+		if job.Status == "complete" && job.Result != nil && !job.ResultApplied {
+			if err := r.Events.UpdateAnalysis(job.Event.ID, *job.Result); err != nil {
+				continue
+			}
+			if err := r.deepQueue.markApplied(job.ID); err != nil {
+				r.setRuntimeError("Deep-analysis result: " + err.Error())
+			}
 			if r.mapper != nil {
 				r.mapper.SetSignalIntelligence(job.Event.FrequencyHz, *job.Result)
 			}
@@ -1103,13 +1149,18 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 		r.tunerHardware = nil
 	}
 	stop := r.stop
+	var p25Done chan struct{}
+	if useP25 && !r.demo {
+		p25Done = make(chan struct{})
+		r.p25MonitorDone = p25Done
+	}
 	tunerUpdates := r.tunerUpdates
 	demo := r.demo
 	r.mu.Unlock()
 	if demo {
 		go r.simulationLoop(stop)
 	} else if useP25 {
-		go r.p25MonitorLoop(stop, profile)
+		go func() { defer close(p25Done); r.p25MonitorLoop(stop, profile) }()
 	} else if tuner != nil {
 		go r.tunerLoop(stop, profile, liveDevices[0], *tuner, tunerUpdates)
 	} else if !useP25 && len(liveDevices) > 1 {
@@ -1218,6 +1269,8 @@ func (r *Runtime) Stop() {
 		r.StopTransmit()
 	}
 	r.mu.Lock()
+	done := r.p25MonitorDone
+	r.p25MonitorDone = nil
 	if r.stop != nil {
 		close(r.stop)
 		r.stop = nil
@@ -1236,6 +1289,13 @@ func (r *Runtime) Stop() {
 	r.mu.Unlock()
 	if r.op25 != nil {
 		r.op25.Stop()
+	}
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			r.setRuntimeError("P25 recording finalization is still waiting on storage.")
+		}
 	}
 }
 
@@ -1454,8 +1514,21 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 	if r.audioHub != nil {
 		frames, unsubscribe = r.audioHub.Subscribe()
 	}
-	defer unsubscribe()
 	archives := make(map[string]*p25CallArchive)
+	// Stop and decoder exit must finalize buffered audio, not silently discard it.
+	defer func() {
+		unsubscribe()
+		if frames != nil {
+			for frame := range frames {
+				for _, archive := range archives {
+					archive.Append(frame)
+				}
+			}
+		}
+		for key, call := range previous {
+			r.finishP25Call(stop, profile, call, archives[key])
+		}
+	}()
 	for {
 		select {
 		case <-stop:
@@ -1471,11 +1544,10 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 		case <-ticker.C:
 			if status := r.P25Status(); status.State == "error" {
 				note := status.Note
-				r.Stop()
 				if note == "" {
 					note = "OP25 exited unexpectedly."
 				}
-				r.setRuntimeError("P25 decoder stopped: " + note)
+				go func() { r.Stop(); r.setRuntimeError("P25 decoder stopped: " + note) }()
 				return
 			}
 			talkgroups, talkgroupErr := r.op25.Talkgroups()
@@ -1496,45 +1568,8 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				if _, active := current[key]; active {
 					continue
 				}
-				label := fmt.Sprintf("Talkgroup %d", call.Grant.GroupID)
-				if call.Talkgroup != nil && call.Talkgroup.AlphaTag != "" {
-					label = call.Talkgroup.AlphaTag
-				}
-				protocol := "P25"
-				if strings.Contains(strings.ReplaceAll(strings.ToLower(call.Grant.Protocol), " ", ""), "phase2") {
-					protocol = "P25 Phase 2"
-				}
-				duration := call.LastHeardAt.Sub(call.StartedAt).Seconds()
-				if duration < 0 {
-					duration = 0
-				}
-				systemName, talkgroupID := call.Grant.System, call.Grant.GroupID
-				var sourceRadioID *uint32
-				if call.Grant.SourceID != 0 {
-					source := call.Grant.SourceID
-					sourceRadioID = &source
-				}
-				r.op25.mu.Lock()
-				decoderEngine := r.op25.engine
-				r.op25.mu.Unlock()
-				event := TransmissionEvent{ID: NewID(), StartedAt: call.StartedAt, DurationSeconds: duration,
-					FrequencyHz: float64(call.Grant.FrequencyHz), BandwidthHz: 12_500, SignalDBFS: -30, NoiseDBFS: -80,
-					Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99,
-					SystemName: &systemName, TalkgroupID: &talkgroupID, SourceRadioID: sourceRadioID, Encrypted: call.Grant.Encrypted,
-					Analysis: &SignalIntelligence{Engine: decoderEngine + " frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
-						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: decoderEngine + " reported a " + protocol + " voice call."}}
-				_ = r.Events.Append(event)
-				if archive := archives[key]; archive != nil {
-					delete(archives, key)
-					if path, err := archive.Save(r.dataDirectory, call.Grant.GroupID, call.StartedAt); err == nil {
-						_ = r.Events.UpdateAudioPath(event.ID, path)
-						if profile.Settings.TranscribeVoice {
-							go r.transcribeEvent(stop, event.ID, float64(call.Grant.FrequencyHz), path)
-						}
-					}
-				} else if !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls {
-					go r.attachP25Recording(stop, profile, call, event.ID)
-				}
+				r.finishP25Call(stop, profile, call, archives[key])
+				delete(archives, key)
 			}
 			previous = current
 		}
@@ -1553,7 +1588,11 @@ func (r *Runtime) attachP25Recording(stop <-chan struct{}, profile ScanProfile, 
 			if err == nil {
 				_ = r.Events.UpdateAudioPath(eventID, path)
 				if profile.Settings.TranscribeVoice {
-					go r.transcribeEvent(stop, eventID, float64(call.Grant.FrequencyHz), path)
+					if r.p25Transcription != nil {
+						if err := r.p25Transcription.enqueue(eventID, false); err != nil {
+							r.setRuntimeError("Queue P25 transcription: " + err.Error())
+						}
+					}
 				}
 			}
 			return
@@ -1569,7 +1608,11 @@ func (r *Runtime) attachP25Recording(stop <-chan struct{}, profile ScanProfile, 
 }
 
 func p25CallKey(call P25ActiveCall) string {
-	return fmt.Sprintf("%s:%d:%d:%d", call.Grant.System, call.Grant.GroupID, call.Grant.FrequencyHz, call.StartedAt.UnixNano())
+	slot := -1
+	if call.TDMASlot != nil {
+		slot = *call.TDMASlot
+	}
+	return fmt.Sprintf("%s:%d:%d:%d:%s:%d:%d", call.Grant.System, call.Grant.GroupID, call.Grant.FrequencyHz, call.StreamIndex, call.DeviceSerial, slot, call.StartedAt.UnixNano())
 }
 
 func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupState, calls []P25ActiveCall) {

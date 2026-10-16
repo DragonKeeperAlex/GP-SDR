@@ -34,12 +34,13 @@ type LocalAIConfig struct {
 }
 
 type LocalAIStatus struct {
-	State     string                `json:"state"`
-	Note      string                `json:"note"`
-	Config    LocalAIConfig         `json:"config"`
-	CanManage bool                  `json:"canManage"`
-	Models    []LocalAIModelOption  `json:"models,omitempty"`
-	Learning  LearningLibraryStatus `json:"learning"`
+	RemoteQueue *DeepAnalysisQueueSummary `json:"remoteQueue,omitempty"`
+	State       string                    `json:"state"`
+	Note        string                    `json:"note"`
+	Config      LocalAIConfig             `json:"config"`
+	CanManage   bool                      `json:"canManage"`
+	Models      []LocalAIModelOption      `json:"models,omitempty"`
+	Learning    LearningLibraryStatus     `json:"learning"`
 }
 
 type LocalAIModelOption struct {

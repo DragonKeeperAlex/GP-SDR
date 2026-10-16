@@ -44,3 +44,10 @@ assert(context.renderP25Diagnostics({state:'running',telemetryState:'unavailable
 const receiverHTML=context.renderP25ReceiverStatus({receivers:[{name:'RTL',state:'idle',frequencyErrorHz:26}]});
 assert(receiverHTML.includes('26 Hz'));assert(receiverHTML.includes('No current receiver attribution'));assert(!receiverHTML.includes('None this session'));
 console.log('P25 loss, recovery, counter scope and frequency-offset diagnostics checks passed');
+Object.assign(context,{recordingPlayer:{dataset:{},paused:true}});
+vm.runInContext(section('function renderP25RecordingCards(','\nlet p25RecordingsRequest'),context);
+state.p25Recordings=[{id:'missing',label:'Dispatch',audioAvailable:false,mediaIssues:['Missing recording'],durationSeconds:0}];
+let cards=context.renderP25RecordingCards();assert(cards.includes('Audio unavailable'));assert(cards.includes('button disabled'));assert(cards.includes('Duration unknown'));
+state.p25Recordings=[{id:'saved',audioAvailable:true,audioPath:'fixture.wav',recordedDurationSeconds:2,durationSeconds:.001,transcriptionState:'failed',transcriptionError:'model offline'}];
+cards=context.renderP25RecordingCards();assert(cards.includes('2.0 s'));assert(cards.includes('Retry transcription'));assert(cards.includes('model offline'));
+console.log('P25 archive missing-audio, measured duration and retry presentation checks passed');
