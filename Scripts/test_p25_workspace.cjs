@@ -35,3 +35,12 @@ for(const device of state.devices){
  else{if(device.kind==='RTL-SDR')assert(!html.includes('value="2880000"'));assert(html.includes('data-p25-setting="gainDB"'));assert(!html.includes('data-p25-setting="ampEnabled"'));assert(!html.includes('data-p25-setting="vgaGainDB"'));}
 }
 console.log('P25 receiver capability and HackRF minimum UI checks passed');
+vm.runInContext(section('function renderP25Diagnostics(','\nfunction p25RateOptions'),context);
+Object.assign(context,{timeAgo:()=> '20 seconds ago',formatFrequency:value=>String(value),escapeHTML:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')});
+const diagnostics=context.renderP25Diagnostics({state:'running',telemetryState:'available',receivers:[{state:'searching'}],systems:[{system:'<site>',controlMessages:0,voiceUpdates:58,lastControlAt:'2026-10-15'}]});
+assert(diagnostics.includes('No recent control decode'));assert(diagnostics.includes('startup preference'));assert(diagnostics.includes('Voice frequency updates'));assert(diagnostics.includes('not unique calls'));assert(diagnostics.includes('&lt;site&gt;'));assert(!diagnostics.includes('<site>'));
+assert(context.renderP25Diagnostics({state:'error'}).includes('decoder exited'));
+assert(context.renderP25Diagnostics({state:'running',telemetryState:'unavailable'}).includes('does not establish RF failure'));
+const receiverHTML=context.renderP25ReceiverStatus({receivers:[{name:'RTL',state:'idle',frequencyErrorHz:26}]});
+assert(receiverHTML.includes('26 Hz'));assert(receiverHTML.includes('No current receiver attribution'));assert(!receiverHTML.includes('None this session'));
+console.log('P25 loss, recovery, counter scope and frequency-offset diagnostics checks passed');

@@ -114,3 +114,22 @@ func TestP25PreferredControlReceiverPrecedesVoiceReceivers(t *testing.T) {
 		t.Fatalf("unavailable preferred receiver included: %#v", ordered)
 	}
 }
+
+func TestP25DiagnosticsKeepsStaleSystemEvidenceSeparateFromReceiver(t *testing.T) {
+	now := time.Unix(2000, 0)
+	updates := sessionUpdates(t, `[{"json_type":"trunk_update","0":{"system":"site","network_active":1,"rxchan":774143750,"last_tsbk":1980,"frequency_data":{"774143750":{"type":"control","counter":471},"772356250":{"type":"voice","counter":20},"772656250":{"type":"voice","counter":38}}}},{"json_type":"channel_update","0":{"system":"site","tag":"Control Channel","freq":774143750,"error":26},"1":{"system":"site","tag":"Idle","freq":772656250,"error":null}}]`)
+	status := P25Status{Reception: "searching"}
+	summarizeOP25Session(&status, []P25ReceiverStatus{{StreamIndex: 0, System: "site"}, {StreamIndex: 1, System: "site"}}, updates, now.Add(-time.Minute), now)
+	if len(status.Systems) != 1 || status.Systems[0].LastControlAt == nil || *status.Systems[0].ControlMessages != 471 || *status.Systems[0].VoiceUpdates != 58 {
+		t.Fatalf("missing system history: %#v", status.Systems)
+	}
+	if status.Receivers[0].LastControlAt != nil || status.Reception == "locked" || status.Receivers[0].FrequencyErrorHz == nil || *status.Receivers[0].FrequencyErrorHz != 26 || status.Receivers[1].FrequencyErrorHz != nil {
+		t.Fatalf("wrong receiver evidence: %#v", status.Receivers)
+	}
+	for _, last := range []string{"1900", "2001"} {
+		rows := projectOP25Systems(sessionUpdates(t, `[{"json_type":"trunk_update","0":{"system":"site","last_tsbk":`+last+`}}]`), now.Add(-time.Minute), now)
+		if rows[0].LastControlAt != nil || rows[0].ControlMessages != nil || rows[0].VoiceUpdates != nil {
+			t.Fatal("old/future or missing evidence was promoted")
+		}
+	}
+}

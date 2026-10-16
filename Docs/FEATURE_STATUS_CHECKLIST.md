@@ -492,3 +492,9 @@ Fixed in this work tranche (bounded software scope only):
   filters. Corrected remaining SDRTrunk tuner-file fallback to 8 MS/s. Bounded
   regression checks pass; RF-01/02/04/05/06 and full UI-01/02/03/04 acceptance
   remain open. See `P25_REBUILD_PLAN.md` for exact scope and limitations.
+
+- 2026-10-16 P25 field UI: system activity counters and stale control age are
+  separate from per-radio evidence; frequency offset is not an error count.
+  Added recovery guidance and setup/recordings shortcuts. Group 3 software UI
+  handoff is documented in `P25_REBUILD_PLAN.md`; full RF/UI acceptance and group
+  4 call/archive/transcription recovery remain open.

@@ -37,6 +37,7 @@ type P25Status struct {
 	// preference. The web client uses it to avoid rendering controls for a
 	// previously selected receiver after a P25 session has started elsewhere.
 	ReceiverDeviceIDs []string            `json:"receiverDeviceIDs,omitempty"`
+	Systems           []P25SystemStatus   `json:"systems,omitempty"`
 	Receivers         []P25ReceiverStatus `json:"receivers,omitempty"`
 	TelemetryState    string              `json:"telemetryState,omitempty"`
 	StartedAt         *time.Time          `json:"startedAt,omitempty"`

@@ -741,3 +741,21 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
 #p25-recordings-older { margin:16px; }
 .editor-row.assignment { grid-template-columns:minmax(120px,1fr) minmax(140px,1fr) minmax(180px,1.5fr) 36px; }
 @media(max-width:760px) { .editor-row.assignment { grid-template-columns:1fr; } }
+
+/* Field diagnostics keep long site names and unavailable telemetry readable. */
+.p25-current-system { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px; }
+.p25-current-system strong { flex:1; min-width:180px; font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.p25-diagnostics-summary { padding:16px; border-bottom:1px solid var(--line-soft); }
+.p25-diagnostics-summary h3 { margin:0 0 12px; font-size:16px; }
+.p25-diagnostics-summary p, .p25-diagnostics-summary li { font-size:13px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; }
+.p25-diagnostics-summary ul { padding-left:20px; }
+.p25-diagnostics-summary article { margin-top:16px; border-top:1px solid var(--line-soft); }
+.p25-diagnostics-summary h4 { font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.p25-diagnostics-summary dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+.p25-diagnostics-summary dl div { display:block; min-width:0; }
+.p25-diagnostics-summary dt { font-size:12px; color:var(--muted); }
+.p25-diagnostics-summary dd { margin:6px 0 0; font-size:14px; overflow-wrap:anywhere; }
+.p25-overview .p25-metrics span, .p25-overview .p25-metrics small { font-size:12px; }
+.p25-overview .p25-session-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); }
+.p25-overview .p25-session-grid dl { font-size:13px; }
+.p25-overview .p25-session-receivers h3 { font-size:16px; }

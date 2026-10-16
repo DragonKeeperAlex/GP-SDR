@@ -712,3 +712,9 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   filters. Corrected remaining SDRTrunk tuner-file fallback to 8 MS/s. Bounded
   regression checks pass; RF-01/02/04/05/06 and full UI-01/02/03/04 acceptance
   remain open. See `P25_REBUILD_PLAN.md` for exact scope and limitations.
+
+- 2026-10-16 P25 field diagnostics: added correctly scoped system activity and
+  stale decode age, per-radio frequency offset/transport/capture width, recovery
+  guidance and recordings/setup shortcuts. Bounded software checks and Firefox
+  field workflow verified; see `P25_REBUILD_PLAN.md`. Group 4 call identity and
+  queue/recovery work remains open, as do broader RF/UI acceptance gates.

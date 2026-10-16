@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,25 +29,41 @@ type P25ReceiverStatus struct {
 	FrequencyHz       float64    `json:"frequencyHz,omitempty"`
 	TalkgroupID       *uint32    `json:"talkgroupID,omitempty"`
 	TDMASlot          *int       `json:"tdmaSlot,omitempty"`
+	FrequencyErrorHz  *float64   `json:"frequencyErrorHz,omitempty"`
 	LastControlAt     *time.Time `json:"lastControlAt,omitempty"`
 	Note              string     `json:"note"`
 }
 
+// System counters belong to the decoder system, never to each attached radio.
+type P25SystemStatus struct {
+	System          string     `json:"system"`
+	LastControlAt   *time.Time `json:"lastControlAt,omitempty"`
+	ControlMessages *uint64    `json:"controlMessages,omitempty"`
+	VoiceUpdates    *uint64    `json:"voiceUpdates,omitempty"`
+}
+
+type op25FrequencyEvidence struct {
+	Type    string `json:"type"`
+	Counter uint64 `json:"counter"`
+}
+
 type op25SystemEvidence struct {
-	System string  `json:"system"`
-	Active int     `json:"network_active"`
-	Freq   float64 `json:"rxchan"`
-	Last   float64 `json:"last_tsbk"`
+	System      string                           `json:"system"`
+	Active      int                              `json:"network_active"`
+	Freq        float64                          `json:"rxchan"`
+	Last        float64                          `json:"last_tsbk"`
+	Frequencies map[string]op25FrequencyEvidence `json:"frequency_data"`
 }
 
 type op25ReceiverEvidence struct {
-	System    string  `json:"system"`
-	Tag       string  `json:"tag"`
-	Freq      float64 `json:"freq"`
-	Group     *uint32 `json:"tgid"`
-	Slot      *int    `json:"tdma"`
-	Encrypted int     `json:"encrypted"`
-	HoldGroup uint32  `json:"hold_tgid"`
+	System         string   `json:"system"`
+	Tag            string   `json:"tag"`
+	Freq           float64  `json:"freq"`
+	Group          *uint32  `json:"tgid"`
+	Slot           *int     `json:"tdma"`
+	Encrypted      int      `json:"encrypted"`
+	HoldGroup      uint32   `json:"hold_tgid"`
+	FrequencyError *float64 `json:"error"`
 }
 
 func op25ReceiverConfiguration(config op25Configuration, devices []SDRDevice) []P25ReceiverStatus {
@@ -106,6 +123,7 @@ func projectOP25Session(configured []P25ReceiverStatus, updates []map[string]jso
 	for index := range result {
 		receiver := &result[index]
 		receiver.Role, receiver.State = "unknown", "telemetry_unavailable"
+		receiver.FrequencyErrorHz = nil
 		receiver.FrequencyHz, receiver.TalkgroupID, receiver.TDMASlot, receiver.LastControlAt = 0, nil, nil, nil
 		receiver.Note = "Decoder telemetry unavailable; check decoder health."
 		channel, ok := channels[receiver.StreamIndex]
@@ -113,6 +131,7 @@ func projectOP25Session(configured []P25ReceiverStatus, updates []map[string]jso
 			continue
 		}
 		receiver.FrequencyHz = channel.Freq
+		receiver.FrequencyErrorHz = channel.FrequencyError
 		switch {
 		case channel.Tag == "Control Channel":
 			receiver.Role, receiver.State = "control", "searching"
@@ -145,6 +164,7 @@ func summarizeOP25Session(status *P25Status, configured []P25ReceiverStatus, upd
 	if !started.IsZero() {
 		status.StartedAt = &started
 	}
+	status.Systems = projectOP25Systems(updates, started, now)
 	status.Receivers = projectOP25Session(configured, updates, started, now)
 	status.TelemetryState = "available"
 	locked, missing := 0, 0
@@ -184,4 +204,48 @@ func summarizeOP25Session(status *P25Status, configured []P25ReceiverStatus, upd
 		}
 		status.FrontendState = strings.Join(parts, " · ")
 	}
+}
+
+// Retain valid stale timestamps so loss of reception has an age. Never borrow
+// system history to claim that the newly assigned control radio decoded it.
+func projectOP25Systems(updates []map[string]json.RawMessage, started, now time.Time) []P25SystemStatus {
+	result := []P25SystemStatus{}
+	seen := map[string]bool{}
+	for _, update := range updates {
+		var kind string
+		_ = json.Unmarshal(update["json_type"], &kind)
+		if kind != "trunk_update" {
+			continue
+		}
+		for key, raw := range update {
+			if _, err := strconv.Atoi(key); err != nil {
+				continue
+			}
+			var system op25SystemEvidence
+			if json.Unmarshal(raw, &system) != nil || system.System == "" || seen[system.System] {
+				continue
+			}
+			seen[system.System] = true
+			row := P25SystemStatus{System: system.System}
+			last := time.Unix(0, int64(system.Last*1e9))
+			if system.Last > 0 && !last.Before(started) && !last.After(now) {
+				row.LastControlAt = &last
+			}
+			if system.Frequencies != nil {
+				var control, voice uint64
+				for _, frequency := range system.Frequencies {
+					if frequency.Type == "control" {
+						control += frequency.Counter
+					}
+					if frequency.Type == "voice" {
+						voice += frequency.Counter
+					}
+				}
+				row.ControlMessages, row.VoiceUpdates = &control, &voice
+			}
+			result = append(result, row)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].System < result[j].System })
+	return result
 }

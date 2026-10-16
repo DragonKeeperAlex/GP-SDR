@@ -282,3 +282,47 @@ was widened, and archive rendering is bounded to 500 loaded calls (search can
 still reach older journal entries). Live archive cursor requests returned distinct
 older IDs. Historical calls with missing receiver attribution or near-zero
 duration metadata remain an archive-identity issue for later P25 acceptance.
+
+## October 16 field-interface diagnostics and handoff
+
+- System-level OP25 control-message totals, voice-frequency update counters and
+  last control-decode age now remain distinct from each receiver's evidence.
+  Valid stale system timestamps remain visible during reception loss; previous
+  session/future timestamps are rejected. Frequency offset is labeled in Hz,
+  not as an error count. Missing telemetry remains unavailable rather than zero.
+- Diagnostics explains searching, scheduler-idle radios, incomplete telemetry,
+  decoder exits, and the next recovery step. Preferred control is explicitly a
+  startup preference, not a pinned role. Per-radio transport, configured capture
+  width and demodulator offset are visible. No packet-error/grant/RSSI totals are
+  invented when the installed adapter does not report them.
+- Operate identifies the configured systems/sites and provides a direct Review
+  recordings action. Diagnostics links back to receiver setup. Navigation updates
+  the selected tab consistently. Calibration text distinguishes defaults from
+  explicit receiver overrides. Receiver cards wrap at a wider minimum width;
+  diagnostic labels are readable at the 1280×800 panel resolution.
+- Verification: full Go suite, focused P25 race checks, vet and workspace Node
+  regressions. Firefox at 1280×800 exercised the saved Central site's silent
+  three-receiver Start/Stop, enabled/disabled setup states, diagnostics and its
+  setup shortcut; prior October 15 archive search/playback checks still apply.
+  Desktop and final deployed layout checks are recorded in the handoff below.
+- Group 3 software field-interface scope is ready to hand off to group 4.
+  Final desktop and 1280×800 Firefox rendering and both new shortcuts passed;
+  the exact staged-source full suite also passed. This is not completion of milestones 1/2 or full UI/RF
+  acceptance. Physical touch feel remains user acceptance; the user previously
+  reported the touchscreen works well. Final HackRF/RTL antenna reception,
+  overlapping call identity, intelligibility and recovery remain explicit gates.
+
+Group 4 order: correct call identity/duration/receiver metadata; persistent,
+bounded transcription state and retry; encrypted-call exclusion; decoder/radio/
+storage interruption and restart recovery; then the requested full review with
+GPT-6 Astra. Preserve all media, credentials, settings, calibration and rollback.
+
+Final October 16 deployment: ARM64 SHA-256
+`439915aad81807fab2958954c022bd2db5b3dc3b044c8ca6807a63cd55cb0092`.
+Rollback and matching full candidate source are retained privately in the Pi's
+`p25-field-20261016` operations directory; unrelated pre-existing local source
+changes remain preserved. Three-radio Central silent collection was restored
+at 2.4/8/2.4 MS/s. No credentials, recordings or transcripts are committed.
+The live store audit also reports 182 missing media references across the
+existing archive. Group 4 must distinguish unavailable media from playable
+calls, preserve their findings, and test recovery without inventing missing data.
