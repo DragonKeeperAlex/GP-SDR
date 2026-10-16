@@ -515,3 +515,9 @@ Fixed in this work tranche (bounded software scope only):
   browser checks confirm proper card widths; box Settings actions measure 48px.
   Layout choice is screen-local and does not alter RF/settings on other clients.
   Physical display acceptance and the future visual redesign remain separate.
+
+- 2026-10-16 P25 interrupted recordings: active-call checkpoints recover the saved
+  PCM portion after a forced process kill, with stable attribution, no duplicate
+  call and queued transcription. Pi exFAT and separate real-ENOSPC fixtures pass.
+  The latest unsynced portion, physical power/storage loss and sample-level call
+  boundaries remain limitations; Group 4 is not marked complete.

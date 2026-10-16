@@ -151,6 +151,9 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 			runtimeState.analyzeEventWithLocalAI(context.Background(), eventID, event.FrequencyHz)
 		}
 	}
+	if err := runtimeState.recoverP25CallSpools(); err != nil {
+		runtimeState.setRuntimeError("P25 checkpoint recovery: " + err.Error())
+	}
 	go runtimeState.p25Transcription.run(context.Background())
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -1542,6 +1545,11 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				archive.Append(frame)
 			}
 		case <-ticker.C:
+			for _, archive := range archives {
+				if err := archive.checkpoint(); err != nil {
+					r.setRuntimeError("P25 audio checkpoint: " + err.Error())
+				}
+			}
 			if status := r.P25Status(); status.State == "error" {
 				note := status.Note
 				if note == "" {
@@ -1561,7 +1569,11 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				key := p25CallKey(call)
 				current[key] = call
 				if _, active := previous[key]; !active && !call.Grant.Encrypted && profile.Settings.P25ArchiveCalls {
-					archives[key] = newP25CallArchive(call.StreamIndex)
+					archive := newP25CallArchive(call.StreamIndex)
+					if err := archive.beginSpool(r.dataDirectory, r.p25CallEvent(call), profile.Settings.TranscribeVoice); err != nil {
+						r.setRuntimeError("P25 audio checkpoint unavailable: " + err.Error())
+					}
+					archives[key] = archive
 				}
 			}
 			for key, call := range previous {

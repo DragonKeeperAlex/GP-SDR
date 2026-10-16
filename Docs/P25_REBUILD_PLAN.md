@@ -387,3 +387,46 @@ matching candidate source, test runner and pre-change configuration. The shipped
 binary preserves the unrelated pre-existing local source baseline; the exact
 staged Git source separately passes the full test suite. No call media,
 transcripts, credentials or actual home endpoint configuration are committed.
+
+## October 16 interrupted-recording checkpoints
+
+- Active unencrypted OP25 calls now checkpoint attributed metadata and only new
+  PCM samples to private files under `Data/p25-call-spool`. Checkpoints run on
+  the existing 750ms monitor tick, without additional workers. Decoder polling
+  and slow storage can delay this cadence; it is not a maximum-loss guarantee.
+- Stable event/file identities let startup recover the saved portion into a WAV
+  and resume the persistent transcription queue without duplicate calls. Normal
+  finalization removes the checkpoint only after audio, journal and requested
+  transcription are durable. Journal/queue failures retain recoverable state.
+- Recovery is bounded to 128 unfinished calls per startup, each capped at three
+  minutes / 2.88 MB PCM. Corrupt metadata is preserved and reported. Startup
+  marks recovered calls and the archive explains that their ending may be lost.
+- A separately killed fixture process recovered the exact checkpointed second
+  on the Pi's actual exFAT storage. Repeated recovery after journal/queue commit
+  retained one event. Unavailable-write, corrupt-metadata and journal-failure
+  fixtures passed. An expendable 1 MiB tmpfs exercised real ENOSPC and successful
+  retry/recovery; the real recordings volume was not filled. Full Go tests,
+  focused race checks, vet, ARM64 builds and archive UI regressions passed.
+
+This closes the in-memory-only crash-loss gap for already checkpointed samples;
+unsaved audio since the last successful checkpoint can still be lost. Abrupt
+physical power removal, storage removal during I/O, true overlapping RF calls,
+sample-level encryption/call transitions and listening acceptance remain open.
+The installed UDP audio still does not carry call IDs. Group 4 is in progress.
+
+Live follow-up: forcibly terminated only the verified OP25 child process. GP-SDR
+reported the crash, stopped monitoring, released the session and accepted a new
+three-receiver Start. The first short scan searched through imported candidates.
+Backed up the saved profile privately and moved the previously decoded
+774.45625 MHz candidate first, retaining every other frequency and receiver
+setting. A repeat decoder crash/restart observed control lock and 30 decoded
+control messages after 4.54 seconds. Reception can still return to searching;
+this is a bounded reacquisition observation, not sustained RF acceptance.
+Silent audio/archive/transcription flags remain enabled at 2.4/8/2.4 MS/s.
+The service remains active with no automatic service restarts and no throttling.
+
+Deployed ARM64 SHA-256:
+`4ec325525b1c3be47a071a1c8036eb1ec7187ae9aba3798e6a3ddeaca27c58de`.
+Matching source, binaries, pre-change profile and rollback remain private in the
+Pi `p25-spool-20261016` operations directory. The exact staged source also passes
+the full Go suite. No call media, transcripts or credentials are committed.

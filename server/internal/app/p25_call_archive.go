@@ -14,6 +14,8 @@ type p25CallArchive struct {
 	samples   []int16
 	rate      int
 	truncated bool
+	eventID   string
+	spool     *p25CallSpool
 }
 
 func newP25CallArchive(index int) *p25CallArchive {
@@ -34,7 +36,10 @@ func (a *p25CallArchive) Save(root string, groupID uint32, started time.Time) (s
 	if len(a.samples) == 0 {
 		return "", fmt.Errorf("no P25 PCM received for talkgroup %d", groupID)
 	}
-	path := filepath.Join(root, "Recordings", started.UTC().Format("2006-01-02"), fmt.Sprintf("%s-p25-tg%d-%s-%s.wav", started.UTC().Format("20060102T150405.000Z"), groupID, a.streamID, NewID()))
+	if a.eventID == "" {
+		a.eventID = NewID()
+	}
+	path := filepath.Join(root, "Recordings", started.UTC().Format("2006-01-02"), fmt.Sprintf("%s-p25-tg%d-%s-%s.wav", started.UTC().Format("20060102T150405.000Z"), groupID, a.streamID, a.eventID))
 	temporary := path + ".part"
 	if err := WriteMonoWAV(temporary, a.samples, a.rate); err != nil {
 		_ = os.Remove(temporary)

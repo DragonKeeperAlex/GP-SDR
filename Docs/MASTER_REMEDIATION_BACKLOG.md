@@ -742,3 +742,16 @@ For each update append: date; item IDs; revision/build/host; commands or evidenc
   in-app checks at 456px and 1280×800 confirm full-width cards without page
   overflow and 48px Settings actions in box mode. Full Go suite passed. Physical
   readability remains user acceptance; no full redesign or Group 4 completion.
+
+- 2026-10-16 RF-07 crash recovery: added bounded, incremental P25 PCM/identity
+  checkpoints and idempotent startup recovery into the recording/transcription
+  path. Pi exFAT forced-kill, metadata/journal/storage-failure fixtures passed;
+  real ENOSPC/retry passed on an expendable tiny tmpfs. See P25_REBUILD_PLAN.md.
+  Physical power/storage loss and UDP sample-level attribution remain open.
+
+- 2026-10-16 RF-07 live decoder crash/restart: the verified OP25 child was killed;
+  GP-SDR reported failure, stopped and released its radios. With the saved
+  profile's known 774.45625 MHz candidate first (original privately backed up),
+  a new Start observed control lock after 4.54 seconds with 30 decoded messages.
+  Three-radio silent collection restored at 2.4/8/2.4 MS/s. Sustained RF, physical
+  USB/storage/power-loss, overlapping-call identity and listening gates remain.
