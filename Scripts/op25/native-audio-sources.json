@@ -1,0 +1,26 @@
+{
+  "op25_audio.cc": {
+    "original": "da97dca738fa92cc849ca8eeb9fe7345d851ef573a15a2f241ce4c06a23d6975",
+    "patched": "31d086f965407994e738e17e6ebb287dda5a88ef0d3d26b9b1547c153b29af7d"
+  },
+  "p25p2_tdma.cc": {
+    "original": "e88cb8e81d7ceb3fe652c3ecdc24b5256ed9a8653571b56fb9480d135da49b93",
+    "patched": "a06ffa178d69ac421ccb544163c0ea40039701f553bc2bf04c7894da1bc44b67"
+  },
+  "p25p1_fdma.h": {
+    "original": "f51a52571e9f373e9034b6747e97cb8b820bd6773da15ade257224f2440d0016",
+    "patched": "3d43f433a532376895f7c41568a13a70759fba31e23b666f8c4cbfebf620dbc7"
+  },
+  "op25_audio.h": {
+    "original": "dae5dc723ed9919a0323ea4b8000e450125f2cb1908ef640b56219d938b9a346",
+    "patched": "cb17730089b6fe531394d1fdf162f27f131114969b1614bb821b43d85184e866"
+  },
+  "p25p2_tdma.h": {
+    "original": "4606930f5f264af3592cc34302be5d619a4adf15a5ee4817e7b884f04a994d9f",
+    "patched": "cb2285250af4077cd2f1db17f7a78649aa48219c3a3b43d935416fce9148e73c"
+  },
+  "p25p1_fdma.cc": {
+    "original": "04f4020ccf601e3d06743b83b13fd10fc0951aeac666c953fec071e794825e9d",
+    "patched": "4cf2fba2c2a8b1622f232d3e16811ea2082e06cee6d1fc271952e6abb9adb9ef"
+  }
+}

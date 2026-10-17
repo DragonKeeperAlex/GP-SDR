@@ -47,6 +47,7 @@ type p25GrantState struct {
 }
 
 type P25ActiveCall struct {
+	NativeCallID string `json:"nativeCallID,omitempty"`
 	// StreamIndex maps OP25's channel_update key to p25-stream-N audio.
 	StreamIndex  int                `json:"-"`
 	TDMASlot     *int               `json:"tdma_slot,omitempty"`

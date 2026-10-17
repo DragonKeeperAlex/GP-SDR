@@ -475,3 +475,36 @@ Deployed ARM64 SHA-256:
 `fa9c042672ff2fa277d6cd7b68924d9d7ad74fb3049ceedf00cc7af1ed5e2ab5`.
 Group 4 remains open for packet-native attribution and remaining acceptance gates.
 Credentials, recordings, transcripts and private batch manifests are excluded.
+
+
+### October 17 — original-group scope restored; native P25 audio identity
+
+The original four groups are recorded in FOUR_GROUP_COMPLETION.md. Historical
+P25 “Group 3/4” notes refer to P25 rebuild milestones, not completion of the
+original Mapper/intelligence or transmit/platform/distribution groups. The four
+original groups are not declared complete and Astra handoff is not yet ready.
+Mobile/public release expansion remains behind Pi remediation.
+
+Original Group 2 / RF-04/07: added an opt-in decoder-native UDP audio adapter for
+the inspected boatbod OP25 source. Every packet carries a receive-session/call
+generation, decoded group/source, slot and observed crypto state. Unknown or
+encrypted PCM is suppressed before playback/recording/transcription. Recorder
+identity must agree with recent metadata; back-to-back native generations split
+recordings, and native identity survives checkpoints/recovery. Stale socket
+readers cannot publish audio/counters into a replacement session. Diagnostics
+reports tagged/legacy/mismatched transport rather than assuming native support.
+
+The native adapter patch is source-hash checked and its legacy opt-out wire
+format remains intact. C++ encoder and actual OP25 emitter socket tests pass;
+three-emitter UDP/hub tests on Pi suppress encrypted samples and keep normal
+playback free of control packets. Pi data-volume recorder/checkpoint recovery,
+Go full suite and focused race/vet pass. No synthetic media entered the live
+journal, no RF transmitted, and original data/configuration/calibration remain.
+
+Real decoder-tagged packets are now observed on the live three-radio session.
+The bounded observation is still searching with no accepted attributed clear
+PCM: this verifies native transport, not successful RF calls, speech quality,
+per-talkgroup mixing, measured simultaneous-call capacity or all encryption
+boundaries. Frequency/site labels still come from matching recent receiver
+metadata. Complete RF/replay and user/physical gates remain open.
+See OP25_NATIVE_AUDIO.md for the wire contract, prerequisites and rollback.

@@ -6,9 +6,11 @@ import (
 )
 
 type AudioFrame struct {
-	ChannelID  string
-	SampleRate int
-	Samples    []int16
+	TransportSession string
+	Native           *P25NativeAudio
+	ChannelID        string
+	SampleRate       int
+	Samples          []int16
 	// Recorder-only transport evidence; ordinary audio subscribers never see
 	// control packets. The browser PCM wire format is unchanged.
 	Control    string

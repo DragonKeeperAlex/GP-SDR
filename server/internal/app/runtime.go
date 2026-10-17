@@ -1436,6 +1436,7 @@ func (r *Runtime) buildPlan(profile ScanProfile) []ReceiverPlanItem {
 }
 
 func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64) (MixerChannel, error) {
+	nativePlayback := r.op25 != nil && r.op25.taggedTalkgroupPlayback()
 	r.mu.Lock()
 	for i := range r.mixer {
 		if r.mixer[i].ID == id {
@@ -1448,6 +1449,12 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 				if r.mixer[i].TalkgroupID != nil {
 					for index := range r.mixer {
 						if r.mixer[index].TalkgroupID == nil {
+							continue
+						}
+						if nativePlayback {
+							if *solo {
+								r.mixer[index].Solo = index == i
+							}
 							continue
 						}
 						r.mixer[index].Solo = *solo && index == i
@@ -1464,7 +1471,7 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 			}
 			updated := r.mixer[i]
 			r.mu.Unlock()
-			if updated.TalkgroupID != nil && muted != nil && r.op25 != nil {
+			if updated.TalkgroupID != nil && muted != nil && r.op25 != nil && !nativePlayback {
 				if err := r.op25.UpdateTalkgroup(*updated.TalkgroupID, map[string]any{"mute": *muted}); err != nil {
 					return updated, err
 				}
@@ -1634,6 +1641,9 @@ func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupSta
 	}
 	r.op25.mu.Lock()
 	streamCount := len(r.op25.audioSockets)
+	if r.op25.taggedTalkgroupAudio {
+		streamCount = 0
+	}
 	r.op25.mu.Unlock()
 	r.mu.Lock()
 	for index := 0; index < streamCount; index++ {

@@ -13,6 +13,8 @@ import (
 // SystemHealth is intentionally read-only and best-effort. Missing platform
 // counters remain unavailable instead of being represented as fake zeros.
 type SystemHealth struct {
+	OS              string              `json:"os"`
+	Architecture    string              `json:"architecture"`
 	Available       bool                `json:"available"`
 	CPUCount        int                 `json:"cpuCount"`
 	Load1           float64             `json:"load1,omitempty"`
@@ -32,7 +34,7 @@ type SystemTemperature struct {
 }
 
 func readSystemHealth(dataDirectory string) SystemHealth {
-	h := SystemHealth{Available: true, CPUCount: runtime.NumCPU(), UpdatedAt: time.Now()}
+	h := SystemHealth{OS: runtime.GOOS, Architecture: runtime.GOARCH, Available: true, CPUCount: runtime.NumCPU(), UpdatedAt: time.Now()}
 	if load, err := os.ReadFile("/proc/loadavg"); err == nil {
 		fields := strings.Fields(string(load))
 		if len(fields) > 0 {

@@ -609,3 +609,63 @@ Full exact-staged-source Go suite passes; focused routing/race/vet, UI handler
 checks, Windows build and actual-Pi routing/queue checks pass. A retention test's
 error-text expectation was updated for the destination-neutral "model analysis"
 wording; it still verifies failed analysis preserves the original IQ.
+
+
+### October 17 — original-group scope restored; native P25 audio identity
+
+The original four groups are recorded in FOUR_GROUP_COMPLETION.md. Historical
+P25 “Group 3/4” notes refer to P25 rebuild milestones, not completion of the
+original Mapper/intelligence or transmit/platform/distribution groups. The four
+original groups are not declared complete and Astra handoff is not yet ready.
+Mobile/public release expansion remains behind Pi remediation.
+
+Original Group 2 / RF-04/07: added an opt-in decoder-native UDP audio adapter for
+the inspected boatbod OP25 source. Every packet carries a receive-session/call
+generation, decoded group/source, slot and observed crypto state. Unknown or
+encrypted PCM is suppressed before playback/recording/transcription. Recorder
+identity must agree with recent metadata; back-to-back native generations split
+recordings, and native identity survives checkpoints/recovery. Stale socket
+readers cannot publish audio/counters into a replacement session. Diagnostics
+reports tagged/legacy/mismatched transport rather than assuming native support.
+
+The native adapter patch is source-hash checked and its legacy opt-out wire
+format remains intact. C++ encoder and actual OP25 emitter socket tests pass;
+three-emitter UDP/hub tests on Pi suppress encrypted samples and keep normal
+playback free of control packets. Pi data-volume recorder/checkpoint recovery,
+Go full suite and focused race/vet pass. No synthetic media entered the live
+journal, no RF transmitted, and original data/configuration/calibration remain.
+
+Real decoder-tagged packets are now observed on the live three-radio session.
+The bounded observation is still searching with no accepted attributed clear
+PCM: this verifies native transport, not successful RF calls, speech quality,
+per-talkgroup mixing, measured simultaneous-call capacity or all encryption
+boundaries. Frequency/site labels still come from matching recent receiver
+metadata. Complete RF/replay and user/physical gates remain open.
+See OP25_NATIVE_AUDIO.md for the wire contract, prerequisites and rollback.
+
+
+### 2026-10-17 native transport and listening-control deployment
+
+Original Group 2 / RF-04/07: the opt-in single-system adapter now routes browser
+listening by decoder talkgroup and call generation. Mute/solo/volume/pan do not
+mute OP25 or stop archival recording; separate calls retain separate browser
+clocks. Multi-system numeric-talkgroup ambiguity is still open, with legacy
+receiver playback retained and unsupported volume/pan controls hidden.
+Old-session datagrams and already-buffered subscription frames are rejected.
+The full Go suite passed (8.869 s); bounded native transport, recording/recovery,
+old-session and mixer tests passed on the Pi's actual exFAT temporary workspace.
+Mock WebAudio coverage checks mute/solo/gain/pan, unknown-group silence, overlapping
+same-group clocks and cleanup. No synthetic calls were inserted in live history.
+Installed GP-SDR SHA-256:
+`ad3a246061bd744ec37f2a56e1fb22e5be52851a7c56fdc6bd1fd1adb53cd967`.
+Matched OP25 library SHA-256:
+`795f6a7abb563031911332ff3b24b7d15b1834baf59685ae5ae79b5dd5ed6a1a`.
+The silent saved profile was restored with Pluto 2.4, HackRF 8 and RTL 2.4 MS/s.
+Live diagnostics reported native headers but no accepted clear PCM during this
+bounded check: RF voice, intelligibility and concurrent-call capacity remain open.
+Original Group 1 / UI-01/04: Settings now reports actual Linux/ARM64 and password
+sign-in rather than static architecture/token claims. Verified loaded live UI.
+P25 Diagnostics fits desktop 1440x900 and touch 1280x800 without horizontal page
+overflow; this is viewport proof, not new physical touch or listening acceptance.
+The original four-group completion ledger remains open; Astra readiness has not
+been declared.

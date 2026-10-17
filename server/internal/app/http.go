@@ -927,7 +927,10 @@ func (s *Server) serveLiveAudio(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
-			identifier := []byte(frame.ChannelID)
+			identifier := []byte(s.runtime.liveAudioIdentifier(frame))
+			if len(identifier) == 0 {
+				continue
+			}
 			if len(identifier) > 65535 || len(frame.Samples) > 10_000_000 {
 				continue
 			}

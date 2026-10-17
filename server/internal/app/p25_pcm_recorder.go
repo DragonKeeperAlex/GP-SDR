@@ -1,12 +1,14 @@
 package app
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type p25PCMCall struct {
+	nativeID    string
 	metadataKey string
 	call        P25ActiveCall
 	archive     *p25CallArchive
@@ -16,17 +18,18 @@ type p25PCMCall struct {
 // separate PCM segments; polling still supplies talkgroup metadata, not native
 // per-packet call IDs. Do not describe this adapter as sample-level attribution.
 type p25PCMRecorder struct {
-	runtime      *Runtime
-	profile      ScanProfile
-	stop         <-chan struct{}
-	calls        map[int]P25ActiveCall
-	recordings   map[int]*p25PCMCall
-	lastSequence map[int]uint64
-	nextIssues   map[int][]string
+	requireNative bool
+	runtime       *Runtime
+	profile       ScanProfile
+	stop          <-chan struct{}
+	calls         map[int]P25ActiveCall
+	recordings    map[int]*p25PCMCall
+	lastSequence  map[int]uint64
+	nextIssues    map[int][]string
 }
 
 func newP25PCMRecorder(r *Runtime, profile ScanProfile, stop <-chan struct{}) *p25PCMRecorder {
-	return &p25PCMRecorder{runtime: r, profile: profile, stop: stop, calls: make(map[int]P25ActiveCall), recordings: make(map[int]*p25PCMCall), lastSequence: make(map[int]uint64), nextIssues: make(map[int][]string)}
+	return &p25PCMRecorder{requireNative: os.Getenv("GPSDR_P25_TAGGED_AUDIO") == "1", runtime: r, profile: profile, stop: stop, calls: make(map[int]P25ActiveCall), recordings: make(map[int]*p25PCMCall), lastSequence: make(map[int]uint64), nextIssues: make(map[int][]string)}
 }
 
 func (p *p25PCMRecorder) setCalls(calls []P25ActiveCall) {
@@ -100,9 +103,24 @@ func (p *p25PCMRecorder) accept(frame AudioFrame) {
 	if !ok || at.Sub(call.LastHeardAt) > 2*time.Second || call.LastHeardAt.After(at.Add(time.Second)) {
 		return
 	}
+	metadataKey := p25CallKey(call)
+	if p.requireNative && frame.Native == nil {
+		return
+	}
+	if native := frame.Native; native != nil {
+		if !native.Valid || !native.CryptoKnown || native.Encrypted || native.Algorithm != 0x80 || native.GroupID != call.Grant.GroupID || (native.SourceID != 0 && call.Grant.SourceID != 0 && native.SourceID != call.Grant.SourceID) || (native.Slot == -1) != (call.TDMASlot == nil) || (call.TDMASlot != nil && *call.TDMASlot != native.Slot) {
+			p.finish(index)
+			return
+		}
+		if old := p.recordings[index]; old != nil && old.nativeID != native.CallID {
+			p.finish(index)
+		}
+		call.NativeCallID = native.CallID
+		call.Grant.SourceID = native.SourceID
+	}
 	recording := p.recordings[index]
 	if recording == nil {
-		key := p25CallKey(call)
+		key := metadataKey
 		// Start at received PCM, rather than the first observed assignment.
 		call.StartedAt = at.Add(-time.Duration(len(frame.Samples)) * time.Second / 8000)
 		archive := newP25CallArchive(index)
@@ -114,7 +132,7 @@ func (p *p25PCMRecorder) accept(frame AudioFrame) {
 		if err := archive.beginSpool(p.runtime.dataDirectory, event, p.profile.Settings.TranscribeVoice); err != nil {
 			p.runtime.setRuntimeError("P25 audio checkpoint unavailable: " + err.Error())
 		}
-		recording = &p25PCMCall{metadataKey: key, call: call, archive: archive}
+		recording = &p25PCMCall{nativeID: call.NativeCallID, metadataKey: key, call: call, archive: archive}
 		p.recordings[index] = recording
 	}
 	recording.archive.Append(frame)

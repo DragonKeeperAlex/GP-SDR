@@ -30,7 +30,7 @@ func (r *Runtime) p25CallEvent(call P25ActiveCall) TransmissionEvent {
 		decoderEngine = r.op25.engine
 		r.op25.mu.Unlock()
 	}
-	event := TransmissionEvent{ID: NewID(), P25StreamIndex: ptr(call.StreamIndex), P25TDMASlot: call.TDMASlot, StartedAt: call.StartedAt, DurationSeconds: duration,
+	event := TransmissionEvent{P25NativeCallID: call.NativeCallID, ID: NewID(), P25StreamIndex: ptr(call.StreamIndex), P25TDMASlot: call.TDMASlot, StartedAt: call.StartedAt, DurationSeconds: duration,
 		FrequencyHz: float64(call.Grant.FrequencyHz), BandwidthHz: 12_500, SignalDBFS: -30, NoiseDBFS: -80,
 		Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99,
 		SystemName: &systemName, TalkgroupID: &talkgroupID, SourceRadioID: sourceRadioID, Encrypted: call.Grant.Encrypted,
