@@ -32,7 +32,9 @@ Completed increments: RF-to-decoder transport demonstrated for Pluto/HackRF/RTL;
 P25 replacement session/setup/diagnostics/recordings; bounded receiver/source
 settings; persistent transcription and PCM spool recovery. Full P25 milestones
 remain open. Native packet identity and single-system browser talkgroup controls
-now have bounded software tests; real RF/audio acceptance is still open.
+now have bounded software tests; immediate decoder-start failure releases its
+audio state and reports the startup cause. Diagnostics exposes the configured
+path/control budget. Real RF/audio acceptance is still open.
 
 Remaining: authoritative call/audio boundaries and controls, concurrent-call
 software proof and measured capacity, recovery; then independent RF/voice tests

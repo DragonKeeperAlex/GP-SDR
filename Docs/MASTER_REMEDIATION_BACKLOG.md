@@ -908,3 +908,39 @@ P25 Diagnostics fits desktop 1440x900 and touch 1280x800 without horizontal page
 overflow; this is viewport proof, not new physical touch or listening acceptance.
 The original four-group completion ledger remains open; Astra readiness has not
 been declared.
+
+
+### 2026-10-17 startup failure, storage and compute boundary follow-up
+
+Original Group 2 / RF-07: register the OP25 process/session before starting its
+waiter, so an immediate child failure cannot miss audio-socket/session cleanup
+or overwrite the useful startup diagnostic. A short executable fixture exits
+with status 7 and a receiver-startup error; the test requires error visibility,
+cleared audio session and closed listener state. Full clean-index Go suite
+passed (8.970 s), vet passed, targeted race checks passed (1.836 s).
+Original Groups 1/3 / MAP-05/09/10, AI-02/07: bounded tests also passed on actual
+Pi exFAT disposable fixtures: failed Mapper writes preserve the previous state;
+cleanup preserves results/event history; pending/archive IQ is included in caps;
+quarantine expiry and torn-journal compaction are bounded; analysis failures
+preserve IQ; interrupted/corrupt deferred queues retain recoverable evidence;
+remote paused/offline/missing-model/generation-error cases select the documented
+fallback, and local/deferred/off modes preserve their contracts. These fixtures
+do not establish real NAS outage or power-loss acceptance, model accuracy, or
+long-duration radio stability.
+Original Group 2 / RF-06: Diagnostics now shows the configured decoder-path
+budget and reserves control coverage per configured system. Current three-radio,
+one-system configuration has three paths, one needed for control, up to two
+remaining voice paths. Wider capture alone does not add demodulators. This is
+not a measured concurrent-call limit or a completed wideband allocator.
+Final installed GP-SDR SHA-256:
+`d44e0cdcce4579f8e73fd604483ebc3dc5be8e27ba1448f6085f533d64603a92`.
+The matching native OP25 library is unchanged from the preceding deployment.
+
+Final live/browser verification: restored the saved silent three-receiver P25
+profile with no runtime error. The final build briefly decoded current control
+at 774.456250 MHz (137 system control messages at the observation), then returned
+to searching; no accepted clear PCM was observed. This is intermittent control
+evidence, not sustained lock or voice acceptance. Desktop 1440x900 and touch
+1280x800 render the configured path budget and recovery guidance without page
+horizontal overflow. Temporary viewport overrides were reset; browser listening
+remained off. All original groups remain subject to the completion ledger.

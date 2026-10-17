@@ -371,6 +371,21 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		return err
 	}
 	done := make(chan struct{})
+	id := profile.ID
+	m.mu.Lock()
+	m.command, m.done, m.log = command, done, logFile
+	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
+	m.engine, m.apiURL = "OP25", nil
+	m.nativeAudioPackets, m.nativeAudioRejected, m.untaggedAudioPackets = 0, 0, 0
+	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
+	m.taggedTalkgroupAudio = os.Getenv("GPSDR_P25_TAGGED_AUDIO") == "1" && len(config.Trunking.Channels) == 1
+	m.op25Calls = nil
+	m.op25Receivers = op25ReceiverConfiguration(config, assignedDevices(plan, devices))
+	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
+	m.sessionStart = time.Now()
+	m.mu.Unlock()
+	// Register the child before waiting: an immediate startup failure must
+	// observe its own session and clear audio state, not miss registration.
 	go func() {
 		waitError := command.Wait()
 		m.mu.Lock()
@@ -391,19 +406,6 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		m.mu.Unlock()
 		close(done)
 	}()
-	id := profile.ID
-	m.mu.Lock()
-	m.command, m.done, m.log = command, done, logFile
-	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
-	m.engine, m.apiURL = "OP25", nil
-	m.nativeAudioPackets, m.nativeAudioRejected, m.untaggedAudioPackets = 0, 0, 0
-	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
-	m.taggedTalkgroupAudio = os.Getenv("GPSDR_P25_TAGGED_AUDIO") == "1" && len(config.Trunking.Channels) == 1
-	m.op25Calls = nil
-	m.op25Receivers = op25ReceiverConfiguration(config, assignedDevices(plan, devices))
-	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
-	m.sessionStart = time.Now()
-	m.mu.Unlock()
 	started = true
 	return nil
 }

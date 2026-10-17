@@ -53,3 +53,12 @@ cards=context.renderP25RecordingCards();assert(cards.includes('2.0 s'));assert(c
 state.p25Recordings=[{id:'partial',audioAvailable:true,audioPath:'fixture.wav',p25AudioIncomplete:true}];
 cards=context.renderP25RecordingCards();assert(cards.includes('Partial recording'));assert(cards.includes('audio queue gap'));
 console.log('P25 archive missing-audio, measured duration and retry presentation checks passed');
+
+// Configured control coverage consumes decoder paths; capture width alone is
+// not proof of simultaneous-call capacity.
+const capacityStatus={state:'running',engine:'OP25',receivers:[{system:'East'},{system:'East'},{system:'East'}]};
+assert(context.renderP25Diagnostics(capacityStatus).includes('3 decoder paths · 1 needed for control coverage · up to 2 remaining voice paths'));
+capacityStatus.receivers[2].system='West';
+assert(context.renderP25Diagnostics(capacityStatus).includes('up to 1 remaining voice paths'));
+assert(!context.renderP25Diagnostics({state:'running',engine:'SDRTrunk',receivers:capacityStatus.receivers}).includes('Configured call capacity'));
+console.log('P25 configured path budget and multi-system control reservation checks passed');
