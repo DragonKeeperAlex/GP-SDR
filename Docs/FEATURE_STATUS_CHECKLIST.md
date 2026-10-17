@@ -557,3 +557,22 @@ Deployed ARM64 SHA-256:
 `fa9c042672ff2fa277d6cd7b68924d9d7ad74fb3049ceedf00cc7af1ed5e2ab5`.
 Group 4 remains open for packet-native attribution and remaining acceptance gates.
 Credentials, recordings, transcripts and private batch manifests are excluded.
+
+
+### October 17 — home-PC activity priority (bounded software verification)
+
+Installed an interactive Windows guard for GP-SDR remote evidence analysis.
+Mouse/keyboard and recent XInput use pause work, foreground fullscreen holds
+pause, and Automatic resumes after ten idle minutes plus queue retry backoff.
+An in-flight guarded inference is cancelled and its model requested to unload;
+manual Pause/Automatic/Status Desktop shortcuts are installed. The Pi now uses
+the guarded endpoint; queued work is retained. Historical metadata batch is
+complete at 256/256 without reported errors. Existing Ollama service is retained.
+
+Policy/cancellation/unload regressions pass with race/vet and on Windows;
+live desktop activity, manual marker and retryable rejection from Pi verified,
+with zero models loaded. Guard runs in Session 1 via an Interactive logon task.
+No gameplay, input injection, logoff/reboot or subjective latency test performed.
+Future clients must use the guarded port; direct Ollama clients bypass it.
+See HOME_DEFERRED_COMPUTE.md for scope, controls, reproduction and rollback.
+P25/RF/group-4 acceptance states are unchanged. No secrets or media committed.

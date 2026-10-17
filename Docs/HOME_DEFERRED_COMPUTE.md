@@ -94,3 +94,85 @@ Deployed ARM64 SHA-256:
 `fa9c042672ff2fa277d6cd7b68924d9d7ad74fb3049ceedf00cc7af1ed5e2ab5`.
 Group 4 remains open for packet-native attribution and remaining acceptance gates.
 Credentials, recordings, transcripts and private batch manifests are excluded.
+
+## Windows desktop priority guard — October 17, 2026
+
+The deployed Pi's remote evidence endpoint now uses the home PC's guarded
+Ollama endpoint on port 11435. The existing Ollama service remains on 11434.
+The guard runs as the interactive Windows user through the
+`GP-SDR-Home-Compute-Guard` logon task, with limited privilege and no password.
+It is a small native Go process; it does not poll GPU tools or run another model.
+
+Default behavior:
+
+- Pause background model requests during mouse/keyboard use; resume after ten
+  idle minutes. Recent XInput controller use also holds a ten-minute pause.
+- Keep background work paused while a foreground application covers its monitor
+  (including fullscreen games/video). This deliberately favors foreground use.
+  Borderless/maximized behavior depends on window/monitor geometry; this is not
+  an exhaustive game/process detector. Non-XInput controllers may not be seen.
+- Reject new requests with a retryable HTTP 503 and interrupt an active guarded
+  request within the one-second activity polling interval. Ask Ollama to unload
+  that request's model; VRAM release may take a few seconds. Every guarded
+  inference also has `keep_alive: 0`, preventing idle model residency.
+- GP-SDR's durable remote evidence queue retains interrupted jobs and retries
+  automatically with its existing backoff (up to five minutes). Resumption may
+  therefore occur after the idle delay plus retry backoff. Generation restarts;
+  it does not resume from a partially generated token.
+- Unknown desktop state fails closed. When logged out or the guard is stopped,
+  its endpoint is unavailable and the Pi queue waits/retries. The task starts
+  at login, not in Session 0; Windows input-idle information is session-specific.
+
+Three shortcuts are installed on the Windows Desktop:
+
+1. **Pause GP-SDR AI** — persistent manual pause, including across login/restart.
+2. **GP-SDR AI - Automatic** — remove manual pause and restore the idle policy.
+3. **GP-SDR AI Status** — show the current pause/processing state.
+
+Automatic mode never overrides current desktop activity. No keyboard contents,
+window titles, game names or prompts are logged by the guard. A local status
+snapshot holds only the pause reason, idle duration and active-request flag.
+
+### Reproduce and verify
+
+Build from `server/`:
+
+```
+GOOS=windows GOARCH=amd64 go build -ldflags '-H=windowsgui' -o gp-sdr-home-guard.exe ./cmd/home-compute-guard
+```
+
+Copy the executable and `Scripts/windows/{Install-HomeComputeGuard.ps1,
+HomeComputeControl.ps1}` together. Run the installer elevated, supplying the Pi's
+private LAN IPv4 address with `-PiAddress`. It creates a firewall allow rule for
+that exact executable, TCP port and Pi source address. It supports a LAN Windows
+has categorized Public without changing the network category. It disables only
+conflicting Windows-generated Query User blocks for this executable. No public
+Internet port forwarding is required. Keep both hosts' LAN addresses stable.
+
+Preserve the Pi LocalAI configuration, change only `remoteEndpoint` to the PC's
+port 11435 and retain the existing remote model/local endpoint. Future raw-worker
+or other background clients must explicitly use 11435 to receive this policy;
+clients connecting directly to Ollama 11434 bypass the guard. The completed
+one-off raw-capture batch is not a recurring worker.
+
+`GET /guard/status` reports the pause state; allowed inference APIs are
+non-streaming `/api/generate` and `/api/chat`. Model download/delete and remote
+pause overrides are not exposed. Read-only Ollama tags/version/process queries
+remain available while paused. One inference runs at a time.
+
+Verification on October 17: guard running in desktop Session 1; startup task
+registered with Interactive logon; actual recent input produced paused status;
+Pi inference received 503/Retry-After 30 without loading a model; manual pause
+marker and restoration to Automatic verified. All three shortcuts exist and
+PowerShell scripts parse. Policy, forwarding, cancellation/unload, manual resume,
+and unsupported-API regressions passed locally (race/vet) and on Windows.
+No game was launched or desktop input injected. Actual gameplay latency and an
+unattended login/reboot remain untested. No saved RF/media or password changed.
+The preceding historical metadata batch finished **256/256, no reported errors**.
+
+Private rollback configuration is retained on the Pi. To roll back, restore the
+previous remote endpoint, stop/unregister the guard task and remove only its
+named firewall rule. Leave the original Ollama task/configuration untouched.
+
+API references: [Microsoft input-idle session semantics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo),
+[Ollama model residency control](https://docs.ollama.com/api/generate).
