@@ -151,13 +151,13 @@ func TestSequentialSurveyAppliesSavedReceiverControls(t *testing.T) {
 	limit := 20_000_000.0
 	device := SDRDevice{Kind: "HackRF", SampleRateLimit: &limit}
 	target := surveyTarget{FrequencyHz: 98_100_000, BandwidthHz: 180_000, Mode: "wfm"}
-	rate := compatibleUserSampleRate(device, 5_000_000, liveSampleRate(device, target))
-	if rate != 5_000_000 {
-		t.Fatalf("Band Monitor requested rate = %d, want 5000000", rate)
+	rate := compatibleUserSampleRate(device, 8_000_000, liveSampleRate(device, target))
+	if rate != 8_000_000 {
+		t.Fatalf("Band Monitor requested rate = %d, want 8000000", rate)
 	}
 	lna, vga, amp := 16, 8, false
 	spec := applySurveyProfileControls(surveyCaptureSpec(device, target, rate), SurveySettings{LNAGainDB: &lna, VGAGainDB: &vga, AmpEnabled: &amp})
-	if spec.SampleRateHz != 5_000_000 || spec.LNAGainDB != lna || spec.VGAGainDB != vga || spec.AmpEnabled {
+	if spec.SampleRateHz != 8_000_000 || spec.LNAGainDB != lna || spec.VGAGainDB != vga || spec.AmpEnabled {
 		t.Fatalf("sequential controls not applied: %+v", spec)
 	}
 }

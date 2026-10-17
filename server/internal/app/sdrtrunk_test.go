@@ -219,7 +219,7 @@ func TestOptimizeP25SampleRatesHonorsExplicitHackRFWideRateAndFallback(t *testin
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
-	if !strings.Contains(string(data), `"RATE_5_0"`) {
+	if !strings.Contains(string(data), `"RATE_8_0"`) {
 		t.Fatalf("transport fallback was not applied: %s", data)
 	}
 }
@@ -307,11 +307,11 @@ func TestEffectiveP25CaptureRateMatchesAssignedReceiver(t *testing.T) {
 		t.Fatalf("RTL-SDR explicit rate = %d, want 2048000", got)
 	}
 	profile.Settings.P25SampleRateHz = 0
-	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), false); got != 5_000_000 {
-		t.Fatalf("HackRF auto rate = %d, want 5000000", got)
+	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), false); got != 8_000_000 {
+		t.Fatalf("HackRF auto rate = %d, want 8000000", got)
 	}
-	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), true); got != 5_000_000 {
-		t.Fatalf("HackRF fallback rate = %d, want 5000000", got)
+	if got := effectiveP25CaptureRate(profile, hackRFP25Assignment(), true); got != 8_000_000 {
+		t.Fatalf("HackRF fallback rate = %d, want 8000000", got)
 	}
 }
 

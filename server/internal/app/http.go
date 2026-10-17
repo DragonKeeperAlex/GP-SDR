@@ -15,13 +15,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type Server struct {
-	runtime *Runtime
-	web     fs.FS
-	token   string
-	http    *http.Server
+	runtime           *Runtime
+	runtimeMu         sync.RWMutex
+	web               fs.FS
+	token             string
+	password          *passwordAuth
+	trustProxyHeaders bool
+	http              *http.Server
 }
 
 func NewServer(runtime *Runtime, web fs.FS, host string, port uint16, token string) *Server {
@@ -35,6 +39,38 @@ func NewServer(runtime *Runtime, web fs.FS, host string, port uint16, token stri
 func (s *Server) Handler() http.Handler { return s.http.Handler }
 func (s *Server) ListenAndServe() error { return s.http.ListenAndServe() }
 func (s *Server) Close() error          { return s.http.Close() }
+
+// SetPasswordAuthentication enables HTTPS-only browser sign-in. Token access
+// remains available for automation and recovery clients.
+func (s *Server) SetPasswordAuthentication(encodedHash string, trustProxyHeaders bool) error {
+	if strings.TrimSpace(encodedHash) == "" {
+		return nil
+	}
+	auth, err := newPasswordAuth(encodedHash)
+	if err != nil {
+		return err
+	}
+	s.password = auth
+	s.trustProxyHeaders = trustProxyHeaders
+	return nil
+}
+
+// SetRuntime makes an already-listening server ready after GP-SDR has restored
+// its persisted state. Keeping the static UI available during that work lets a
+// touchscreen kiosk reach its main screen without waiting on large journals,
+// device probes, or optional decoder/model discovery.
+func (s *Server) SetRuntime(runtime *Runtime) {
+	if runtime == nil {
+		panic("GP-SDR runtime must not be nil")
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if s.runtime != nil {
+		panic("GP-SDR runtime is already set")
+	}
+	s.runtime = runtime
+}
+
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -45,7 +81,10 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	})
 }
 func (s *Server) authorized(r *http.Request) bool {
-	if s.token == "" {
+	if s.token == "" || isLoopbackRequest(r) {
+		return true
+	}
+	if s.password != nil && s.password.validSession(r) {
 		return true
 	}
 	provided := r.Header.Get("X-GP-SDR-Token")
@@ -55,9 +94,42 @@ func (s *Server) authorized(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(s.token)) == 1
 }
 
+// The touchscreen kiosk talks directly to the local server. Trust only a real
+// loopback peer so its access token never has to be exposed in Chromium's URL
+// or process arguments; every LAN client still needs the configured token.
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/auth/status" && r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]bool{"passwordEnabled": s.password != nil, "authenticated": s.authorized(r), "tokenRequired": s.token != ""})
+		return
+	}
+	if r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost {
+		s.handlePasswordLogin(w, r)
+		return
+	}
+	if r.URL.Path == "/api/auth/logout" && r.Method == http.MethodPost {
+		http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	if !s.authorized(r) {
-		writeError(w, http.StatusUnauthorized, "A server access token is required.")
+		writeError(w, http.StatusUnauthorized, "Sign in is required to use this GP-SDR console.")
+		return
+	}
+	// Keep an early browser request from racing the one-time startup handoff.
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	if s.runtime == nil {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "GP-SDR is starting. The touchscreen is ready while saved radios, decoders, and models load.")
 		return
 	}
 	defer r.Body.Close()
@@ -67,6 +139,30 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.mediaRecovery)
 	case r.Method == "GET" && path == "/api/status":
 		writeJSON(w, 200, s.runtime.Status())
+	case r.Method == "POST" && path == "/api/system/display":
+		var request struct {
+			Action string `json:"action"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if err := RequestDisplaySession(request.Action); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"state": "scheduled", "action": request.Action})
+	case r.Method == "POST" && path == "/api/system/power":
+		var request struct {
+			Action string `json:"action"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if err := RequestSystemPower(request.Action); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"state": "scheduled", "action": request.Action})
 	case r.Method == "GET" && path == "/api/explore":
 		writeJSON(w, 200, buildExploreData(s.runtime.Events.exploreSnapshot(), s.runtime.Profiles.All(), r))
 	case r.Method == "GET" && path == "/api/explore/captures":
@@ -79,6 +175,16 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, items)
 	case r.Method == "GET" && path == "/api/devices":
 		writeJSON(w, 200, s.runtime.Devices())
+	case r.Method == "PUT" && path == "/api/devices/pluto-transport":
+		var request struct {
+			DeviceID string `json:"deviceID"`
+			URI      string `json:"uri"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		result, err := s.runtime.SetPlutoTransport(request.DeviceID, request.URI)
+		writeResult(w, result, err, 200)
 	case r.Method == "GET" && path == "/api/calibrations":
 		writeJSON(w, 200, s.runtime.Calibrations())
 	case r.Method == "POST" && path == "/api/calibrations/auto":
@@ -153,6 +259,19 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		status := s.runtime.LocalAIStatus()
 		status.CanManage = requestIsLocal(r)
 		writeJSON(w, 200, status)
+	case r.Method == "PUT" && path == "/api/local-ai/compute":
+		var selection struct {
+			Mode string `json:"mode"`
+		}
+		if !decodeBody(w, r, &selection) {
+			return
+		}
+		status, err := s.runtime.localAI.SetComputeMode(selection.Mode)
+		if err == nil {
+			status = s.runtime.LocalAIStatus()
+		}
+		status.CanManage = requestIsLocal(r)
+		writeResult(w, status, err, 200)
 	case r.Method == "PUT" && path == "/api/local-ai":
 		if !requestIsLocal(r) {
 			writeError(w, http.StatusForbidden, "Local model settings can only be changed from the GP-SDR computer.")
@@ -181,6 +300,42 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, status, err, http.StatusAccepted)
 	case r.Method == "GET" && path == "/api/local-ai/learning":
 		writeJSON(w, 200, s.runtime.LearningStatus())
+	case r.Method == "GET" && path == "/api/local-ai/classifier":
+		writeJSON(w, 200, s.runtime.RFClassifierStatus())
+	case r.Method == "POST" && path == "/api/local-ai/classifier/train":
+		result, err := s.runtime.TrainRFClassifier()
+		writeResult(w, result, err, http.StatusAccepted)
+	case r.Method == "GET" && path == "/api/local-ai/deep-queue/status":
+		writeJSON(w, 200, s.runtime.deepQueue.summary())
+	case r.Method == "GET" && path == "/api/local-ai/deep-queue":
+		writeJSON(w, 200, s.runtime.DeepAnalysisQueue())
+	case r.Method == "POST" && path == "/api/local-ai/deep-queue":
+		var body struct {
+			EventID string `json:"eventID"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		result, added, err := s.runtime.EnqueueDeepAnalysis(body.EventID)
+		if err == nil {
+			writeJSON(w, http.StatusAccepted, map[string]any{"job": result, "added": added})
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+	case r.Method == "POST" && path == "/api/local-ai/deep-queue/process":
+		var body struct {
+			Limit int `json:"limit"`
+		}
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		writeJSON(w, http.StatusAccepted, s.runtime.ProcessDeepAnalysis(r.Context(), body.Limit))
+	case r.Method == "DELETE" && path == "/api/local-ai/deep-queue":
+		if err := s.runtime.DiscardDeepAnalysis(r.URL.Query().Get("id")); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+		} else {
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		}
 	case r.Method == "POST" && path == "/api/local-ai/learning":
 		var body struct {
 			EventID        string `json:"eventID"`
@@ -194,6 +349,13 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := s.runtime.ConfirmLearningSample(body.EventID, body.Modulation, body.Protocol, body.Notes, body.RetainCaptures)
 		writeResult(w, result, err, http.StatusCreated)
+	case r.Method == "PATCH" && path == "/api/local-ai/learning":
+		var body struct{ ID, Modulation, Protocol, Notes string }
+		if !decodeBody(w, r, &body) {
+			return
+		}
+		result, err := s.runtime.CorrectLearningSample(body.ID, body.Modulation, body.Protocol, body.Notes)
+		writeResult(w, result, err, http.StatusOK)
 	case r.Method == "GET" && path == "/api/local-ai/learning/export":
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.Header().Set("Content-Disposition", "attachment; filename=GP-SDR-Confirmed-Signal-Training.jsonl")
@@ -223,6 +385,17 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		job, err := s.runtime.Install(body.ComponentID)
 		writeResult(w, job, err, http.StatusAccepted)
+	case r.Method == "GET" && path == "/api/p25/recordings":
+		page, err := s.runtime.Events.P25Recordings(r.URL.Query().Get("q"), r.URL.Query().Get("before"), intQuery(r, "limit", 50))
+		s.runtime.p25Transcription.decorate(&page)
+		writeResult(w, page, err, http.StatusOK)
+	case r.Method == "POST" && path == "/api/p25/transcription/retry":
+		if s.runtime.p25Transcription == nil {
+			writeError(w, http.StatusServiceUnavailable, "P25 transcription queue unavailable")
+			return
+		}
+		err := s.runtime.p25Transcription.enqueue(r.URL.Query().Get("id"), true)
+		writeResult(w, map[string]bool{"queued": err == nil}, err, http.StatusAccepted)
 	case r.Method == "GET" && path == "/api/p25/status":
 		writeJSON(w, 200, s.runtime.P25Status())
 	case r.Method == "GET" && path == "/api/spectrum":
@@ -399,6 +572,12 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := s.runtime.StartMapperJobsAll(job)
 		writeResult(w, result, err, 200)
+	case r.Method == "POST" && path == "/api/mapper/jobs/preview":
+		var job MapperJob
+		if !decodeBody(w, r, &job) {
+			return
+		}
+		writeJSON(w, http.StatusOK, s.runtime.MapperJobPreview(job.Config))
 	case r.Method == "POST" && path == "/api/mapper/jobs/stop":
 		var body struct {
 			ID string `json:"id"`
@@ -561,6 +740,45 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.runtime.TransmitStatus())
 	case r.Method == "GET" && path == "/api/relay":
 		writeJSON(w, 200, s.runtime.relay.Status())
+	case r.Method == "PUT" && path == "/api/relay/system-audio":
+		var request struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if request.Enabled == nil {
+			writeError(w, 400, "system audio mode is required")
+			return
+		}
+		result, err := s.runtime.relay.SetSystemAudio(*request.Enabled)
+		writeResult(w, result, err, 200)
+	case r.Method == "PUT" && path == "/api/relay/speaker-mute":
+		var request struct {
+			Muted *bool `json:"muted"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if request.Muted == nil {
+			writeError(w, 400, "speaker mute state is required")
+			return
+		}
+		result, err := s.runtime.relay.SetSpeakerMuted(*request.Muted)
+		writeResult(w, result, err, 200)
+	case r.Method == "PUT" && path == "/api/relay/volume":
+		var request struct {
+			Volume *float64 `json:"volume"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if request.Volume == nil {
+			writeError(w, 400, "relay output volume is required")
+			return
+		}
+		result, err := s.runtime.relay.SetOutputVolume(*request.Volume)
+		writeResult(w, result, err, 200)
 	case r.Method == "PUT" && path == "/api/relay":
 		var request struct {
 			Streams []RelayStream    `json:"streams"`
@@ -572,7 +790,12 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		result, err := s.runtime.relay.Configure(request.Streams, request.Audio)
 		writeResult(w, result, err, 200)
 	case r.Method == "POST" && path == "/api/relay/start":
-		writeJSON(w, 200, s.runtime.relay.Start())
+		status := s.runtime.relay.Start()
+		if status.State == "error" {
+			writeError(w, 400, status.Note)
+			return
+		}
+		writeJSON(w, 200, status)
 	case r.Method == "POST" && path == "/api/relay/stop":
 		writeJSON(w, 200, s.runtime.relay.Stop())
 	case r.Method == "GET" && path == "/api/transmit/fixtures":
@@ -634,6 +857,40 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
+	if s.password == nil {
+		writeError(w, http.StatusNotFound, "Password sign-in has not been configured on this receiver.")
+		return
+	}
+	if !s.secureRequest(r) {
+		writeError(w, http.StatusForbidden, "Password sign-in requires HTTPS.")
+		return
+	}
+	defer r.Body.Close()
+	var request struct {
+		Password string `json:"password"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if !s.password.validPassword(request.Password) {
+		writeError(w, http.StatusUnauthorized, "Password was not accepted.")
+		return
+	}
+	if err := s.password.issueSession(w); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not create a sign-in session.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) secureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return s.trustProxyHeaders && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
 func requestIsLocal(r *http.Request) bool {
 	if r.RemoteAddr == "" {
 		return true
@@ -670,7 +927,10 @@ func (s *Server) serveLiveAudio(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
-			identifier := []byte(frame.ChannelID)
+			identifier := []byte(s.runtime.liveAudioIdentifier(frame))
+			if len(identifier) == 0 {
+				continue
+			}
 			if len(identifier) > 65535 || len(frame.Samples) > 10_000_000 {
 				continue
 			}

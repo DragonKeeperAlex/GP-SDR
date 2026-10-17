@@ -2,6 +2,7 @@ package app
 
 import (
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -89,6 +90,25 @@ func TestCaptureCommandRejectsUnsupportedDevice(t *testing.T) {
 	_, err := BuildCaptureCommand(SDRDevice{Kind: "Other"}, CaptureSpec{CenterFrequencyHz: 100e6, SampleRateHz: 1e6})
 	if err == nil {
 		t.Fatal("expected unsupported device error")
+	}
+}
+
+func TestPersistentRTLReaderCloseReleasesOnlyClientConnection(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+	session := &localRTLSession{conn: client}
+	reader := &persistentRTLReader{session: session, conn: client}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	session.stateMu.Lock()
+	connection := session.conn
+	session.stateMu.Unlock()
+	if connection != nil {
+		t.Fatal("closed capture client remained reusable")
+	}
+	if _, err := server.Write([]byte{1}); err == nil {
+		t.Fatal("capture client socket was not closed")
 	}
 }
 

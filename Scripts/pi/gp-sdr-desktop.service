@@ -1,0 +1,24 @@
+[Unit]
+Description=GP-SDR touchscreen Wayfire desktop
+After=gp-sdr.service
+Wants=gp-sdr.service
+Conflicts=gp-sdr-kiosk.service lightdm.service
+OnFailure=gp-sdr-kiosk.service
+
+[Service]
+Type=simple
+User=sdr
+Group=sdr
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+Environment=HOME=/home/sdr
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+SupplementaryGroups=video render input audio plugdev
+ExecStart=/usr/local/lib/gp-sdr/start-wayfire
+
+[Install]
+WantedBy=multi-user.target

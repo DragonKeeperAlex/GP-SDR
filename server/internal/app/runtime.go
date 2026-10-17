@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +14,7 @@ import (
 )
 
 type Runtime struct {
+	p25Transcription    *P25TranscriptionQueue
 	mediaRecovery       MediaRecoveryReport
 	mu                  sync.RWMutex
 	Profiles            *ProfileStore
@@ -25,12 +27,16 @@ type Runtime struct {
 	startedAt           *time.Time
 	active              *ScanProfile
 	stop                chan struct{}
+	p25MonitorDone      chan struct{}
 	demo                bool
 	webAddress          string
 	dataDirectory       string
 	transcriber         *Transcriber
 	localAI             *LocalAIAnalyzer
 	learning            *SignalLearningLibrary
+	rfClassifier        *RFClassifierModel
+	deepQueue           *DeepAnalysisQueue
+	deepWorkMu          sync.Mutex
 	lastError           *string
 	droppedSamples      uint64
 	op25                *OP25Manager
@@ -110,11 +116,13 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	localAI := NewLocalAIAnalyzer(dataDirectory, learning)
 	localAI.SetReferenceProfiles(profiles)
 	runtimeState := &Runtime{mediaRecovery: recovery, Profiles: profiles, Events: events, devices: DiscoverDevices(demo), decoders: DiscoverDecoders(), remoteReceivers: remoteReceivers,
-		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: localAI, op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
+		demo: demo, webAddress: webAddress, dataDirectory: dataDirectory, transcriber: NewTranscriber(dataDirectory), learning: learning, localAI: localAI, rfClassifier: loadRFClassifier(dataDirectory), op25: &OP25Manager{}, mapperJobs: make(map[string]*mapperJobRuntime),
 		radioReference: newRadioReferenceClient(), audioHub: NewAudioHub(), calibrations: calibrations,
 		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
-	runtimeState.relay = NewRelayRuntime(runtimeState.audioHub)
+	runtimeState.deepQueue = NewDeepAnalysisQueue(dataDirectory, localAI)
+	localAI.deferEvidence = func(event TransmissionEvent) error { _, _, err := runtimeState.deepQueue.Enqueue(event); return err }
+	runtimeState.relay = NewRelayRuntime(runtimeState.audioHub, dataDirectory)
 	runtimeState.op25.audioHub = runtimeState.audioHub
 	runtimeState.fpv = newFPVReceiverState(dataDirectory)
 	runtimeState.storagePolicy = loadStoragePolicy(dataDirectory)
@@ -127,10 +135,45 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	runtimeState.p25Transcription = newP25TranscriptionQueue(dataDirectory, events, runtimeState.transcribeP25File)
+	runtimeState.p25Transcription.onComplete = func(eventID string) {
+		event, ok := events.Get(eventID)
+		if !ok {
+			return
+		}
+		// Keep transcription throughput independent of model inference latency.
+		// The durable worker uses the selected Automatic/Local/Deferred policy.
+		localAI.mu.RLock()
+		enabled := localAI.config.Enabled
+		localAI.mu.RUnlock()
+		if enabled {
+			if _, _, err := runtimeState.deepQueue.Enqueue(event); err != nil {
+				runtimeState.setRuntimeError("Queue model analysis: " + err.Error())
+			}
+		}
+
+	}
+	if err := runtimeState.recoverP25CallSpools(); err != nil {
+		runtimeState.setRuntimeError("P25 checkpoint recovery: " + err.Error())
+	}
+	go runtimeState.p25Transcription.run(context.Background())
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			runtimeState.ProcessDeepAnalysis(context.Background(), 1)
+		}
+	}()
 	return runtimeState, nil
 }
 
-func (r *Runtime) LocalAIStatus() LocalAIStatus { return r.localAI.Status() }
+func (r *Runtime) LocalAIStatus() LocalAIStatus {
+	status := r.localAI.Status()
+	if r.deepQueue != nil {
+		status.RemoteQueue = r.deepQueue.summary()
+	}
+	return status
+}
 func (r *Runtime) UpdateLocalAI(config LocalAIConfig) (LocalAIStatus, error) {
 	return r.localAI.Update(config)
 }
@@ -147,6 +190,68 @@ func (r *Runtime) ConfirmLearningSample(eventID, modulation, protocol, notes str
 	return r.learning.Confirm(event, modulation, protocol, notes, retainCaptures)
 }
 func (r *Runtime) LearningJSONL() []byte { return r.learning.ExportJSONL() }
+func (r *Runtime) CorrectLearningSample(id, modulation, protocol, notes string) (ConfirmedSignalSample, error) {
+	return r.learning.CorrectLabel(id, modulation, protocol, notes)
+}
+func (r *Runtime) TrainRFClassifier() (RFTrainingReport, error) {
+	report, err := r.learning.TrainAndSave(r.dataDirectory)
+	if err == nil {
+		r.mu.Lock()
+		r.rfClassifier = report.Model
+		r.mu.Unlock()
+	}
+	return report, err
+}
+func (r *Runtime) RFClassifierStatus() RFTrainingReport {
+	r.mu.RLock()
+	model := r.rfClassifier
+	r.mu.RUnlock()
+	if model == nil {
+		return RFTrainingReport{Note: "no trained RF classifier"}
+	}
+	return RFTrainingReport{Model: model, Classes: sortedClassifierClasses(model), Note: "trained from reviewed RF feature vectors"}
+}
+func (r *Runtime) DeepAnalysisQueue() []DeepAnalysisJob {
+	if r.deepQueue == nil {
+		return nil
+	}
+	return r.deepQueue.List()
+}
+func (r *Runtime) EnqueueDeepAnalysis(eventID string) (DeepAnalysisJob, bool, error) {
+	event, ok := r.Events.Get(eventID)
+	if !ok {
+		return DeepAnalysisJob{}, false, ErrNotFound
+	}
+	return r.deepQueue.Enqueue(event)
+}
+func (r *Runtime) ProcessDeepAnalysis(ctx context.Context, limit int) []DeepAnalysisJob {
+	if r.deepQueue == nil {
+		return nil
+	}
+	if !r.deepWorkMu.TryLock() {
+		return r.deepQueue.List()
+	}
+	defer r.deepWorkMu.Unlock()
+	r.localAI.mu.RLock()
+	config := r.localAI.config
+	r.localAI.mu.RUnlock()
+	jobs := r.deepQueue.Process(ctx, config, limit)
+	for _, job := range jobs {
+		if job.Status == "complete" && job.Result != nil && !job.ResultApplied {
+			if err := r.Events.UpdateAnalysis(job.Event.ID, *job.Result); err != nil {
+				continue
+			}
+			if err := r.deepQueue.markApplied(job.ID); err != nil {
+				r.setRuntimeError("Deep-analysis result: " + err.Error())
+			}
+			if r.mapper != nil {
+				r.mapper.SetSignalIntelligence(job.Event.FrequencyHz, *job.Result)
+			}
+		}
+	}
+	return jobs
+}
+func (r *Runtime) DiscardDeepAnalysis(id string) error { return r.deepQueue.Discard(id) }
 
 func (r *Runtime) RangeSyncStatus() RangeSyncStatus               { return r.rangeSync.Status() }
 func (r *Runtime) CharacterizationStatus() CharacterizationStatus { return r.characterization.Status() }
@@ -218,6 +323,10 @@ func (r *Runtime) StartMapperJob(id string) (MapperStatus, error) {
 		r.mu.Unlock()
 		return r.mapper.Status(), errors.New("the assigned Mapper receiver is not connected or available")
 	}
+	if reason := mapperExclusionReason(device); reason != "" {
+		r.mu.Unlock()
+		return r.mapper.Status(), fmt.Errorf("%s is unavailable for Mapper: %s", device.Name, reason)
+	}
 	for otherID, running := range r.mapperJobs {
 		if running.deviceID == device.ID {
 			r.mu.Unlock()
@@ -247,7 +356,7 @@ func (r *Runtime) StartMapperJobsAll(template MapperJob) (MapperStatus, error) {
 	r.mu.RLock()
 	devices := make([]SDRDevice, 0, len(r.devices))
 	for _, device := range r.devices {
-		if device.Connected && device.Available {
+		if device.Connected && device.Available && mapperExclusionReason(device) == "" {
 			devices = append(devices, device)
 		}
 	}
@@ -255,12 +364,18 @@ func (r *Runtime) StartMapperJobsAll(template MapperJob) (MapperStatus, error) {
 	if len(devices) == 0 {
 		return r.mapper.Status(), errors.New("no connected receivers are available")
 	}
+	partitions := mapperJobPartitions(template.Config, devices)
+	if len(partitions) == 0 {
+		return r.mapper.Status(), errors.New("the requested Mapper range is outside the connected receivers’ tuning limits")
+	}
 	started := 0
 	var lastErr error
-	for _, device := range devices {
+	for _, partition := range partitions {
 		config := template.Config
 		config.UseAllReceivers = false
-		config.DeviceID = device.ID
+		config.DeviceID = partition.device.ID
+		config.StartHz = partition.startHz
+		config.EndHz = partition.endHz
 		job := MapperJob{Name: strings.TrimSpace(template.Name), Config: config}
 		saved, err := r.SaveMapperJob(job)
 		if err != nil {
@@ -272,7 +387,7 @@ func (r *Runtime) StartMapperJobsAll(template MapperJob) (MapperStatus, error) {
 		}
 		// Distinguish fan-out jobs in the job list while keeping user labels
 		// readable and stable across runs.
-		saved.Name = fmt.Sprintf("%s · %s", saved.Name, device.Name)
+		saved.Name = fmt.Sprintf("%s · %s · %.3f–%.3f MHz", saved.Name, partition.device.Name, partition.startHz/1e6, partition.endHz/1e6)
 		if updated, saveErr := r.SaveMapperJob(saved); saveErr == nil {
 			saved = updated
 		} else {
@@ -295,6 +410,150 @@ func (r *Runtime) StartMapperJobsAll(template MapperJob) (MapperStatus, error) {
 		return r.mapper.Status(), fmt.Errorf("started on %d receivers; %v", started, lastErr)
 	}
 	return r.mapper.Status(), nil
+}
+
+type mapperJobPartition struct {
+	device               SDRDevice
+	startHz, endHz       float64
+	startIndex, endIndex int // end is exclusive
+}
+
+// MapperAssignmentPreview is the operator-visible plan generated before a
+// multi-receiver Mapper run. Targets count only discrete scan positions, so it
+// matches the jobs that StartMapperJobsAll will create.
+type MapperAssignmentPreview struct {
+	DeviceID   string  `json:"deviceID"`
+	DeviceName string  `json:"deviceName"`
+	StartHz    float64 `json:"startHz"`
+	EndHz      float64 `json:"endHz"`
+	Targets    int     `json:"targets"`
+}
+
+func (r *Runtime) MapperJobPreview(config MapperConfig) []MapperAssignmentPreview {
+	r.mu.RLock()
+	devices := make([]SDRDevice, 0, len(r.devices))
+	for _, device := range r.devices {
+		if device.Connected && device.Available && mapperExclusionReason(device) == "" {
+			devices = append(devices, device)
+		}
+	}
+	r.mu.RUnlock()
+	partitions := mapperJobPartitions(config, devices)
+	preview := make([]MapperAssignmentPreview, 0, len(partitions))
+	for _, partition := range partitions {
+		targets := 0
+		if config.StepHz > 0 && partition.endIndex > partition.startIndex {
+			targets = partition.endIndex - partition.startIndex
+		}
+		preview = append(preview, MapperAssignmentPreview{DeviceID: partition.device.ID, DeviceName: partition.device.Name, StartHz: partition.startHz, EndHz: partition.endHz, Targets: targets})
+	}
+	return preview
+}
+
+// mapperJobPartitions divides the discrete requested scan targets among the
+// receivers that can actually tune them. It never assigns the same target to
+// two jobs and leaves unsupported parts of a request visibly unassigned.
+func mapperJobPartitions(config MapperConfig, devices []SDRDevice) []mapperJobPartition {
+	if config.Mode == "decipher" || config.StepHz <= 0 || config.EndHz < config.StartHz {
+		partitions := make([]mapperJobPartition, 0, len(devices))
+		for _, device := range devices {
+			partitions = append(partitions, mapperJobPartition{device: device, startHz: config.StartHz, endHz: config.EndHz})
+		}
+		return partitions
+	}
+	targets := int(math.Floor((config.EndHz-config.StartHz)/config.StepHz+1e-9)) + 1
+	if targets <= 0 {
+		return nil
+	}
+	type eligibleDevice struct {
+		device               SDRDevice
+		first, end, assigned int
+	}
+	eligible := make([]eligibleDevice, 0, len(devices))
+	boundaries := map[int]struct{}{0: {}, targets: {}}
+	for _, device := range devices {
+		minimum, maximum := config.StartHz, config.EndHz
+		if device.FrequencyMinimumHz > 0 {
+			minimum = math.Max(minimum, device.FrequencyMinimumHz)
+		}
+		if device.FrequencyMaximumHz > 0 {
+			maximum = math.Min(maximum, device.FrequencyMaximumHz)
+		}
+		if maximum < minimum {
+			continue
+		}
+		first := int(math.Ceil((minimum-config.StartHz)/config.StepHz - 1e-9))
+		end := int(math.Floor((maximum-config.StartHz)/config.StepHz+1e-9)) + 1
+		first = max(0, first)
+		end = min(targets, end)
+		if first >= end {
+			continue
+		}
+		eligible = append(eligible, eligibleDevice{device: device, first: first, end: end})
+		boundaries[first] = struct{}{}
+		boundaries[end] = struct{}{}
+	}
+	if len(eligible) == 0 {
+		return nil
+	}
+	sort.Slice(eligible, func(i, j int) bool { return eligible[i].device.ID < eligible[j].device.ID })
+	points := make([]int, 0, len(boundaries))
+	for point := range boundaries {
+		points = append(points, point)
+	}
+	sort.Ints(points)
+	partitions := make([]mapperJobPartition, 0, len(eligible))
+	appendPartition := func(index, start, end int) {
+		if start >= end {
+			return
+		}
+		if n := len(partitions); n > 0 && partitions[n-1].device.ID == eligible[index].device.ID && partitions[n-1].endIndex == start {
+			partitions[n-1].endIndex = end
+			partitions[n-1].endHz = config.StartHz + float64(end-1)*config.StepHz
+			return
+		}
+		partitions = append(partitions, mapperJobPartition{device: eligible[index].device, startIndex: start, endIndex: end, startHz: config.StartHz + float64(start)*config.StepHz, endHz: config.StartHz + float64(end-1)*config.StepHz})
+	}
+	for pointIndex := 0; pointIndex+1 < len(points); pointIndex++ {
+		start, end := points[pointIndex], points[pointIndex+1]
+		candidates := make([]int, 0, len(eligible))
+		for index := range eligible {
+			if eligible[index].first <= start && eligible[index].end >= end {
+				candidates = append(candidates, index)
+			}
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		sort.SliceStable(candidates, func(i, j int) bool {
+			left, right := eligible[candidates[i]], eligible[candidates[j]]
+			return left.assigned < right.assigned || (left.assigned == right.assigned && left.device.ID < right.device.ID)
+		})
+		width, cursor := end-start, start
+		for candidateIndex, index := range candidates {
+			portion := width / len(candidates)
+			if candidateIndex < width%len(candidates) {
+				portion++
+			}
+			appendPartition(index, cursor, cursor+portion)
+			eligible[index].assigned += portion
+			cursor += portion
+		}
+	}
+	return partitions
+}
+
+// mapperExclusionReason reserves receivers with known elevated noise for
+// supervised manual work. They remain available to Live and Tuner, but their
+// captures must not affect unattended discovery, identification, or data sets.
+func mapperExclusionReason(device SDRDevice) string {
+	if device.Serial == nil {
+		return ""
+	}
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(*device.Serial)), "c5cb") {
+		return "known elevated noise floor; use for supervised manual listening only"
+	}
+	return ""
 }
 
 func (r *Runtime) StopMapperJob(id string) MapperStatus {
@@ -437,9 +696,18 @@ func (r *Runtime) Refresh() {
 }
 
 func (r *Runtime) attachCalibrations() {
+	preferences, preferenceErr := loadPlutoPreferences(r.dataDirectory)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for index := range r.devices {
+		if r.devices[index].Kind == "PlutoSDR" {
+			if preferenceErr != nil {
+				r.devices[index].Connected = false
+				r.devices[index].Note = ptr("Cannot read saved Pluto connection: " + preferenceErr.Error())
+			} else {
+				applyPlutoPreference(&r.devices[index], preferences[r.devices[index].ID])
+			}
+		}
 		if calibration, ok := r.calibrations.Get(r.devices[index].ID); ok {
 			copy := calibration
 			r.devices[index].Calibration = &copy
@@ -484,12 +752,13 @@ func (r *Runtime) Plan() []ReceiverPlanItem {
 func (r *Runtime) Status() RuntimeStatus {
 	r.refreshStorageStatus()
 	powerHat := readPiPowerHat()
+	systemHealth := readSystemHealth(r.dataDirectory)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	status := RuntimeStatus{Running: r.running, Mode: "Idle", StartedAt: r.startedAt, ConnectedDeviceCount: 0,
 		EventCount: r.Events.Count(), WebAddress: r.webAddress, SimulatorEnabled: r.demo, Version: Version,
 		LastError: r.lastError, DroppedSamples: r.droppedSamples, SignalAnalysis: r.lastAnalysis, ReceiverTelemetry: r.receiverTelemetry,
-		Storage: r.storage, HealthNotices: r.healthNoticesLocked(), PowerHat: powerHat}
+		Storage: r.storage, HealthNotices: r.healthNoticesLocked(), PowerHat: powerHat, SystemHealth: systemHealth}
 	status.Storage.Policy = r.storagePolicy
 	for _, d := range r.devices {
 		if d.Connected && d.Kind != "Simulator" {
@@ -569,6 +838,12 @@ func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiv
 	if len(assignments) == 0 {
 		assignments = []DeviceAssignment{{ID: NewID(), Role: "channelBank"}}
 	}
+	if len(enabledP25Systems(profile)) > 0 {
+		// A P25 trunk follower can use one receiver for control and voice traffic.
+		// Selecting one radio must therefore create one receiver reservation, not
+		// pin each logical profile role to the same physical device.
+		assignments = []DeviceAssignment{{ID: NewID(), Role: "control", Target: ptr("P25 control")}}
+	}
 	for index := range assignments {
 		selected := deviceID
 		assignments[index].DeviceID = &selected
@@ -596,15 +871,48 @@ func (r *Runtime) StartOnDevice(profileID, deviceID string, controls *BandReceiv
 	}
 	if enabledChannels > 1 && hasReceiverRole(profile, "channelBank") {
 		for _, device := range r.devices {
-			if device.ID == deviceID {
-				if _, _, fits := widebandSpec(profile, device); !fits {
-					return fmt.Errorf("%s cannot monitor this entire channel bank simultaneously. Select a narrower band or a receiver with more usable bandwidth", device.Name)
-				}
-				break
+			if device.ID != deviceID {
+				continue
 			}
+			if _, _, fits := widebandSpec(profile, device); !fits {
+				center := 0.0
+				if controls != nil {
+					center = controls.CenterFrequencyHz
+				}
+				profile.Channels = bandMonitorWindow(profile.Channels, center, profile.Settings.SampleRateHz, device)
+			}
+			break
 		}
 	}
 	return r.startProfile(profile, nil)
+}
+
+func bandMonitorWindow(channels []ChannelDefinition, center float64, requestedRate int, device SDRDevice) []ChannelDefinition {
+	minimum, maximum := math.MaxFloat64, 0.0
+	for _, channel := range channels {
+		if channel.Enabled {
+			minimum = math.Min(minimum, channel.FrequencyHz)
+			maximum = math.Max(maximum, channel.FrequencyHz)
+		}
+	}
+	if center <= 0 {
+		center = (minimum + maximum) / 2
+	}
+	rate := requestedRate
+	if rate <= 0 {
+		rate = maximumCaptureRate(device)
+	}
+	if rate <= 0 {
+		rate = 2_000_000
+	}
+	window := float64(rate) * .72
+	selected := make([]ChannelDefinition, 0)
+	for _, channel := range channels {
+		if channel.Enabled && math.Abs(channel.FrequencyHz-center) <= window/2 {
+			selected = append(selected, channel)
+		}
+	}
+	return selected
 }
 
 func firstChannelMode(profile ScanProfile) string {
@@ -846,13 +1154,18 @@ func (r *Runtime) startProfile(profile ScanProfile, tuner *TunerRequest) error {
 		r.tunerHardware = nil
 	}
 	stop := r.stop
+	var p25Done chan struct{}
+	if useP25 && !r.demo {
+		p25Done = make(chan struct{})
+		r.p25MonitorDone = p25Done
+	}
 	tunerUpdates := r.tunerUpdates
 	demo := r.demo
 	r.mu.Unlock()
 	if demo {
 		go r.simulationLoop(stop)
 	} else if useP25 {
-		go r.p25MonitorLoop(stop, profile)
+		go func() { defer close(p25Done); r.p25MonitorLoop(stop, profile) }()
 	} else if tuner != nil {
 		go r.tunerLoop(stop, profile, liveDevices[0], *tuner, tunerUpdates)
 	} else if !useP25 && len(liveDevices) > 1 {
@@ -954,10 +1267,15 @@ func hasReceiverRole(profile ScanProfile, role string) bool {
 	return false
 }
 func (r *Runtime) Stop() {
+	if r.relay != nil {
+		r.relay.Stop()
+	}
 	if r.transmit != nil {
 		r.StopTransmit()
 	}
 	r.mu.Lock()
+	done := r.p25MonitorDone
+	r.p25MonitorDone = nil
 	if r.stop != nil {
 		close(r.stop)
 		r.stop = nil
@@ -976,6 +1294,13 @@ func (r *Runtime) Stop() {
 	r.mu.Unlock()
 	if r.op25 != nil {
 		r.op25.Stop()
+	}
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			r.setRuntimeError("P25 recording finalization is still waiting on storage.")
+		}
 	}
 }
 
@@ -1111,6 +1436,7 @@ func (r *Runtime) buildPlan(profile ScanProfile) []ReceiverPlanItem {
 }
 
 func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64) (MixerChannel, error) {
+	nativePlayback := r.op25 != nil && r.op25.taggedTalkgroupPlayback()
 	r.mu.Lock()
 	for i := range r.mixer {
 		if r.mixer[i].ID == id {
@@ -1123,6 +1449,12 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 				if r.mixer[i].TalkgroupID != nil {
 					for index := range r.mixer {
 						if r.mixer[index].TalkgroupID == nil {
+							continue
+						}
+						if nativePlayback {
+							if *solo {
+								r.mixer[index].Solo = index == i
+							}
 							continue
 						}
 						r.mixer[index].Solo = *solo && index == i
@@ -1139,7 +1471,7 @@ func (r *Runtime) UpdateMixer(id string, muted, solo *bool, volume, pan *float64
 			}
 			updated := r.mixer[i]
 			r.mu.Unlock()
-			if updated.TalkgroupID != nil && muted != nil && r.op25 != nil {
+			if updated.TalkgroupID != nil && muted != nil && r.op25 != nil && !nativePlayback {
 				if err := r.op25.UpdateTalkgroup(*updated.TalkgroupID, map[string]any{"mute": *muted}); err != nil {
 					return updated, err
 				}
@@ -1189,18 +1521,48 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 	ticker := time.NewTicker(750 * time.Millisecond)
 	defer ticker.Stop()
 	previous := make(map[string]P25ActiveCall)
+	var frames <-chan AudioFrame
+	unsubscribe := func() {}
+	r.op25.mu.Lock()
+	recordPCM := profile.Settings.P25ArchiveCalls && r.op25.engine == "OP25"
+	r.op25.mu.Unlock()
+	recorder := newP25PCMRecorder(r, profile, stop)
+	if recordPCM && r.audioHub != nil {
+		frames, unsubscribe = r.audioHub.subscribeP25()
+	}
+	defer func() {
+		unsubscribe()
+		if frames != nil {
+			for frame := range frames {
+				recorder.accept(frame)
+			}
+		}
+		if recordPCM {
+			recorder.finishAll()
+		} else {
+			for _, call := range previous {
+				r.finishP25Call(stop, profile, call, nil)
+			}
+		}
+	}()
 	for {
 		select {
 		case <-stop:
 			return
+		case frame, ok := <-frames:
+			if !ok {
+				frames = nil
+				continue
+			}
+			recorder.accept(frame)
 		case <-ticker.C:
+			recorder.checkpoint()
 			if status := r.P25Status(); status.State == "error" {
 				note := status.Note
-				r.Stop()
 				if note == "" {
 					note = "OP25 exited unexpectedly."
 				}
-				r.setRuntimeError("P25 decoder stopped: " + note)
+				go func() { r.Stop(); r.setRuntimeError("P25 decoder stopped: " + note) }()
 				return
 			}
 			talkgroups, talkgroupErr := r.op25.Talkgroups()
@@ -1209,45 +1571,17 @@ func (r *Runtime) p25MonitorLoop(stop <-chan struct{}, profile ScanProfile) {
 				continue
 			}
 			r.syncP25Mixer(profile, talkgroups, calls)
+			if recordPCM {
+				recorder.setCalls(calls)
+				continue
+			}
 			current := make(map[string]P25ActiveCall)
 			for _, call := range calls {
-				key := p25CallKey(call)
-				current[key] = call
+				current[p25CallKey(call)] = call
 			}
 			for key, call := range previous {
-				if _, active := current[key]; active {
-					continue
-				}
-				label := fmt.Sprintf("Talkgroup %d", call.Grant.GroupID)
-				if call.Talkgroup != nil && call.Talkgroup.AlphaTag != "" {
-					label = call.Talkgroup.AlphaTag
-				}
-				protocol := "P25"
-				if strings.Contains(strings.ReplaceAll(strings.ToLower(call.Grant.Protocol), " ", ""), "phase2") {
-					protocol = "P25 Phase 2"
-				}
-				duration := call.LastHeardAt.Sub(call.StartedAt).Seconds()
-				if duration < 0 {
-					duration = 0
-				}
-				systemName, talkgroupID := call.Grant.System, call.Grant.GroupID
-				var sourceRadioID *uint32
-				if call.Grant.SourceID != 0 {
-					source := call.Grant.SourceID
-					sourceRadioID = &source
-				}
-				r.op25.mu.Lock()
-				decoderEngine := r.op25.engine
-				r.op25.mu.Unlock()
-				event := TransmissionEvent{ID: NewID(), StartedAt: call.StartedAt, DurationSeconds: duration,
-					FrequencyHz: float64(call.Grant.FrequencyHz), BandwidthHz: 12_500, SignalDBFS: -30, NoiseDBFS: -80,
-					Modulation: "Digital", ProtocolName: &protocol, Label: &label, DeviceID: call.DeviceSerial, Confidence: .99,
-					SystemName: &systemName, TalkgroupID: &talkgroupID, SourceRadioID: sourceRadioID, Encrypted: call.Grant.Encrypted,
-					Analysis: &SignalIntelligence{Engine: decoderEngine + " frame decoder", Modulation: "DIGITAL", SignalFamily: protocol, Confidence: .99,
-						Evidence: []string{fmt.Sprintf("Talkgroup %d", call.Grant.GroupID), fmt.Sprintf("Source radio %d", call.Grant.SourceID)}, Summary: decoderEngine + " reported a " + protocol + " voice call."}}
-				_ = r.Events.Append(event)
-				if !call.Grant.Encrypted {
-					go r.attachP25Recording(stop, profile, call, event.ID)
+				if _, active := current[key]; !active {
+					r.finishP25Call(stop, profile, call, nil)
 				}
 			}
 			previous = current
@@ -1267,7 +1601,11 @@ func (r *Runtime) attachP25Recording(stop <-chan struct{}, profile ScanProfile, 
 			if err == nil {
 				_ = r.Events.UpdateAudioPath(eventID, path)
 				if profile.Settings.TranscribeVoice {
-					go r.transcribeEvent(stop, eventID, float64(call.Grant.FrequencyHz), path)
+					if r.p25Transcription != nil {
+						if err := r.p25Transcription.enqueue(eventID, false); err != nil {
+							r.setRuntimeError("Queue P25 transcription: " + err.Error())
+						}
+					}
 				}
 			}
 			return
@@ -1283,7 +1621,11 @@ func (r *Runtime) attachP25Recording(stop <-chan struct{}, profile ScanProfile, 
 }
 
 func p25CallKey(call P25ActiveCall) string {
-	return fmt.Sprintf("%s:%d:%d:%d", call.Grant.System, call.Grant.GroupID, call.Grant.FrequencyHz, call.StartedAt.UnixNano())
+	slot := -1
+	if call.TDMASlot != nil {
+		slot = *call.TDMASlot
+	}
+	return fmt.Sprintf("%s:%d:%d:%d:%s:%d:%d", call.Grant.System, call.Grant.GroupID, call.Grant.FrequencyHz, call.StreamIndex, call.DeviceSerial, slot, call.StartedAt.UnixNano())
 }
 
 func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupState, calls []P25ActiveCall) {
@@ -1299,6 +1641,9 @@ func (r *Runtime) syncP25Mixer(profile ScanProfile, talkgroups []P25TalkgroupSta
 	}
 	r.op25.mu.Lock()
 	streamCount := len(r.op25.audioSockets)
+	if r.op25.taggedTalkgroupAudio {
+		streamCount = 0
+	}
 	r.op25.mu.Unlock()
 	r.mu.Lock()
 	for index := 0; index < streamCount; index++ {

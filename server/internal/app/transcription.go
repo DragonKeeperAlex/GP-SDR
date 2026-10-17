@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -98,8 +99,17 @@ func (t *Transcriber) Transcribe(parent context.Context, wavPath string) (string
 	}
 	defer os.RemoveAll(outputDirectory)
 	outputBase := filepath.Join(outputDirectory, "transcript")
-	command := exec.CommandContext(contextWithTimeout, t.executable,
-		"-m", t.model, "-f", wavPath, "-l", "en", "--prompt", "Two-way radio traffic. Callsigns may be spoken with NATO phonetics.", "-otxt", "-of", outputBase, "-nt", "-np")
+	args := []string{
+		"-m", t.model, "-f", wavPath, "-l", "en", "--prompt", "Two-way radio traffic. Callsigns may be spoken with NATO phonetics.", "-otxt", "-of", outputBase, "-nt", "-np"}
+	executable := t.executable
+	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" {
+		args = append(args, "-t", "2")
+		if nice, err := exec.LookPath("nice"); err == nil {
+			args = append([]string{"-n", "10", executable}, args...)
+			executable = nice
+		}
+	}
+	command := exec.CommandContext(contextWithTimeout, executable, args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))

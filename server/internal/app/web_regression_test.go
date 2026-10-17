@@ -17,6 +17,26 @@ func TestMapperSettingsFocusDoesNotSuspendTelemetry(t *testing.T) {
 	}
 }
 
+func TestTunerFallsBackWhenSelectedDecoderIsUnavailable(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(indexData), `id="tuner-mode-note"`) {
+		t.Fatal("tuner must explain a decoder-mode fallback to the operator")
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"const selected=select.selectedOptions[0]", "if(selected?.disabled)", "select.value='auto'", "Switched to Auto; open Hardware"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("tuner unavailable-decoder fallback %q is missing", required)
+		}
+	}
+}
+
 func TestTransmitLabExposesGroundedFixtureControls(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {
@@ -172,6 +192,26 @@ func TestPiPowerHatCardIsCapabilityDriven(t *testing.T) {
 		if !strings.Contains(app, required) {
 			t.Fatalf("Pi power HAT behavior %q is missing", required)
 		}
+	}
+}
+
+func TestHardwareIncludesReadOnlySystemHealthCard(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(indexData)
+	for _, required := range []string{"systemHealthHTML", "System health", "memoryTotalBytes", "storageFreeBytes", "uptimeSeconds", "thermal sensors"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("system health UI %q is missing", required)
+		}
+	}
+	modelData, err := os.ReadFile("models.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(modelData), "SystemHealth         SystemHealth") {
+		t.Fatal("runtime status does not expose system health")
 	}
 }
 
@@ -431,6 +471,40 @@ func TestNativeTunerSeparatesHardwareCenterAndSoftwareVFO(t *testing.T) {
 	}
 }
 
+func TestTunerProvidesStandardSDRWorkspaceAndDetectionStrip(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, required := range []string{`id="tuner-device"`, `id="tuner-mode"`, `id="tuner-frequency"`, `id="tuner-spectrum"`, `id="waterfall"`, `class="tuner-spectrum-scroll"`, `class="tuner-waterfall-scroll"`, `id="tuner-detected-modulation"`, `id="tuner-detected-protocol"`} {
+		if !strings.Contains(index, required) {
+			t.Fatalf("standard tuner workspace control %q is missing", required)
+		}
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{"setVFOFromPointer", "tuner-decoder-state", "signalFamily", "tuner-spectrum"} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("standard tuner behavior %q is missing", required)
+		}
+	}
+}
+
+func TestSidebarDecoderLabelsReserveIconColumn(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "web", "app.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	if !strings.Contains(source, ".nav-icon { flex: 0 0 32px; width: 32px;") || !strings.Contains(source, "white-space: nowrap;") {
+		t.Fatal("sidebar icon column must reserve space for multi-character decoder icons")
+	}
+}
+
 func TestDMRControlsAreAvailableAcrossNativeWorkspaces(t *testing.T) {
 	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
 	if err != nil {
@@ -516,8 +590,8 @@ func TestP25MixerShowsControlChannelAndActivityOrdering(t *testing.T) {
 	app := string(appData)
 	for _, required := range []string{
 		"status.controlChannelHz", `id="p25-order"`, "Most recent", "Most received",
-		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:''",
-		"const p25Action=", "P25 searching…", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "P25 audio enabled",
+		"right.eventCount", "rightTime", "item.lastHeardAt", "item.eventCount", "status.receiverDeviceIDs", "saveP25ReceiverSettings", "updated.settings.p25Receivers[deviceID]=settings",
+		"Control decoded", "Searching for control", "Decoder PCM", "status.audioFrames", "id=\"p25-audio-monitor\"", "Listening in this browser", "This browser is muted",
 	} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("P25 mixer status or activity-order behavior %q is missing", required)
@@ -551,6 +625,91 @@ func TestTunerShowsEffectiveReceiverControls(t *testing.T) {
 	for _, required := range []string{"const appliedDevice=state.devices.find(item=>item.id===telemetry?.deviceID)", "Applied ${applied}", "LNA ${telemetry.lnaGainDB}"} {
 		if !strings.Contains(app, required) {
 			t.Fatalf("effective tuner-control readout %q is missing", required)
+		}
+	}
+}
+
+func TestTunerOnlyOffersReadyReceivers(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"const ready = connected.filter(device => device.available);",
+		"'<option value=\"\">No ready receiver</option>'",
+		"$('#tuner-start').disabled = !ready.length || tunerSubmitting;",
+		"A receiver is connected but its driver is not ready.",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("ready-receiver tuner behavior %q is missing", required)
+		}
+	}
+}
+
+func TestTunerPreventsOverlappingTouchStarts(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"let tunerSubmitting = false;",
+		"if (tunerSubmitting) return;",
+		"tunerSubmitting = true;",
+		"tunerSubmitting = false; renderTuner();",
+		"$('#tuner-start').disabled = !ready.length || tunerSubmitting;",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("tuner duplicate-start protection %q is missing", required)
+		}
+	}
+}
+
+func TestBandMonitorPreventsOverlappingStarts(t *testing.T) {
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, required := range []string{
+		"let bandWindowCenterHz=0, bandStarting=false;",
+		"if(bandStarting)return;",
+		"bandStarting=true;",
+		"bandStarting=false;renderBandMonitor();",
+		"$('#band-start').disabled=running||bandStarting||!profile||!connected.length;",
+	} {
+		if !strings.Contains(app, required) {
+			t.Fatalf("band monitor duplicate-start protection %q is missing", required)
+		}
+	}
+}
+
+func TestTunerExposesInstalledDataDecoders(t *testing.T) {
+	indexData, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"value=\"nxdn96\"", "value=\"ads-b\"", "value=\"rtl-433\"", "value=\"ais\""} {
+		if !strings.Contains(string(indexData), required) {
+			t.Fatalf("tuner data mode %q is missing", required)
+		}
+	}
+	if !strings.Contains(string(indexData), `id="tuner-bandwidth" type="number" min="1" max="2500"`) {
+		t.Fatal("tuner bandwidth field does not allow the ADS-B capture width")
+	}
+	appData, err := os.ReadFile(filepath.Join("..", "..", "web", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"function updateTunerModeAvailability()", "decoder.state==='ready'", "option.disabled=!available"} {
+		if !strings.Contains(string(appData), required) {
+			t.Fatalf("tuner decoder availability behavior %q is missing", required)
+		}
+	}
+	for _, required := range []string{"'ads-b':'2000'", "'rtl-433':'250'", "ais:'25'", "acars:'25'"} {
+		if !strings.Contains(string(appData), required) {
+			t.Fatalf("tuner decoder bandwidth default %q is missing", required)
 		}
 	}
 }

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Launch Wayfire and report every unexpected exit as a unit failure.
+set -eu
+mkdir -p /home/sdr/.cache
+stopping=0
+child=""
+shutdown() {
+  stopping=1
+  [ -n "$child" ] && kill -TERM "$child" 2>/dev/null || true
+}
+trap shutdown TERM INT
+/usr/bin/wayfire -d -c /home/sdr/.config/wayfire.ini >>/home/sdr/.cache/wayfire.log 2>&1 &
+child=$!
+wait "$child" || rc=$?
+rc=${rc:-0}
+[ "$stopping" -eq 1 ] && exit 0
+exit 1

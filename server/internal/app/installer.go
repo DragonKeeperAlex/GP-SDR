@@ -143,7 +143,7 @@ func recipeReady(recipe installerRecipe) bool {
 	if len(recipe.tools) == 0 {
 		return false
 	}
-	if recipe.component.ID == "dump1090" || recipe.component.ID == "ais" {
+	if recipe.component.ID == "dump1090" || recipe.component.ID == "ais" || recipe.component.ID == "dump978" || recipe.component.ID == "noaa-apt" || recipe.component.ID == "sstv" {
 		for _, tool := range recipe.tools {
 			if _, err := findTool(tool); err == nil {
 				return true

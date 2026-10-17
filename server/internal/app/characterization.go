@@ -306,8 +306,8 @@ func characterizeFrequency(device SDRDevice, frequency float64, request Characte
 	if device.SampleRateLimit != nil && float64(rate) > *device.SampleRateLimit {
 		rate = int(*device.SampleRateLimit)
 	}
-	if device.Kind == "HackRF" && rate < 2_000_000 {
-		rate = 2_000_000
+	if device.Kind == "HackRF" && rate < minimumHackRFSampleRate {
+		rate = minimumHackRFSampleRate
 	}
 	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(frequency)), SampleRateHz: rate, GainDB: request.GainDB,
 		LNAGainDB: request.LNAGainDB, VGAGainDB: request.VGAGainDB, AmpEnabled: request.AmpEnabled}

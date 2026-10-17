@@ -11,6 +11,14 @@ protocol. Mobile ports remain on hold; deployment remains Pi only.
 
 ## Partially implemented or awaiting acceptance
 
+October 15, 2026: P25 replacement is the next development priority. The
+[four rebuild milestones](P25_REBUILD_PLAN.md) cover independent receiver proof,
+coordinated calls, the field interface, and recording/recovery. Planning is
+complete; receiver session/status foundation implementation is in progress.
+Independent Pluto control/PCM was reconfirmed on October 15; RTL/HackRF control
+and voice, concurrency, complete interface replacement and recovery remain open.
+
+
 - [ ] RF-01 Clear P25 audio: PCM bridge works; subjective continuity/intelligibility acceptance remains.
 - [x] Bounded Pi P25 hardware stream evidence: the dedicated Pluto profile
   locked 774.45625 MHz and OP25 delivered 4,684 8 kHz PCM frames to the
@@ -465,3 +473,235 @@ Fixed in this work tranche (bounded software scope only):
 - 2026-09-19 decoder inventory: all advertised Pi decoder components currently
   report ready alongside the three connected receivers. Real over-air frame
   acceptance is still required for every non-analog protocol.
+
+- 2026-10-15 P25 input/UI increment: Pluto, HackRF a447 and RTL independently
+  passed changing-IQ and advancing real OP25 assembler-input checks (2+2 seconds
+  each). This accepts input transport only. Per user, defer final RTL/HackRF
+  P25 reception until the large antenna is available. Started milestone 3 with
+  Operate/Setup/Diagnostics/Recordings, browser audio toggle, recent-call search
+  and 44px actions. RF-01/02/04/05/06 and overall UI-01/02 remain open. See
+  `P25_REBUILD_PLAN.md` for measurements and remaining acceptance.
+- 2026-10-15 user rate requirement: HackRF minimum 8 MS/s, including P25
+  defaults/fallbacks and native/Soapy capture validation. Repeated a447 input
+  check at 8 MS/s passed (15,955,296 IQ samples and 9,599 decoder symbols advanced
+  in two seconds). Other receiver rates remain independent.
+
+- 2026-10-15 P25 setup/archive increment: per-radio OP25 rate/gain/PPM overrides
+  with explicit stopped-session saving, preserved receiver/system assignments,
+  canonical voice roles, and paged P25-only recordings independent of Activity
+  filters. Corrected remaining SDRTrunk tuner-file fallback to 8 MS/s. Bounded
+  regression checks pass; RF-01/02/04/05/06 and full UI-01/02/03/04 acceptance
+  remain open. See `P25_REBUILD_PLAN.md` for exact scope and limitations.
+
+- 2026-10-16 P25 field UI: system activity counters and stale control age are
+  separate from per-radio evidence; frequency offset is not an error count.
+  Added recovery guidance and setup/recordings shortcuts. Group 3 software UI
+  handoff is documented in `P25_REBUILD_PLAN.md`; full RF/UI acceptance and group
+  4 call/archive/transcription recovery remain open.
+
+- 2026-10-16 P25 archive/transcription: software fixes cover call keys and
+  receiver metadata, measured audio duration, Stop finalization, missing media,
+  and durable one-worker queue/retry. Pi storage fixtures pass. Group 4 and
+  RF-01/04/05/06/07 remain open; raw UDP call boundaries and abrupt loss are not
+  accepted by metadata/fixture tests.
+
+- 2026-10-16 home compute: private-network Ollama metadata analysis configured
+  and exercised from the Pi. Queue safeguards and status updates added; local
+  model settings retain remote configuration. This is not raw IQ/audio offload,
+  RF-model accuracy or Windows unattended-startup acceptance; AI-07 remains open.
+
+- 2026-10-16 Settings repair: corrected implicit mobile grid columns and added
+  independent Browser / Box touchscreen layout modes. Live 456px and 1280×800
+  browser checks confirm proper card widths; box Settings actions measure 48px.
+  Layout choice is screen-local and does not alter RF/settings on other clients.
+  Physical display acceptance and the future visual redesign remain separate.
+
+- 2026-10-16 P25 interrupted recordings: active-call checkpoints recover the saved
+  PCM portion after a forced process kill, with stable attribution, no duplicate
+  call and queued transcription. Pi exFAT and separate real-ENOSPC fixtures pass.
+  The latest unsynced portion, physical power/storage loss and sample-level call
+  boundaries remain limitations; Group 4 is not marked complete.
+
+
+### October 16 — P25 stream boundaries, home batch and integration audit
+
+Native OP25 DRAIN/DROP markers now reach recorder-only subscribers in order.
+DRAIN closes the current segment, DROP revokes buffered/checkpointed audio,
+and sequence gaps persist a partial-recording warning. Metadata without PCM no
+longer creates an empty voice recording. Stale/encrypted/unassigned PCM is rejected.
+Raw OP25 PCM still lacks packet-native call/talkgroup identity: this does not close
+sample-level attribution/encryption-transition or real overlapping-RF acceptance.
+
+Eight copied historical IQ captures (40 MB total) passed SHA-256 checks, completed
+native Windows DSP and local-model analysis without failure, and were imported
+into the Pi event history. Original paths/media/retention were preserved; journal
+backup is private. No new digital-frame or speech-accuracy acceptance is claimed.
+A separate resumable metadata-only home review covers 256 groups; it was still
+running at the last checkpoint (191 complete, 65 remaining, no reported error).
+
+The developed-feature audit integrated reviewed RTL stream recovery, Pluto
+transport selection, Mapper identity reconciliation, home-analysis fallback,
+FM discriminator limiting, tool detection and missing Pi helper source. See
+DEVELOPED_FEATURE_INTEGRATION_AUDIT.md for decisions and deferred prototypes.
+USB recovery recognizes one usable HackRF plus RTL, permits Ethernet Pluto,
+and defers bus probes while the app runs or its status is unknown. Pi status
+screen selects its framebuffer by panel identity and reports boot/data capacity.
+
+Validation: full Go suite and exact staged-source suite; focused race/vet;
+ARM64 and Windows builds; recorder/control/spool fixtures on actual Pi exFAT
+and Windows; UI contract checks; USB presence fixtures; sudoers syntax checks.
+These are bounded software checks, not RF overlap, listening, power-cut or
+physical-display acceptance. P25 is running with the saved three-radio silent
+profile; latest reception was searching. HackRF remains at least 8 MS/s.
+Deployed ARM64 SHA-256:
+`fa9c042672ff2fa277d6cd7b68924d9d7ad74fb3049ceedf00cc7af1ed5e2ab5`.
+Group 4 remains open for packet-native attribution and remaining acceptance gates.
+Credentials, recordings, transcripts and private batch manifests are excluded.
+
+
+### October 17 — home-PC activity priority (bounded software verification)
+
+Installed an interactive Windows guard for GP-SDR remote evidence analysis.
+Mouse/keyboard and recent XInput use pause work, foreground fullscreen holds
+pause, and Automatic resumes after ten idle minutes plus queue retry backoff.
+An in-flight guarded inference is cancelled and its model requested to unload;
+manual Pause/Automatic/Status Desktop shortcuts are installed. The Pi now uses
+the guarded endpoint; queued work is retained. Historical metadata batch is
+complete at 256/256 without reported errors. Existing Ollama service is retained.
+
+Policy/cancellation/unload regressions pass with race/vet and on Windows;
+live desktop activity, manual marker and retryable rejection from Pi verified,
+with zero models loaded. Guard runs in Session 1 via an Interactive logon task.
+No gameplay, input injection, logoff/reboot or subjective latency test performed.
+Future clients must use the guarded port; direct Ollama clients bypass it.
+See HOME_DEFERRED_COMPUTE.md for scope, controls, reproduction and rollback.
+P25/RF/group-4 acceptance states are unchanged. No secrets or media committed.
+
+
+### October 17 — selectable model compute and automatic PC preference
+
+Added authenticated browser/box Settings selector: Automatic (prefer home PC,
+fall back to local), Local only, Deferred/home only (queue while unavailable),
+and Off. Both saved endpoint/model configurations survive switching. New and
+queued model work follow the selection; the Pi uses one shared local inference
+slot. Availability probes honor the Windows activity guard, use no inference,
+and are bounded/cached. Endpoint/credential editing retains local-only rules.
+Live default is Automatic. RF/DSP/decoding/transcription remain receiver-local.
+
+Routing, fallback, deferred persistence, queue-local processing, authentication
+and safe mode-only updates pass locally and on Pi. Full Go suite, focused race/
+vet and browser-handler checks pass. Browser mode changes are software evidence;
+no physical display, gameplay, model accuracy or RF acceptance is inferred.
+See HOME_DEFERRED_COMPUTE.md for modes, migration, retry timing and limitations.
+
+
+October 17 live follow-up: mode changes saved from the authenticated external
+browser; Local, Deferred and Off were verified, then Automatic restored and
+persisted. The home PC reports ready/preferred. At 1280×800 with explicit touch
+rules, the selector measured 48 pixels high and the compute card had no horizontal
+overflow. At desktop browser size the same compact card exposes the selector
+while advanced model/benchmark controls stay collapsed. These are browser
+viewport checks, not a new physical touchscreen acceptance claim. P25 was restored
+with the saved three-receiver silent profile after deployment.
+Final installed ARM64 SHA-256:
+`bdc3726cc12ccbb4287ca69e376eae28fcb08e6b6ab4897c81f58102817a7652`.
+Full exact-staged-source Go suite passes; focused routing/race/vet, UI handler
+checks, Windows build and actual-Pi routing/queue checks pass. A retention test's
+error-text expectation was updated for the destination-neutral "model analysis"
+wording; it still verifies failed analysis preserves the original IQ.
+
+
+### October 17 — original-group scope restored; native P25 audio identity
+
+The original four groups are recorded in FOUR_GROUP_COMPLETION.md. Historical
+P25 “Group 3/4” notes refer to P25 rebuild milestones, not completion of the
+original Mapper/intelligence or transmit/platform/distribution groups. The four
+original groups are not declared complete and Astra handoff is not yet ready.
+Mobile/public release expansion remains behind Pi remediation.
+
+Original Group 2 / RF-04/07: added an opt-in decoder-native UDP audio adapter for
+the inspected boatbod OP25 source. Every packet carries a receive-session/call
+generation, decoded group/source, slot and observed crypto state. Unknown or
+encrypted PCM is suppressed before playback/recording/transcription. Recorder
+identity must agree with recent metadata; back-to-back native generations split
+recordings, and native identity survives checkpoints/recovery. Stale socket
+readers cannot publish audio/counters into a replacement session. Diagnostics
+reports tagged/legacy/mismatched transport rather than assuming native support.
+
+The native adapter patch is source-hash checked and its legacy opt-out wire
+format remains intact. C++ encoder and actual OP25 emitter socket tests pass;
+three-emitter UDP/hub tests on Pi suppress encrypted samples and keep normal
+playback free of control packets. Pi data-volume recorder/checkpoint recovery,
+Go full suite and focused race/vet pass. No synthetic media entered the live
+journal, no RF transmitted, and original data/configuration/calibration remain.
+
+Real decoder-tagged packets are now observed on the live three-radio session.
+The bounded observation is still searching with no accepted attributed clear
+PCM: this verifies native transport, not successful RF calls, speech quality,
+per-talkgroup mixing, measured simultaneous-call capacity or all encryption
+boundaries. Frequency/site labels still come from matching recent receiver
+metadata. Complete RF/replay and user/physical gates remain open.
+See OP25_NATIVE_AUDIO.md for the wire contract, prerequisites and rollback.
+
+
+### 2026-10-17 native transport and listening-control deployment
+
+Original Group 2 / RF-04/07: the opt-in single-system adapter now routes browser
+listening by decoder talkgroup and call generation. Mute/solo/volume/pan do not
+mute OP25 or stop archival recording; separate calls retain separate browser
+clocks. Multi-system numeric-talkgroup ambiguity is still open, with legacy
+receiver playback retained and unsupported volume/pan controls hidden.
+Old-session datagrams and already-buffered subscription frames are rejected.
+The full Go suite passed (8.869 s); bounded native transport, recording/recovery,
+old-session and mixer tests passed on the Pi's actual exFAT temporary workspace.
+Mock WebAudio coverage checks mute/solo/gain/pan, unknown-group silence, overlapping
+same-group clocks and cleanup. No synthetic calls were inserted in live history.
+Installed GP-SDR SHA-256:
+`ad3a246061bd744ec37f2a56e1fb22e5be52851a7c56fdc6bd1fd1adb53cd967`.
+Matched OP25 library SHA-256:
+`795f6a7abb563031911332ff3b24b7d15b1834baf59685ae5ae79b5dd5ed6a1a`.
+The silent saved profile was restored with Pluto 2.4, HackRF 8 and RTL 2.4 MS/s.
+Live diagnostics reported native headers but no accepted clear PCM during this
+bounded check: RF voice, intelligibility and concurrent-call capacity remain open.
+Original Group 1 / UI-01/04: Settings now reports actual Linux/ARM64 and password
+sign-in rather than static architecture/token claims. Verified loaded live UI.
+P25 Diagnostics fits desktop 1440x900 and touch 1280x800 without horizontal page
+overflow; this is viewport proof, not new physical touch or listening acceptance.
+The original four-group completion ledger remains open; Astra readiness has not
+been declared.
+
+
+### 2026-10-17 startup failure, storage and compute boundary follow-up
+
+Original Group 2 / RF-07: register the OP25 process/session before starting its
+waiter, so an immediate child failure cannot miss audio-socket/session cleanup
+or overwrite the useful startup diagnostic. A short executable fixture exits
+with status 7 and a receiver-startup error; the test requires error visibility,
+cleared audio session and closed listener state. Full clean-index Go suite
+passed (8.970 s), vet passed, targeted race checks passed (1.836 s).
+Original Groups 1/3 / MAP-05/09/10, AI-02/07: bounded tests also passed on actual
+Pi exFAT disposable fixtures: failed Mapper writes preserve the previous state;
+cleanup preserves results/event history; pending/archive IQ is included in caps;
+quarantine expiry and torn-journal compaction are bounded; analysis failures
+preserve IQ; interrupted/corrupt deferred queues retain recoverable evidence;
+remote paused/offline/missing-model/generation-error cases select the documented
+fallback, and local/deferred/off modes preserve their contracts. These fixtures
+do not establish real NAS outage or power-loss acceptance, model accuracy, or
+long-duration radio stability.
+Original Group 2 / RF-06: Diagnostics now shows the configured decoder-path
+budget and reserves control coverage per configured system. Current three-radio,
+one-system configuration has three paths, one needed for control, up to two
+remaining voice paths. Wider capture alone does not add demodulators. This is
+not a measured concurrent-call limit or a completed wideband allocator.
+Final installed GP-SDR SHA-256:
+`d44e0cdcce4579f8e73fd604483ebc3dc5be8e27ba1448f6085f533d64603a92`.
+The matching native OP25 library is unchanged from the preceding deployment.
+
+Final live/browser verification: restored the saved silent three-receiver P25
+profile with no runtime error. The final build briefly decoded current control
+at 774.456250 MHz (137 system control messages at the observation), then returned
+to searching; no accepted clear PCM was observed. This is intermittent control
+evidence, not sustained lock or voice acceptance. Desktop 1440x900 and touch
+1280x800 render the configured path budget and recovery guidance without page
+horizontal overflow. Temporary viewport overrides were reset; browser listening
+remained off. All original groups remain subject to the completion ledger.

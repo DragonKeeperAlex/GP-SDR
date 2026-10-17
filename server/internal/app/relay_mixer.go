@@ -23,10 +23,7 @@ func NewRelayMixer(streams []RelayStream) (*RelayMixer, error) {
 		if stream.ID == "" {
 			return nil, errors.New("relay stream ID is required")
 		}
-		if stream.Volume == 0 {
-			stream.Volume = 1
-		}
-		if stream.Volume < 0 || stream.Volume > 2 {
+		if math.IsNaN(stream.Volume) || math.IsInf(stream.Volume, 0) || stream.Volume < 0 || stream.Volume > 2 {
 			return nil, errors.New("relay stream volume must be between 0 and 2")
 		}
 		m.streams[stream.ID] = stream
@@ -47,7 +44,7 @@ func (m *RelayMixer) SetStream(stream RelayStream) error {
 	if stream.ID == "" {
 		return errors.New("relay stream ID is required")
 	}
-	if stream.Volume < 0 || stream.Volume > 2 {
+	if math.IsNaN(stream.Volume) || math.IsInf(stream.Volume, 0) || stream.Volume < 0 || stream.Volume > 2 {
 		return errors.New("relay stream volume must be between 0 and 2")
 	}
 	m.streams[stream.ID] = stream
@@ -63,16 +60,19 @@ func (m *RelayMixer) Mix(frames map[string][]int16) []int16 {
 			length = len(samples)
 		}
 	}
-	output := make([]int16, length)
+	sums := make([]float64, length)
 	for id, samples := range frames {
 		stream, ok := m.streams[id]
 		if !ok || !stream.Enabled {
 			continue
 		}
 		for i, sample := range samples {
-			value := float64(output[i]) + float64(sample)*stream.Volume
-			output[i] = int16(math.Max(-32768, math.Min(32767, value)))
+			sums[i] += float64(sample) * stream.Volume
 		}
+	}
+	output := make([]int16, length)
+	for i, value := range sums {
+		output[i] = int16(math.Max(-32768, math.Min(32767, value)))
 	}
 	return output
 }

@@ -35,6 +35,11 @@ universal ZIP against the release SHA-256 manifest and validates the app bundle
 before restarting. The update replaces only the application; Application
 Support data, profiles, results, recordings, and calibration remain in place.
 
+The updater currently verifies HTTPS downloads, release checksums, bundle
+identity, and macOS code-signature validity. It is not yet a complete signed
+update channel: signed manifests, downgrade/replay protection, and a tested
+cross-platform rollback policy remain open.
+
 If macOS says the app is damaged after downloading, first download it again and
 verify its checksum. Do not remove quarantine attributes from an unverified file.
 
@@ -210,6 +215,43 @@ The source projects and their licenses remain independent and are credited in
 | P25 lock but no voice | Check encryption status, JMBE creation, talkgroup mute/solo, and audio output. |
 | Interface unavailable on phone | Enable LAN binding, use the displayed tokenized URL, allow the private-network firewall rule, and stay on the same LAN/VPN. |
 
+## Password sign-in for a remote browser
+
+GP-SDR can use a normal Firefox sign-in session while retaining the access
+token for recovery and automation. Generate a password hash by sending the
+password over standard input (it is never placed in a command argument):
+
+```bash
+read -rsp 'GP-SDR browser password: ' GPSDR_NEW_PASSWORD; echo
+printf '%s' "$GPSDR_NEW_PASSWORD" | ./gp-sdr -password-hash-stdin
+unset GPSDR_NEW_PASSWORD
+```
+
+Set the resulting value as `GPSDR_WEB_PASSWORD_HASH` in the service
+environment file, then restart GP-SDR. Password sessions are HTTPS-only and
+expire after 12 hours. If TLS is terminated by a reverse proxy that you
+administer, set `GPSDR_TRUST_PROXY_HEADERS=1` only when that proxy reliably
+sets `X-Forwarded-Proto: https`; otherwise leave it unset.
+
+## Touchscreen keyboard on the Pi
+
+The touchscreen uses the Pi's Wayland keyboard, not a keyboard built into
+GP-SDR. Use the Wayfire display session, which supports the keyboard overlay;
+`squeekboard` opens automatically when Chromium focuses a text field:
+
+```bash
+sudo apt-get install squeekboard
+sudo install -D -m 0644 Scripts/pi/gp-sdr-wayfire.ini /home/sdr/.config/wayfire.ini
+sudo chown sdr:sdr /home/sdr/.config/wayfire.ini
+sudo install -D -m 0755 Scripts/pi/gp-sdr-kiosk.sh /usr/local/bin/gp-sdr-kiosk
+sudo install -D -m 0755 Scripts/pi/gp-sdr-start-wayfire /usr/local/lib/gp-sdr/start-wayfire
+sudo install -D -m 0755 Scripts/pi/gp-sdr-display-session /usr/local/lib/gp-sdr/display-session
+sudo install -D -m 0644 Scripts/pi/gp-sdr-desktop.service /etc/systemd/system/gp-sdr-desktop.service
+sudo systemctl daemon-reload
+sudo systemctl disable --now gp-sdr-kiosk
+sudo systemctl enable --now gp-sdr-desktop
+```
+
 ## Verify a download
 
 On macOS or Linux:
@@ -242,6 +284,17 @@ To create all release packages on macOS:
 chmod +x Scripts/build_release.sh Scripts/fetch_p25_stack.sh
 Scripts/build_release.sh 1.5.0-rc34
 ```
+
+Validate the produced directory before distribution:
+
+```bash
+Scripts/validate_release_artifacts.sh dist
+```
+
+The validator checks every checksum, archive/package structure, required
+bundled components, DMG integrity where supported, and Finder/cloud-conflict
+contamination. It does not replace clean-machine install, upgrade, rollback,
+uninstall, startup, or hardware acceptance.
 
 Do not build a source checkout from a cloud-synced folder while it is resolving
 conflicts. The release script stops if duplicate conflict copies are detected.

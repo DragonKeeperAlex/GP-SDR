@@ -47,6 +47,10 @@ type p25GrantState struct {
 }
 
 type P25ActiveCall struct {
+	NativeCallID string `json:"nativeCallID,omitempty"`
+	// StreamIndex maps OP25's channel_update key to p25-stream-N audio.
+	StreamIndex  int                `json:"-"`
+	TDMASlot     *int               `json:"tdma_slot,omitempty"`
 	Grant        p25GrantState      `json:"grant"`
 	Talkgroup    *P25TalkgroupState `json:"talkgroup,omitempty"`
 	DeviceSerial string             `json:"device_serial"`
@@ -130,6 +134,9 @@ func (m *OP25Manager) start(profile ScanProfile, plan []ReceiverPlanItem, device
 			return errors.New("the default GP-SDR P25 backend is OP25; install OP25, then refresh Hardware, or explicitly select SDRTrunk")
 		}
 		return m.startOP25(profile, plan, devices, dataDirectory)
+	}
+	if len(profile.Settings.P25Receivers) > 0 {
+		return errors.New("per-receiver P25 tuning requires OP25; select OP25 or clear receiver overrides")
 	}
 	if p25AssignmentsNeedOP25(assigned) {
 		return errors.New("SDRTrunk does not support the selected Soapy receiver; select OP25")
@@ -390,6 +397,10 @@ func (m *OP25Manager) Status() P25Status {
 			return status
 		}
 	}
+	configured := strings.ToLower(strings.TrimSpace(os.Getenv("GPSDR_P25_ENGINE")))
+	if configured != "sdrtrunk" {
+		return m.op25Status()
+	}
 	if executable, err := findSDRTrunk(); err == nil {
 		return P25Status{State: "ready", Engine: "SDRTrunk", Executable: &executable, Note: "SDRTrunk P25 Phase 1/2 trunk following is ready."}
 	}
@@ -637,8 +648,8 @@ func importExistingSDRTrunkTunerConfiguration(applicationRoot string) error {
 
 // optimizeP25SampleRates applies a receiver-safe rate to each assigned tuner.
 // RTL-SDR defaults to SDRTrunk's stable 2.4 MS/s rate and accepts only rates
-// supported by its RTL2832 controller. HackRF retains the wider 10 MS/s auto
-// capture and 5 MS/s transport fallback. Saved HackRF gains are preserved unless
+// supported by its RTL2832 controller. HackRF uses an 8 MS/s automatic
+// capture and transport fallback. Saved HackRF gains are preserved unless
 // explicitly overridden; transport fallback disables the RF amplifier.
 func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigned []p25AssignedDevice, conservative bool) error {
 	minimum, maximum, found := p25ControlChannelSpan(profile)
@@ -655,7 +666,7 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 	}
 	hackRFRate := hackRFSampleRateName(profile.Settings.P25SampleRateHz)
 	if conservative {
-		hackRFRate = "RATE_5_0"
+		hackRFRate = "RATE_8_0"
 	}
 	rtlRate := "RATE_2_400MHZ"
 	if configured, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
@@ -690,7 +701,7 @@ func optimizeP25SampleRates(applicationRoot string, profile ScanProfile, assigne
 				tuner["vgagain"] = fmt.Sprintf("GAIN_%d", max(0, min(62, *gain))/2*2)
 				changed = true
 			}
-			if rate, ok := tuner["sampleRate"].(string); applyHackRFRate && (!ok || rate != hackRFRate) {
+			if rate, ok := tuner["sampleRate"].(string); (applyHackRFRate || !ok || (rate != "RATE_8_0" && rate != "RATE_10_0" && rate != "RATE_20_0")) && (!ok || rate != hackRFRate) {
 				tuner["sampleRate"] = hackRFRate
 				changed = true
 			}
@@ -762,7 +773,7 @@ func rtlSDRSampleRateName(rate int) (string, bool) {
 }
 
 func isHackRFSampleRate(rate int) bool {
-	return rate == 5_000_000 || rate == 8_000_000 || rate == 10_000_000 || rate == 20_000_000
+	return rate == 8_000_000 || rate == 10_000_000 || rate == 20_000_000
 }
 
 func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, conservative bool) int {
@@ -770,14 +781,13 @@ func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, 
 	hasRTL := p25AssignmentsContainKind(assigned, "RTL-SDR")
 	if hasHackRF && !hasRTL {
 		if conservative {
-			return 5_000_000
+			return minimumHackRFSampleRate
 		}
 		if isHackRFSampleRate(profile.Settings.P25SampleRateHz) {
 			return profile.Settings.P25SampleRateHz
 		}
-		// Match OP25's safe automatic HackRF rate. Explicit 8/10/20 MS/s
-		// selections remain valid for users with a tested USB/RF path.
-		return 5_000_000
+		// Match OP25 while retaining the HackRF 8 MS/s operating floor.
+		return minimumHackRFSampleRate
 	}
 	if hasRTL && !hasHackRF {
 		if _, ok := rtlSDRSampleRateName(profile.Settings.P25SampleRateHz); ok {
@@ -790,8 +800,6 @@ func effectiveP25CaptureRate(profile ScanProfile, assigned []p25AssignedDevice, 
 
 func hackRFSampleRateName(rate int) string {
 	switch rate {
-	case 5_000_000:
-		return "RATE_5_0"
 	case 8_000_000:
 		return "RATE_8_0"
 	case 20_000_000:

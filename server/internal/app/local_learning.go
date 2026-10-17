@@ -28,6 +28,9 @@ type ConfirmedSignalSample struct {
 	Callsigns       []string            `json:"callsigns,omitempty"`
 	IQPath          string              `json:"iqPath,omitempty"`
 	AudioPath       string              `json:"audioPath,omitempty"`
+	RFFeatures      []float64           `json:"rfFeatures,omitempty"`
+	LabelCorrected  bool                `json:"labelCorrected,omitempty"`
+	ReviewStatus    string              `json:"reviewStatus,omitempty"`
 }
 
 type LearningLibraryStatus struct {
@@ -73,7 +76,7 @@ func (l *SignalLearningLibrary) Confirm(event TransmissionEvent, modulation, pro
 	}
 	sample := ConfirmedSignalSample{ID: NewID(), EventID: event.ID, ConfirmedAt: time.Now(), FrequencyHz: event.FrequencyHz, BandwidthHz: event.BandwidthHz,
 		Modulation: modulation, Protocol: protocol, Notes: strings.TrimSpace(notes), SignalDBFS: event.SignalDBFS, NoiseDBFS: event.NoiseDBFS,
-		Analysis: event.Analysis, DecoderMessages: event.DecoderMessages, Transcript: stringValue(event.Transcript), Callsigns: append([]string(nil), event.Callsigns...)}
+		Analysis: event.Analysis, DecoderMessages: event.DecoderMessages, Transcript: stringValue(event.Transcript), Callsigns: append([]string(nil), event.Callsigns...), RFFeatures: RFFeatureVector(event), ReviewStatus: "confirmed"}
 	if retainCaptures {
 		sample.IQPath, sample.AudioPath = stringValue(event.IQPath), stringValue(event.AudioPath)
 	}
@@ -88,6 +91,29 @@ func (l *SignalLearningLibrary) Confirm(event TransmissionEvent, modulation, pro
 	}
 	l.samples = append(l.samples, sample)
 	return sample, l.saveLocked()
+}
+
+// CorrectLabel preserves the original sample identity and evidence while
+// allowing a reviewer to fix a mistaken modulation/protocol label.
+func (l *SignalLearningLibrary) CorrectLabel(id, modulation, protocol, notes string) (ConfirmedSignalSample, error) {
+	modulation = strings.ToUpper(strings.TrimSpace(modulation))
+	protocol = strings.TrimSpace(protocol)
+	if modulation == "" || modulation == "UNKNOWN" || protocol == "" {
+		return ConfirmedSignalSample{}, errors.New("a corrected modulation and protocol are required")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for index := range l.samples {
+		if l.samples[index].ID != id {
+			continue
+		}
+		l.samples[index].Modulation, l.samples[index].Protocol = modulation, protocol
+		l.samples[index].Notes = strings.TrimSpace(notes)
+		l.samples[index].LabelCorrected = true
+		l.samples[index].ReviewStatus = "corrected"
+		return l.samples[index], l.saveLocked()
+	}
+	return ConfirmedSignalSample{}, ErrNotFound
 }
 
 func (l *SignalLearningLibrary) Similar(event TransmissionEvent, limit int) []ConfirmedSignalSample {
@@ -128,7 +154,7 @@ func (l *SignalLearningLibrary) ExportJSONL() []byte {
 	defer l.mu.RUnlock()
 	var output strings.Builder
 	for _, sample := range l.samples {
-		data, _ := json.Marshal(map[string]any{"input": map[string]any{"frequencyHz": sample.FrequencyHz, "bandwidthHz": sample.BandwidthHz, "signalDBFS": sample.SignalDBFS, "noiseDBFS": sample.NoiseDBFS, "analysis": sample.Analysis, "decoderMessages": sample.DecoderMessages, "transcript": sample.Transcript}, "label": map[string]any{"modulation": sample.Modulation, "protocol": sample.Protocol, "notes": sample.Notes}})
+		data, _ := json.Marshal(map[string]any{"input": map[string]any{"frequencyHz": sample.FrequencyHz, "bandwidthHz": sample.BandwidthHz, "signalDBFS": sample.SignalDBFS, "noiseDBFS": sample.NoiseDBFS, "rfFeatures": sample.RFFeatures, "analysis": sample.Analysis, "decoderMessages": sample.DecoderMessages, "transcript": sample.Transcript}, "label": map[string]any{"modulation": sample.Modulation, "protocol": sample.Protocol, "notes": sample.Notes, "reviewStatus": sample.ReviewStatus, "labelCorrected": sample.LabelCorrected}})
 		output.Write(data)
 		output.WriteByte('\n')
 	}

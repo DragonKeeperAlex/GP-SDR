@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,5 +81,43 @@ func TestLearningLibraryRejectsSimulatedEvidence(t *testing.T) {
 	library := NewSignalLearningLibrary(t.TempDir())
 	if _, err := library.Confirm(TransmissionEvent{ID: "demo", Simulated: true}, "NFM", "Voice", "", false); err == nil {
 		t.Fatal("simulated evidence was accepted")
+	}
+}
+
+func TestRFTrainingProducesPersistedModelAndHeldOutReport(t *testing.T) {
+	directory := t.TempDir()
+	library := NewSignalLearningLibrary(directory)
+	for index, modulation := range []string{"NFM", "NFM", "WFM", "WFM"} {
+		event := TransmissionEvent{ID: fmt.Sprintf("rf-%d", index), FrequencyHz: 100e6 + float64(index)*50e6, BandwidthHz: 12_500, Modulation: modulation,
+			SignalDBFS: -40, NoiseDBFS: -80, Analysis: &SignalIntelligence{Modulation: modulation, SignalFamily: "Analog frequency", Confidence: .8, EstimatedDeviationHz: map[string]float64{"NFM": 3_000, "WFM": 60_000}[modulation], AmplitudeVariation: float64(index) * .01, PhaseClusterScore: .2}}
+		if _, err := library.Confirm(event, modulation, modulation+" voice", "reviewed", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := library.TrainAndSave(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.TrainCount != 4 || report.HeldOutCount != 4 || len(report.Classes) != 2 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "Data", "rf-classifier.json")); err != nil {
+		t.Fatal(err)
+	}
+	if loadRFClassifier(directory) == nil {
+		t.Fatal("trained classifier did not reload")
+	}
+}
+
+func TestLearningLabelCorrectionPreservesSampleIdentity(t *testing.T) {
+	directory := t.TempDir()
+	library := NewSignalLearningLibrary(directory)
+	sample, err := library.Confirm(TransmissionEvent{ID: "correct-me", Modulation: "NFM"}, "NFM", "Unknown voice", "initial", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected, err := library.CorrectLabel(sample.ID, "WFM", "Broadcast FM", "review correction")
+	if err != nil || corrected.ID != sample.ID || corrected.Modulation != "WFM" || !corrected.LabelCorrected || corrected.ReviewStatus != "corrected" {
+		t.Fatalf("unexpected correction: %#v %v", corrected, err)
 	}
 }

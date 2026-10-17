@@ -3,12 +3,17 @@ const state = {
   integrations: null, setup: null, p25Status: null, spectrum: null, spectra: [], referenceResult: null,
   rangeSync: null, localDatabase: null, localAI: null, localAIBenchmark: null, appUpdate: null, calibrations: [], characterization: null, mapper: null, mapperProgress: null, analysisStatus: null, remoteReceivers: [], transmitStatus: null, relay: null,
   selectedProfileID: null, selectedDecoderID: 'p25', editingProfile: null, activityTab: 'signals', view: 'live',
-  p25ProfileID: null, p25DeviceID: '', p25Search: '', p25ActiveOnly: false,
+  p25WorkspaceTab: 'operate', p25RecordingSearch: '', p25Recordings: [], p25RecordingsNext: '', p25RecordingsExpanded: false, p25RecordingsUpdated: null, p25RecordingsError: '', p25RecordingsBusy: false, p25TuningDeviceID: '', p25TuningDrafts: {}, p25ProfileID: null, p25DeviceID: '', p25ReceiverIDs: [], p25ControlDeviceID: '', p25ArchiveDrafts: {}, p25Search: '', p25ActiveOnly: false,
   p25Order: localStorage.getItem('gpsdr-p25-order') || 'recent',
   mixerOrder: localStorage.getItem('gpsdr-mixer-order') || 'active',
   mapperPage: localStorage.getItem('gpsdr-mapper-page') || 'overview'
 };
-const serverToken = new URLSearchParams(location.search).get('token') || '';
+let serverToken = new URLSearchParams(location.search).get('token') || '';
+if (serverToken) {
+  const safeURL = new URL(location.href);
+  safeURL.searchParams.delete('token');
+  history.replaceState({}, '', `${safeURL.pathname}${safeURL.search}${safeURL.hash}`);
+}
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -16,7 +21,10 @@ const encoder = new TextEncoder();
 let toastTimer;
 let setupPollTimer;
 let reconnectTimer;
+let startupRetryTimer;
 let reconnectInFlight = false;
+let tunerSubmitting = false;
+let tunerModeAvailabilityNote = '';
 let lastWaterfallFrame = '';
 let analysisLogFloor = 0;
 const masterAudio = (()=>{try{return {volume:.8,muted:false,...JSON.parse(localStorage.getItem('gpsdr-master-audio-v1')||'{}')}}catch(_){return {volume:.8,muted:false}}})();
@@ -24,12 +32,14 @@ const recordingPlayer = new Audio();
 const liveAudio = { context:null, controller:null, masterGain:null, gains:new Map(), panners:new Map(), nextTimes:new Map(), sources:new Map() };
 let receiverApplyTimer, receiverApplying = false;
 let bandApplyTimer;
-const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,floor:-120,ceiling:-20}}})();
+let mapperPreviewTimer, mapperPreviewRequest = 0;
+const displayPrefs = (()=>{try{return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,audioPriority:true,audioFPS:4,floor:-120,ceiling:-20,...JSON.parse(localStorage.getItem('gpsdr-display-v2')||'{}')}}catch(_){return {fps:8,quality:.75,detail:512,smoothing:20,peakHold:false,markers:true,audioPriority:true,audioFPS:4,floor:-120,ceiling:-20}}})();
 const spectrumHistory = new WeakMap();
 const spectrumPeaks = new WeakMap();
 const spectrumCursors = new WeakMap();
 const receiverWaterfalls = new Map();
 let tunerHistory=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-tuner-history')||'[]')}catch(_){return []}})();
+let tunerVFOs=[];
 let mapperResultsCollapsed=localStorage.getItem('gpsdr-mapper-results-collapsed')==='true';
 const analyzerSelectedPeaks=new Set();
 let analyzerJobIDs=(()=>{try{return JSON.parse(localStorage.getItem('gpsdr-analyzer-jobs')||'[]')}catch(_){return []}})();
@@ -47,10 +57,31 @@ async function api(path, options = {}) {
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try { message = (await response.json()).message || message; } catch (_) {}
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+function showLogin(access, message = '') {
+  const dialog = $('#login-dialog');
+  if (!dialog || dialog.open || access?.authenticated) return;
+  const enabled = Boolean(access?.passwordEnabled);
+  $('#login-dialog-title').textContent = enabled ? 'Sign in to GP-SDR' : 'Web sign-in is not configured';
+  $('#login-dialog-message').textContent = enabled ? 'Enter the receiver password to continue.' : 'Ask the receiver administrator to configure password sign-in, then reload this page.';
+  $('#login-password-field').hidden = !enabled;
+  $('#login-submit').hidden = !enabled;
+  $('#login-error').textContent = message;
+  dialog.showModal();
+  if (enabled) requestAnimationFrame(() => $('#login-password').focus());
+}
+
+async function accessStatus() {
+  const access = await api('/api/auth/status');
+  if (!access.authenticated) showLogin(access);
+  return access;
 }
 
 function toast(message, error = false) {
@@ -164,7 +195,8 @@ function setView(view) {
     profiles: ['Channels', 'Channel banks, scan ranges, and receiver roles'],
     decoders: ['Decoders', 'Dedicated decoder workspaces'],
     hardware: ['Hardware', 'Receivers and decoder tools'],
-    settings: ['Settings', 'Server and local data']
+    settings: ['Settings', 'Server and local data'],
+    desktop: ['Desktop', 'Full Linux applications on the touchscreen']
   }[view];
   if (!copy) return;
   $('#view-title').textContent = copy[0];
@@ -186,6 +218,13 @@ async function refreshAll() {
   if (reconnectInFlight) return;
   reconnectInFlight = true;
   try {
+    const access = await accessStatus();
+    state.access=access;
+    if (!access.authenticated) {
+      $('#side-status').textContent = 'Sign in required';
+      $('#side-status').title = access.passwordEnabled ? 'Enter the receiver password to continue.' : 'Password sign-in has not been configured.';
+      return;
+    }
     const [status, profiles, events, signals, devices, decoders, mixer, integrations, setup, p25Status, spectrum, spectra, rangeSync, localDatabase, localAI, localAIBenchmark, calibrations, characterization, mapper, mapperProgress, analysisStatus, remoteReceivers, transmitStatus, relay] = await Promise.all([
       api('/api/status'), api('/api/profiles'), api('/api/events?limit=300'), api('/api/signals?limit=1000'),
       api('/api/devices'), api('/api/decoders'), api('/api/mixer'), api('/api/integrations'), api('/api/setup'),
@@ -198,15 +237,27 @@ async function refreshAll() {
     }
     render();
     document.body.classList.remove('server-offline');
+    document.body.classList.remove('server-starting');
+    clearTimeout(startupRetryTimer);
     $('#side-status').title = `Updated ${new Date().toLocaleTimeString()}`;
     clearTimeout(setupPollTimer);
     if (state.setup?.job?.state === 'installing') setupPollTimer = setTimeout(refreshAll, 1200);
   } catch (error) {
-    $('#side-status').textContent = 'Offline';
+    if (error.status === 401) {
+      try { showLogin(await api('/api/auth/status'), error.message); } catch (_) { toast(error.message, true); }
+      $('#side-status').textContent = 'Sign in required';
+      return;
+    }
+    const starting = error.message === 'GP-SDR is starting. The touchscreen is ready while saved radios, decoders, and models load.';
+    $('#side-status').textContent = starting ? 'Starting' : 'Offline';
     $('#side-status').title = error.message;
     $('#side-dot').classList.remove('live');
-    document.body.classList.add('server-offline');
-    if (navigator.onLine !== false) toast('GP-SDR connection lost; reconnecting…', true);
+    document.body.classList.toggle('server-offline', !starting);
+    document.body.classList.toggle('server-starting', starting);
+    if (starting) {
+      clearTimeout(startupRetryTimer);
+      startupRetryTimer = setTimeout(() => { void refreshAll(); }, 1000);
+    } else if (navigator.onLine !== false) toast('GP-SDR connection lost; reconnecting…', true);
   } finally {
     reconnectInFlight = false;
   }
@@ -231,8 +282,8 @@ function render() {
   renderEvents(); renderProfiles(); renderHardware(); renderCharacterization(); renderIntegrations(); renderRadioReferenceSettings(); renderRangeSync(); renderLocalDatabase(); renderLocalAI(); renderTuner(); updateReceiverCapabilityControls(); renderTransmit(); renderRelay(); renderExpertTransmitMode(); renderDecoders(); renderMapper(); renderRFMonitor(); renderSpectrumAnalyzer(); renderMissingComponents(); drawSpectrum(); drawWaterfall();
 }
 
-function renderRelay(){const status=state.relay||{},badge=$('#relay-state'),detail=$('#relay-detail'),list=$('#relay-streams');if(!badge||!list)return;badge.textContent=status.active?'Ready':'Stopped';badge.className=`chip ${status.active?'ready':''}`;detail.textContent=status.note||'Relay is stopped.';$('#relay-start').disabled=!!status.active;$('#relay-stop').disabled=!status.active;if(status.audio){$('#relay-audio-device').value=status.audio.device||'plughw:2,0';$('#relay-audio-rate').value=String(status.audio.sampleRate||8000);}const streams=status.streams||[];list.innerHTML=streams.length?streams.map(s=>`<label class="relay-stream"><input type="checkbox" data-relay-id="${escapeHTML(s.id)}" ${s.enabled?'checked':''}><span><strong>${escapeHTML(s.name||s.id)}</strong><small>${escapeHTML(s.id)}</small></span><input class="relay-volume" data-relay-volume="${escapeHTML(s.id)}" type="range" min="0" max="2" step="0.05" value="${Number(s.volume??1)}" aria-label="${escapeHTML(s.name||s.id)} volume"></label>`).join(''):'<div class="empty-state compact">No decoded audio streams are available.</div>';}
-async function saveRelay(){const streams=[...$$('[data-relay-id]')].map(input=>({id:input.dataset.relayId,name:input.closest('.relay-stream')?.querySelector('strong')?.textContent||input.dataset.relayId,enabled:input.checked,volume:Number($(`[data-relay-volume="${CSS.escape(input.dataset.relayId)}"]`)?.value||1)}));state.relay=await api('/api/relay',{method:'PUT',body:JSON.stringify({streams,audio:{device:$('#relay-audio-device').value,sampleRate:Number($('#relay-audio-rate').value),channels:1}})});renderRelay();toast('Relay routing saved');}
+function renderRelay(){const status=state.relay||{},badge=$('#relay-state'),detail=$('#relay-detail'),list=$('#relay-streams');if(!badge||!list)return;badge.textContent=status.state==='error'?'Error':status.active?(status.keyed?'Transmitting':'Waiting for audio'):'Stopped';badge.className=`chip ${status.active?'ready':''}`;detail.textContent=status.note||'Relay is stopped.';$('#relay-system-audio').checked=!!status.systemAudio;$('#relay-system-audio').disabled=!!status.active;$('#relay-speaker-mute').checked=!!status.speakerMuted;$('#relay-manual-options').disabled=!!status.systemAudio;$('#relay-manual-options-settings').disabled=!!status.systemAudio;const outputVolume=$('#relay-output-volume');if(outputVolume&&document.activeElement!==outputVolume){outputVolume.value=String(Math.round(100*Number(status.outputVolume??.2)));$('#relay-output-volume-value').textContent=outputVolume.value+'%';}$('#relay-save').disabled=!!status.active||!!status.systemAudio;$('#relay-start').disabled=!!status.active;$('#relay-stop').disabled=!status.active;if(status.audio){$('#relay-audio-device').value=status.audio.device||'plughw:CARD=A,DEV=0';$('#relay-audio-rate').value=String(status.audio.sampleRate||8000);}const streams=status.streams||[];list.innerHTML=streams.length?streams.map(s=>`<label class="relay-stream"><input type="checkbox" data-relay-id="${escapeHTML(s.id)}" ${s.enabled?'checked':''}><span><strong>${escapeHTML(s.name||s.id)}</strong><small>${escapeHTML(s.id)}</small></span><input class="relay-volume" data-relay-volume="${escapeHTML(s.id)}" type="range" min="0" max="2" step="0.05" value="${Number(s.volume??1)}" aria-label="${escapeHTML(s.name||s.id)} volume"></label>`).join(''):'<div class="empty-state compact">No decoded audio streams are available.</div>';}
+async function saveRelay(){const streams=[...$$('[data-relay-id]')].map(input=>({id:input.dataset.relayId,name:input.closest('.relay-stream')?.querySelector('strong')?.textContent||input.dataset.relayId,enabled:input.checked,volume:Number($(`[data-relay-volume="${CSS.escape(input.dataset.relayId)}"]`)?.value??1)}));const vfoStreams=tunerVFOs.map(item=>({id:`tuner-vfo-${item.id}`,name:`Tuner · ${formatFrequency(item.frequencyHz)}`,enabled:true,volume:1,frequencyHz:item.frequencyHz,mode:item.mode}));state.relay=await api('/api/relay',{method:'PUT',body:JSON.stringify({streams:[...streams,...vfoStreams],audio:{device:$('#relay-audio-device').value,sampleRate:Number($('#relay-audio-rate').value),channels:1}})});renderRelay();toast('Relay routing saved');}
 
 function drawReceiverSpectrum(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(120,Math.floor(170*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}const ctx=canvas.getContext('2d'),bins=snapshot.binsDBFS||[];ctx.clearRect(0,0,width,height);ctx.fillStyle='#080b0f';ctx.fillRect(0,0,width,height);if(!bins.length)return;ctx.beginPath();bins.forEach((value,index)=>{const x=index/Math.max(1,bins.length-1)*width,y=Math.max(0,Math.min(height,(1-(value+120)/110)*height));index?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle='#4dd6aa';ctx.lineWidth=Math.max(1,ratio);ctx.stroke();ctx.lineTo(width,height);ctx.lineTo(0,height);ctx.closePath();ctx.fillStyle='rgba(77,214,170,.10)';ctx.fill();}
 function drawReceiverWaterfall(canvas,snapshot){const rect=canvas.getBoundingClientRect(),ratio=devicePixelRatio||1,width=Math.max(320,Math.floor(rect.width*ratio)),height=Math.max(90,Math.floor(120*ratio));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}let history=receiverWaterfalls.get(snapshot.deviceID);if(!history)history={last:'',rows:[]};if(history.last!==snapshot.capturedAt&&snapshot.binsDBFS?.length){history.last=snapshot.capturedAt;history.rows.unshift([...snapshot.binsDBFS]);history.rows=history.rows.slice(0,80);receiverWaterfalls.set(snapshot.deviceID,history);}const ctx=canvas.getContext('2d');ctx.fillStyle='#05070a';ctx.fillRect(0,0,width,height);if(!history.rows.length)return;const sourceWidth=history.rows.reduce((count,row)=>Math.max(count,row.length),1),image=ctx.createImageData(sourceWidth,80);history.rows.forEach((row,y)=>row.forEach((value,x)=>{const [red,green,blue]=waterfallColor(value),offset=(y*sourceWidth+x)*4;image.data[offset]=red;image.data[offset+1]=green;image.data[offset+2]=blue;image.data[offset+3]=255;}));const scratch=document.createElement('canvas');scratch.width=sourceWidth;scratch.height=80;scratch.getContext('2d').putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(scratch,0,0,width,height);}
@@ -256,7 +307,7 @@ function updateAnalyzerRange(){
   for(const id of ['analyzer-start','analyzer-end'])if($('#'+id))$('#'+id).disabled=!!full;
   if(full&&radios.length){$('#analyzer-start').value=(Math.min(...radios.map(item=>item.frequencyMinimumHz||1e6))/1e6).toFixed(3);$('#analyzer-end').value=(Math.max(...radios.map(item=>item.frequencyMaximumHz||6e9))/1e6).toFixed(3);}
   const limit=radios.length?Math.min(...radios.map(item=>item.sampleRateLimit||20e6)):20e6;
-  for(const option of $('#analyzer-rate')?.options||[])option.disabled=Number(option.value)>limit;
+  for(const option of $('#analyzer-rate')?.options||[])option.disabled=Number(option.value)>limit||(Number(option.value)>0&&radios.some(item=>item.kind==='HackRF')&&Number(option.value)<8e6);
   if($('#analyzer-rate')?.selectedOptions[0]?.disabled)$('#analyzer-rate').value='0';
 }
 
@@ -301,11 +352,13 @@ function saveAnalyzerCSV(){const records=analyzerDisplayRecords();if(!records.le
 
 function renderLocalAI(){
   const status=state.localAI,form=$('#local-ai-form');if(!status||!form)return;const config=status.config||{},focused=form.contains(document.activeElement);
-  if(!focused){$('#local-ai-enabled').checked=!!config.enabled;$('#local-ai-profile').value=config.profile||'lightweight';$('#local-ai-model').value=config.model||'qwen2.5:1.5b';$('#local-ai-context').value=String(config.contextLength||0);$('#local-ai-endpoint').value=config.endpoint||'http://127.0.0.1:11434';$('#local-ai-confidence').value=String(config.minimumConfidence||55);}
+  if(!focused){$('#local-ai-profile').value=config.profile||'lightweight';$('#local-ai-model').value=config.model||'qwen2.5:1.5b';$('#local-ai-context').value=String(config.contextLength||0);$('#local-ai-endpoint').value=config.endpoint||'http://127.0.0.1:11434';$('#local-ai-confidence').value=String(config.minimumConfidence||55);}
   const models=status.models||[],modelList=$('#local-ai-models');modelList.replaceChildren(...models.map((model,index)=>{const option=document.createElement('option');option.value=model.name;const lower=model.name.toLowerCase();option.label=lower.includes('9b')?'Fast batch':lower.includes('35b')?'High quality':lower.includes('122b')?'Deep · slow':lower.includes('coder')?'Structured alternate':`Available ${index+1}`;return option;}));
 	const benchmarkModels=$('#local-ai-benchmark-models'),priorBenchmarkModels=[...benchmarkModels.selectedOptions].map(option=>option.value);if(!benchmarkModels.matches(':focus')){benchmarkModels.replaceChildren(...models.map(model=>{const option=document.createElement('option');option.value=model.name;option.textContent=`${model.name}${model.sizeBytes?` · ${formatBytes(model.sizeBytes)}`:''}`;option.selected=priorBenchmarkModels.length?priorBenchmarkModels.includes(model.name):(model.name===config.model||model.name.toLowerCase().includes('9b'));return option;}));}
   const selected=models.find(model=>model.name===config.model),hint=$('#local-ai-model-hint');hint.textContent=selected?`${selected.parameterSize||'Model'}${selected.quantization?` · ${selected.quantization}`:''} · ${selected.sizeBytes?formatBytes(selected.sizeBytes):'available on server'}`:models.length?`${models.length} generation models available · custom names are also accepted`:'Choose speed or depth; availability comes from the selected Ollama server.';
-  const count=Number(status.learning?.count||0),badge=$('#local-ai-state');badge.textContent=status.state==='ready'?`Ready · ${count} learned`:status.state==='setup'?'Runtime needed':status.state==='error'?'Error':count?`Off · ${count} learned`:'Off';badge.className=`chip ${status.state==='ready'?'ready':status.state==='error'?'warning':''}`;$('#local-ai-detail').textContent=`${status.note||'Local evidence analysis is off.'} · ${count} user-confirmed ${count===1?'sample':'samples'}.`;form.querySelectorAll('input,select,button').forEach(control=>control.disabled=!status.canManage);const exportLink=$('#local-ai-export');exportLink.href=`/api/local-ai/learning/export${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;exportLink.classList.toggle('disabled',!count);
+  const mode=$('#compute-mode');if(mode&&document.activeElement!==mode)mode.value=config.computeMode||(config.remoteEnabled?'auto':config.enabled?'local':'off');
+  $('#compute-status').textContent=status.computeTarget==='home'?(config.computeMode==='auto'?'Home PC ready · preferred automatically, with local fallback.':'Home PC ready · queued analysis uses the PC.'):status.computeTarget==='waiting'?`${status.home?.note||'Home PC unavailable'} · Evidence stays queued.`:status.computeTarget==='off'?'Model analysis is off. RF capture and decoding continue.':`${config.computeMode==='auto'?(status.home?.note||'Home PC unavailable')+' · ':''}Local compute selected on this receiver.`;
+  const count=Number(status.learning?.count||0),badge=$('#local-ai-state');badge.textContent=status.state==='ready'?`Ready · ${count} learned`:status.state==='setup'?'Runtime needed':status.state==='waiting'?'Waiting for home PC':status.state==='error'?'Error':count?`Off · ${count} learned`:'Off';badge.className=`chip ${status.state==='ready'?'ready':status.state==='error'?'warning':''}`;$('#local-ai-detail').textContent=`${status.note||'Local evidence analysis is off.'} · ${count} user-confirmed ${count===1?'sample':'samples'}.${status.remoteQueue?` Saved model analysis: ${status.remoteQueue?.pending||0} pending · ${status.remoteQueue?.running||0} processing · ${status.remoteQueue?.retry||0} retrying · ${status.remoteQueue?.complete||0} completed. Metadata only.${status.remoteQueue?.lastError?` Last issue: ${status.remoteQueue.lastError}`:''}`:''}`;form.querySelectorAll('input,select,button').forEach(control=>control.disabled=!status.canManage);const exportLink=$('#local-ai-export');exportLink.href=`/api/local-ai/learning/export${serverToken?`?token=${encodeURIComponent(serverToken)}`:''}`;exportLink.classList.toggle('disabled',!count);
 	const benchmark=state.localAIBenchmark||{},benchmarkButton=$('#local-ai-benchmark'),results=$('#local-ai-benchmark-results');benchmarkButton.disabled=!status.canManage||benchmark.running||!models.length;benchmarkButton.textContent=benchmark.running?`Testing ${benchmark.current||'models'}…`:'Run benchmark';results.className=benchmark.results?.length?'benchmark-results':'benchmark-results empty-state compact';results.innerHTML=benchmark.results?.length?benchmark.results.map(item=>`<div><strong>${escapeHTML(item.model)}</strong><span>${Math.round(item.groundedPercent)}% grounded · ${Math.round(item.structuredPercent)}% valid JSON · ${Math.round(item.averageMillis)} ms/case</span></div>`).join(''):(benchmark.running?'Benchmark starting…':'No benchmark run yet.');
 }
 
@@ -514,6 +567,8 @@ function renderStatus() {
   $('#metric-mode').textContent = status.running ? status.activeProfileName || status.mode : 'idle';
 	const address=$('#setting-address'); address.textContent=status.webAddress; address.href=status.webAddress;
   $('#setting-version').textContent = status.version;
+  $('#setting-access').textContent=state.access?.passwordEnabled?'Password sign-in':state.access?.tokenRequired?'Protected service access':state.access?.authenticated?'Local access':'Access status unavailable';
+  const platform=status.systemHealth||{};$('#setting-architecture').textContent=`${({linux:'Linux',darwin:'macOS',windows:'Windows'})[platform.os]||platform.os||'Platform not reported'}${platform.architecture?` · ${platform.architecture.toUpperCase()}`:''}`;
   renderAppUpdate();
   $('#demo-banner').classList.toggle('hidden', !(status.running && status.simulatorEnabled));
   const runtimeError = $('#runtime-error');
@@ -642,9 +697,9 @@ function mixerRows(items) {
     <div class="mixer-row ${item.active ? 'active' : ''}" data-mixer-id="${item.id}">
       <div class="channel-name" title="${escapeHTML(item.channel.name)} · ${escapeHTML(detail)}"><strong>${escapeHTML(item.channel.name)}${item.discovered ? ' <span class="discovered-mark">new</span>' : ''}</strong><small>${escapeHTML(detail)}</small></div>
       <div class="level-meter" title="Current audio level"><i style="width:${Math.round(item.level * 100)}%"></i></div>
-      <button class="mini-toggle mixer-mute ${item.muted ? 'on' : ''}" title="Mute this ${item.talkgroupID ? 'talkgroup' : 'channel'}">M</button>
-      <button class="mini-toggle mixer-solo ${item.solo ? 'on' : ''}" title="Hear only this ${item.talkgroupID ? 'talkgroup' : 'channel'}">S</button>
-      ${item.talkgroupID?'<span class="p25-native-audio" title="P25 receiver audio is streamed through GP-SDR. Talkgroup mute and solo control eligibility; isolated per-talkgroup audio routing is not available yet.">P25 stream</span>':`<span class="mixer-sliders"><input class="mixer-volume" type="range" min="0" max="1" step="0.05" value="${item.volume}" title="Channel volume" aria-label="Volume for ${escapeHTML(item.channel.name)}"><input class="mixer-pan" type="range" min="-1" max="1" step="0.1" value="${item.pan||0}" title="Stereo pan" aria-label="Pan for ${escapeHTML(item.channel.name)}"></span>`}
+      <button class="mini-toggle mixer-mute ${item.muted ? 'on' : ''}" title="Mute this ${item.talkgroupID ? 'talkgroup' : 'channel'}${item.talkgroupID&&state.p25Status?.taggedTalkgroupAudio?' in browser playback; recording continues':''}">M</button>
+      <button class="mini-toggle mixer-solo ${item.solo ? 'on' : ''}" title="Hear only this ${item.talkgroupID ? 'talkgroup' : 'channel'}${item.talkgroupID&&state.p25Status?.taggedTalkgroupAudio?' in browser playback':''}">S</button>
+      ${item.talkgroupID&&!state.p25Status?.taggedTalkgroupAudio?'<span class="p25-native-audio" title="P25 receiver audio is streamed through GP-SDR. Talkgroup mute and solo control eligibility; isolated per-talkgroup audio routing is not available yet.">P25 stream</span>':`<span class="mixer-sliders"><input class="mixer-volume" type="range" min="0" max="1" step="0.05" value="${item.volume}" title="Channel volume" aria-label="Volume for ${escapeHTML(item.channel.name)}"><input class="mixer-pan" type="range" min="-1" max="1" step="0.1" value="${item.pan||0}" title="Stereo pan" aria-label="Pan for ${escapeHTML(item.channel.name)}"></span>`}
     </div>`;
   }).join('');
 }
@@ -652,8 +707,17 @@ function mixerRows(items) {
 function bandProfiles(){ return state.profiles.filter(profile => profile.channels?.length > 1 && !profile.p25Systems?.length); }
 function latestEventForFrequency(frequencyHz){ return state.events.find(event => Math.abs(Number(event.frequencyHz)-Number(frequencyHz)) < 1000); }
 function bandMonitorIsRunning(){return Boolean(state.status?.running&&state.status.activeProfileID===$('#band-profile')?.value&&bandProfiles().some(profile=>profile.id===state.status.activeProfileID));}
-function bandReceiverSettings(){const device=state.devices.find(item=>item.id===$('#band-device').value),hackrf=device?.kind==='HackRF';return {sampleRateHz:Number($('#band-rate').value),gainDB:Number($('#band-gain').value),lnaGainDB:hackrf?Number($('#band-lna').value):0,vgaGainDB:hackrf?Number($('#band-vga').value):0,ampEnabled:hackrf&&$('#band-amp').checked,autoGain:$('#band-auto-gain').checked,squelchDB:Number($('#band-squelch').value),dcRemoval:$('#band-dc').checked};}
-async function startBandMonitor(){const profileID=$('#band-profile').value,deviceID=$('#band-device').value;if(!profileID)return;const button=$('#band-start');button.disabled=true;button.textContent='Starting…';try{await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});state.selectedProfileID=profileID;await startLiveAudio();await refreshAll();setView('band');}finally{button.textContent='Monitor band';button.disabled=bandMonitorIsRunning();}}
+let bandWindowCenterHz=0, bandStarting=false;
+function bandReceiverSettings(){const device=state.devices.find(item=>item.id===$('#band-device').value),hackrf=device?.kind==='HackRF';return {centerFrequencyHz:bandWindowCenterHz,sampleRateHz:Number($('#band-rate').value),gainDB:Number($('#band-gain').value),lnaGainDB:hackrf?Number($('#band-lna').value):0,vgaGainDB:hackrf?Number($('#band-vga').value):0,ampEnabled:hackrf&&$('#band-amp').checked,autoGain:$('#band-auto-gain').checked,squelchDB:Number($('#band-squelch').value),dcRemoval:$('#band-dc').checked};}
+async function startBandMonitor(){
+  if(bandStarting)return;
+  const profileID=$('#band-profile').value,deviceID=$('#band-device').value;
+  if(!profileID||!deviceID)return toast('Choose a ready receiver and channel bank first',true);
+  bandStarting=true;
+  renderBandMonitor();
+  try{await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID,deviceID,controls:bandReceiverSettings()})});state.selectedProfileID=profileID;await startLiveAudio();await refreshAll();setView('band');}
+  finally{bandStarting=false;renderBandMonitor();}
+}
 function renderBandMonitor(){
   const profileSelect=$('#band-profile'),deviceSelect=$('#band-device');if(!profileSelect||!deviceSelect)return;
   const profiles=bandProfiles(),prior=profileSelect.value;
@@ -671,7 +735,7 @@ function renderBandMonitor(){
   const snapshot=state.spectrum;
   const selectedDevice=connected.find(device=>device.id===deviceSelect.value)||connected[0];
   if(snapshot?.binsDBFS?.length&&running&&selectedDevice){$('#band-spectrum-caption').textContent=`${receiverLabel(selectedDevice)} · ${Number(snapshot.sampleRateHz/1e6).toFixed(2)} MS/s`;$('#band-spectrum-start').textContent=formatFrequency(snapshot.startFrequencyHz);$('#band-spectrum-mid').textContent=formatFrequency(snapshot.centerFrequencyHz);$('#band-spectrum-end').textContent=formatFrequency(snapshot.endFrequencyHz);}else{$('#band-spectrum-caption').textContent='Start monitoring to view the shared capture';$('#band-spectrum-start').textContent='—';$('#band-spectrum-mid').textContent='—';$('#band-spectrum-end').textContent='—';}
-  $('#band-start').disabled=running||!profile||!connected.length;$('#band-stop').disabled=!running;
+  $('#band-start').disabled=running||bandStarting||!profile||!connected.length;$('#band-start').textContent=bandStarting?'Starting…':'Monitor band';$('#band-stop').disabled=!running;
   const applied=$('#band-applied-state'),telemetry=state.status?.receiverTelemetry;
   if(applied){
     const telemetryMatches=running&&telemetry&&telemetry.deviceID===selectedDevice?.id;
@@ -748,8 +812,8 @@ function renderGlobalPowerStatus() {
 }
 
 function renderHardware() {
-  const powerHat=state.status?.powerHat, powerCard=(powerHat?.available||powerHat?.error)?piPowerHatHTML(powerHat):'';
-  $('#device-grid').innerHTML = state.devices.length||powerCard ? state.devices.map(device => `
+  const powerHat=state.status?.powerHat, powerCard=(powerHat?.available||powerHat?.error)?piPowerHatHTML(powerHat):'', systemCard=systemHealthHTML(state.status?.systemHealth);
+  $('#device-grid').innerHTML = state.devices.length||powerCard||systemCard ? state.devices.map(device => `
     <article class="hardware-card"><div class="hardware-title"><i class="${device.healthWarning ? 'optional' : device.connected ? 'ready' : device.available ? 'optional' : ''}"></i><h3>${escapeHTML(device.name)}</h3></div>
 		<p>${escapeHTML(hardwareActivityText(device))}</p>
       <div class="hardware-detail">${escapeHTML(hardwareCapabilityText(device))}<br>${escapeHTML(hardwareRangeText(device))}<br>${device.firmwareVersion?`${escapeHTML(device.firmwareVersion)} · `:''}${escapeHTML(device.driver)}${device.serial ? ` · ${escapeHTML(device.serial)}` : ''}${device.helperArchitecture ? ` · ${escapeHTML(device.helperArchitecture)}` : ''}</div>
@@ -764,12 +828,21 @@ function renderHardware() {
       <p>${escapeHTML(decoder.note)}</p><footer><span>${escapeHTML(decoder.standards.join(' · '))}</span><span>${decoder.state === 'ready' ? 'Ready' : 'Optional'}</span></footer>
       <div class="card-actions decoder-card-actions"><button class="open-decoder" data-decoder-id="${escapeHTML(decoder.id)}" title="Open the ${escapeHTML(decoder.name)} workspace">Open</button></div>
       ${decoder.state === 'ready' || decoder.id === 'analog' ? '' : setupActions(decoder.id)}</article>`).join('') : '<div class="empty-state">Decoder status is unavailable.</div>';
+	$('#device-grid').innerHTML += systemCard;
   renderSetupJob();
 	updateReceiverCapabilityControls();
   const remoteList=$('#remote-list'); if(remoteList) remoteList.innerHTML=state.remoteReceivers.map(item=>`<div class="remote-row"><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.host)}:${item.port}</small></span><button class="remove-remote" data-remote-id="${escapeHTML(item.id)}" title="Remove this remote receiver">Remove</button></div>`).join('')||'<span class="empty-state compact">No remote receivers saved</span>';
 }
 
-function piPowerHatHTML(power){if(!power.available)return `<article id="power-hat-card" data-power-error="true" class="hardware-card power-hat-card"><div class="hardware-title"><i class="warning"></i><h3>PiPower5 power HAT</h3></div><p>${escapeHTML(power.error||'Telemetry unavailable')}</p><footer><span>Readings unavailable · retrying automatically</span></footer></article>`;const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0)),source=power.powerSource||'Unknown';return `<article id="power-hat-card" class="hardware-card power-hat-card"><div class="hardware-title"><i class="ready"></i><h3>PiPower5 power HAT</h3></div><p id="power-hat-source">${escapeHTML(source)} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}</p><div class="power-hat-battery"><span><i id="power-hat-level" style="width:${battery}%"></i></span><strong id="power-hat-percent">${battery.toFixed(0)}%</strong></div><dl class="power-hat-readings"><dt>Input</dt><dd id="power-hat-input">${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W</dd><dt>Output</dt><dd id="power-hat-output">${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W</dd><dt>Battery</dt><dd id="power-hat-battery">${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A</dd></dl><footer><span>Pi power</span><span id="power-hat-updated">${power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry'}</span></footer></article>`;}
+function systemHealthHTML(health){
+  if(!health?.available)return '';
+  const memoryTotal=Number(health.memoryTotalBytes||0),memoryAvailable=Number(health.memoryAvailableBytes||0),memoryUsed=memoryTotal?Math.max(0,memoryTotal-memoryAvailable):0;
+  const storageTotal=Number(health.storageTotalBytes||0),storageFree=Number(health.storageFreeBytes||0),storageUsed=storageTotal?Math.max(0,storageTotal-storageFree):0;
+  const percent=(used,total)=>total?`${Math.round(used/total*100)}%`:'—', bytes=value=>value?formatBytes(value):'Unavailable', temps=(health.temperatures||[]).map(item=>`${escapeHTML(item.name)} ${Number(item.celsius).toFixed(1)} °C`).join(' · ')||'Unavailable';
+  return `<article id="system-health-card" class="hardware-card system-health-card"><div class="hardware-title"><i class="ready"></i><h3>System health</h3></div><p>Read-only host metrics · updated ${health.updatedAt?timeAgo(health.updatedAt):'now'}</p><div class="system-health-grid"><div><span>CPU load</span><strong>${Number.isFinite(Number(health.load1))?Number(health.load1).toFixed(2):'—'}</strong><small>${health.cpuCount||'—'} logical CPUs</small></div><div><span>Memory</span><strong>${percent(memoryUsed,memoryTotal)}</strong><small>${bytes(memoryUsed)} / ${bytes(memoryTotal)}</small></div><div><span>Storage</span><strong>${percent(storageUsed,storageTotal)}</strong><small>${bytes(storageFree)} free</small></div><div><span>Temperature</span><strong>${temps}</strong><small>thermal sensors</small></div><div><span>GPU</span><strong>${escapeHTML(health.gpu||'Unavailable')}</strong><small>platform graphics</small></div><div><span>Uptime</span><strong>${health.uptimeSeconds?compactDuration(health.uptimeSeconds):'—'}</strong><small>host uptime</small></div></div></article>`;
+}
+
+function piPowerHatHTML(power){if(!power.available)return `<article id="power-hat-card" data-power-error="true" class="hardware-card power-hat-card"><div class="hardware-title"><i class="warning"></i><h3>PiPower5 power HAT</h3></div><p>${escapeHTML(power.error||'Telemetry unavailable')}</p><footer><span>Readings unavailable · retrying automatically</span></footer></article>`;const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0)),source=power.powerSource||'Unknown';return `<article id="power-hat-card" class="hardware-card power-hat-card"><div class="hardware-title"><i class="ready"></i><h3>PiPower5 power HAT</h3></div><p id="power-hat-source">${escapeHTML(source)} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}</p><div class="power-hat-battery"><span><i id="power-hat-level" style="width:${battery}%"></i></span><strong id="power-hat-percent">${battery.toFixed(0)}%</strong></div><dl class="power-hat-readings"><dt>Input</dt><dd id="power-hat-input">${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W</dd><dt>Output</dt><dd id="power-hat-output">${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W</dd><dt>Battery</dt><dd id="power-hat-battery">${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A</dd></dl><footer><span>Pi power</span><span id="power-hat-updated">${power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry'}</span><a href="http://${location.hostname}:34001/" target="_blank" rel="noopener">Open full PiPower dashboard</a></footer></article>`;}
 function renderPiPowerHatStatus(){const power=state.status?.powerHat,card=$('#power-hat-card');if(!power?.available){if(power?.error){if(card)card.outerHTML=piPowerHatHTML(power);else if(state.view==='hardware')renderHardware();}else card?.remove();return;}if(card?.dataset.powerError){card.outerHTML=piPowerHatHTML(power);return;}if(!card){if(state.view==='hardware')renderHardware();return;}const battery=Math.max(0,Math.min(100,Number(power.batteryPercentage)||0));$('#power-hat-source').textContent=`${power.powerSource||'Unknown'} power · ${power.charging?'charging':power.inputPluggedIn?'external input connected':'battery operation'}`;$('#power-hat-level').style.width=`${battery}%`;$('#power-hat-percent').textContent=`${battery.toFixed(0)}%`;$('#power-hat-input').textContent=`${Number(power.inputVoltage).toFixed(2)} V · ${Number(power.inputCurrent).toFixed(2)} A · ${Number(power.inputPower).toFixed(2)} W`;$('#power-hat-output').textContent=`${Number(power.outputVoltage).toFixed(2)} V · ${Number(power.outputCurrent).toFixed(2)} A · ${Number(power.outputPower).toFixed(2)} W`;$('#power-hat-battery').textContent=`${Number(power.batteryVoltage).toFixed(2)} V · ${Number(power.batteryCurrent).toFixed(2)} A`;$('#power-hat-updated').textContent=power.updatedAt?`Updated ${timeAgo(power.updatedAt)} ago`:'Live telemetry';}
 
 function setCapabilityVisibility(id,visible){const control=$('#'+id),container=control?.closest('label');if(container)container.classList.toggle('capability-hidden',!visible);if(control)control.disabled=!visible;}
@@ -779,26 +852,20 @@ function updateReceiverCapabilityControls(){
 		for(const suffix of ['lna','vga','amp'])setCapabilityVisibility(`${prefix}-${suffix}`,hackrf);
 		if(prefix==='mapper')setCapabilityVisibility('mapper-amp-mode',hackrf);
 		const rate=$('#'+prefix+'-rate');
-		if(rate&&device){for(const option of rate.options){const value=Number(option.value),maximum=Number(device.sampleRateLimit||device.driverSampleRateMaximumHz||0),minimum=Number(device.sampleRateMinimumHz||0),unsupported=value>0&&((maximum>0&&value>maximum)||(minimum>0&&value<minimum));option.disabled=unsupported;option.hidden=unsupported;}if(rate.selectedOptions[0]?.disabled)rate.value='0';}
+		if(rate&&device){for(const option of rate.options){const value=Number(option.value),maximum=Number(device.sampleRateLimit||device.driverSampleRateMaximumHz||0),minimum=Math.max(Number(device.sampleRateMinimumHz||0),hackrf?8e6:0),unsupported=value>0&&((maximum>0&&value>maximum)||(minimum>0&&value<minimum));option.disabled=unsupported;option.hidden=unsupported;}if(rate.selectedOptions[0]?.disabled)rate.value='0';}
 		if(prefix==='live'||prefix==='tuner')setCapabilityVisibility(`${prefix}-bias`,hackrf);
 	}
 	updateFPVControls();
 }
 
-function plutoConnectionKind(device){const value=(device.transport||device.deviceArguments||'').toLowerCase();return value.includes('usb:')?'usb':value.includes('ip:')||value.includes('network')?'network':'auto';}
 function plutoConnectionControl(device){
-	if(device.kind!=='PlutoSDR'||!device.connected)return '';
-	const peers=state.devices.filter(item=>item.kind==='PlutoSDR'&&item.connected&&((device.serial&&item.serial===device.serial)||(!device.serial&&item.name===device.name))),available=new Map(peers.map(item=>[plutoConnectionKind(item),item]));
-	const key=`gpsdr-pluto-connection-${device.serial||device.name}`,saved=localStorage.getItem(key)||plutoConnectionKind(device);
-	return `<label class="hardware-mode">Connection<select class="pluto-connection-mode" data-preference-key="${escapeHTML(key)}"><option value="auto" ${saved==='auto'?'selected':''}>Automatic</option><option value="usb" ${saved==='usb'?'selected':''} ${available.has('usb')?'':'disabled'}>USB${available.has('usb')?'':' · unavailable'}</option><option value="network" ${saved==='network'?'selected':''} ${available.has('network')?'':'disabled'}>Ethernet / network${available.has('network')?'':' · unavailable'}</option></select><small>${escapeHTML(device.transport||'Driver-selected connection')}</small></label>`;
+ if(device.kind!=='PlutoSDR'||!device.transports?.length)return '';
+ return `<label class="hardware-mode">Connection<select class="pluto-connection-mode" data-device-id="${escapeHTML(device.id)}" ${state.status?.running?'disabled':''}>${device.transports.some(option=>option.uri===device.transport)?'':`<option value="" selected disabled>Saved connection unavailable</option>`}${device.transports.map(option=>`<option value="${escapeHTML(option.uri)}" ${option.uri===device.transport?'selected':''}>${escapeHTML(option.label)}</option>`).join('')}</select><small>${escapeHTML(device.transport||'Driver-selected connection')} · saved on the Pi</small></label>`;
 }
-
-$('#device-grid').addEventListener('change',event=>{
-	const select=event.target.closest('.pluto-connection-mode');if(!select)return;
-	localStorage.setItem(select.dataset.preferenceKey,select.value);
-	const card=select.closest('.hardware-card'),title=card?.querySelector('h3')?.textContent||'PlutoSDR';
-	const candidates=state.devices.filter(device=>device.kind==='PlutoSDR'&&device.connected),chosen=select.value==='auto'?candidates[0]:candidates.find(device=>plutoConnectionKind(device)===select.value);
-	if(chosen){for(const picker of $$('select'))if([...picker.options].some(option=>option.value===chosen.id))picker.value=chosen.id;toast(`${title} will use ${select.value==='network'?'Ethernet / network':select.value==='usb'?'USB':'the available connection'}`);}else toast('That connection is not currently available',true);
+$('#device-grid').addEventListener('change',async event=>{
+ const select=event.target.closest('.pluto-connection-mode');if(!select)return;
+ select.disabled=true;
+ try{await api('/api/devices/pluto-transport',{method:'PUT',body:JSON.stringify({deviceID:select.dataset.deviceId,uri:select.value})});await refreshAll();toast('Pluto connection saved');}catch(error){toast(error.message,true);renderHardware();}finally{select.disabled=false;}
 });
 
 function hardwareRangeText(device){return device.frequencyMinimumHz&&device.frequencyMaximumHz?`${formatFrequency(device.frequencyMinimumHz)}–${formatFrequency(device.frequencyMaximumHz)} nominal · ${device.frequencyRangeNote||'model-dependent range'}`:'Frequency range reported by the installed driver';}
@@ -806,7 +873,7 @@ function hardwareRangeText(device){return device.frequencyMinimumHz&&device.freq
 function hardwareCapabilityText(device){
   if(device.kind!=='PlutoSDR')return device.kind === 'HackRF' ? 'LNA 0–40 dB · VGA 0–62 dB · RF amp · antenna power · 2–20 MS/s' : device.kind === 'RTL-SDR' ? 'Tuner AGC/manual gain · PPM correction · 0.225–3.2 MS/s' : 'SoapySDR gain · PPM and device-specific controls';
   const channels=`${device.receiveChannels||1} RX · ${device.transmitChannels||1} TX${device.fullDuplex?' · full duplex':''}`;
-  const rates=device.sampleRateMinimumHz&&device.driverSampleRateMaximumHz?`${(device.sampleRateMinimumHz/1e6).toFixed(3)}–${(device.driverSampleRateMaximumHz/1e6).toFixed(2)} MS/s driver range`:'';
+  const rates=device.sampleRateMinimumHz&&device.driverSampleRateMaximumHz?`${(device.sampleRateMinimumHz/1e6).toFixed(3)}–${(device.driverSampleRateMaximumHz/1e6).toFixed(2)} MS/s capture range`:'';
   return [channels,device.supportsAGC?'AGC + manual gain':'manual gain',rates,device.filterBandwidthLimitHz?`filters to ${(device.filterBandwidthLimitHz/1e6).toFixed(0)} MHz`:'',device.transport?`via ${device.transport}`:''].filter(Boolean).join(' · ');
 }
 
@@ -859,15 +926,18 @@ function renderTuner() {
   const select = $('#tuner-device');
 	const liveSelect = $('#live-radio-device');
   if (!select) return;
+	updateTunerModeAvailability();
   const connected = state.devices.filter(device => device.connected && device.kind !== 'Simulator');
-  const signature = connected.map(device => device.id).join();
+  const ready = connected.filter(device => device.available);
+  const signature = ready.map(device => `${device.id}:${device.available}`).join();
   if (select.dataset.signature !== signature) {
-    select.innerHTML = connected.length ? connected.map(device => `<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device,connected))}</option>`).join('') : '<option value="">No receiver</option>';
+    select.innerHTML = ready.length ? ready.map(device => `<option value="${escapeHTML(device.id)}">${escapeHTML(receiverLabel(device,ready))}</option>`).join('') : '<option value="">No ready receiver</option>';
 		if (liveSelect) liveSelect.innerHTML = select.innerHTML;
     select.dataset.signature = signature;
   }
   const tuning = state.status?.running && state.status?.activeProfileID === 'quick-tune';
 	const tunedChannel = state.mixer.find(item => item.id === 'quick-tune-channel')?.channel;
+	renderTunerVFOs(tuning, tunedChannel);
 	if (tuning && tunedChannel) {
 		if (document.activeElement !== $('#tuner-frequency') && $('#tuner-frequency').dataset.pending !== 'true') {
 			const listenMHz = (tunedChannel.frequencyHz / 1e6).toFixed(6);
@@ -881,13 +951,21 @@ function renderTuner() {
 	}
 	const telemetry=state.status?.receiverTelemetry, receiving=!!telemetry?.signalDetected, overloaded=!!telemetry?.overloaded;
 	for (const prefix of ['live','tuner']) { const light=$('#'+prefix+'-signal-light')?.parentElement; if(light){light.classList.toggle('active',receiving);light.classList.toggle('overloaded',overloaded);} const label=$('#'+prefix+'-signal-text'); if(label) label.textContent=overloaded?`Overload ${Number(telemetry.clippedPercent).toFixed(1)}%`:receiving?'Signal':'No signal'; }
-  $('#tuner-start').disabled = !connected.length;
-	$('#tuner-start').textContent=tuning&&$('#tuner-lock-center').checked?'Apply VFO':tuning?'Retune':'Tune';
+  $('#tuner-start').disabled = !ready.length || tunerSubmitting;
+	$('#tuner-start').textContent=tunerSubmitting?'Tuning…':tuning&&$('#tuner-lock-center').checked?'Apply VFO':tuning?'Retune':'Tune';
   $('#tuner-stop').disabled = !tuning;
   const hardwareMHz=state.spectrum?.centerFrequencyHz?(state.spectrum.centerFrequencyHz/1e6).toFixed(6):'starting',listenMHz=Number($('#tuner-frequency').value||0).toFixed(6);
 	const intelligence=state.status?.signalAnalysis, analysisText=intelligence?.modulation&&intelligence.modulation!=='UNKNOWN'?` · ${intelligence.modulation} ${Math.round((intelligence.confidence||0)*100)}%`:'';
+	const detectionActive=!!(intelligence?.modulation||intelligence?.signalFamily||intelligence?.summary);
+	$('#tuner-decoder-state').textContent=detectionActive?'Evidence':'Idle';
+	$('#tuner-decoder-state').className=`chip ${detectionActive?'ready':''}`;
+	$('#tuner-detected-modulation').textContent=intelligence?.modulation||'—';
+	$('#tuner-detected-confidence').textContent=Number.isFinite(Number(intelligence?.confidence))?`${Math.round(Number(intelligence.confidence)*100)}%`:'—';
+	$('#tuner-detected-protocol').textContent=intelligence?.signalFamily||'Not confirmed';
+	$('#tuner-detected-activity').textContent=detectionActive?(intelligence?.summary||'Recent evidence'):'—';
+	$('#tuner-decoder-detail').textContent=detectionActive?((intelligence.evidence||[]).join(' · ')||'Waveform evidence is available; protocol confirmation still requires a valid decoder frame or authoritative match.'):'Start the tuner to expose detection and decoder evidence.';
 	const appliedDevice=state.devices.find(item=>item.id===telemetry?.deviceID),applied=telemetry?.sampleRateHz?`${(telemetry.sampleRateHz/1e6).toFixed(2)} MS/s · ${appliedDevice?.kind==='HackRF'?`LNA ${telemetry.lnaGainDB} · VGA ${telemetry.vgaGainDB} · amp ${telemetry.ampEnabled?'on':'off'}`:`gain ${Number(telemetry.gainDB).toFixed(1)} dB`}`:'';
-	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${applied?` · Applied ${applied}`:''}${analysisText}` : connected.length ? 'Ready to tune.' : 'Connect a receiver, then refresh Hardware.';
+	$('#tuner-status').textContent = tuning ? `Hardware ${hardwareMHz} MHz · Listen ${listenMHz} MHz${applied?` · Applied ${applied}`:''}${analysisText}` : ready.length ? 'Ready to tune.' : connected.length ? 'A receiver is connected but its driver is not ready. Open Hardware and refresh it.' : 'Connect a receiver, then refresh Hardware.';
   const snapshot = state.spectrum;
   if (snapshot?.binsDBFS?.length) {
 		const sorted=[...snapshot.binsDBFS].sort((a,b)=>a-b),noise=sorted[Math.floor(sorted.length*.25)]??-120,peak=Math.max(...snapshot.binsDBFS),snr=Math.max(0,peak-noise);
@@ -903,6 +981,23 @@ function renderTuner() {
   }
 }
 
+function tunerPassbandContains(frequencyHz) {
+  const snapshot=state.spectrum, bandwidth=Number($('#tuner-bandwidth')?.value||12.5)*1000;
+  return !!(snapshot?.startFrequencyHz && frequencyHz-bandwidth/2>=snapshot.startFrequencyHz && frequencyHz+bandwidth/2<=snapshot.endFrequencyHz);
+}
+function renderTunerVFOs(tuning, primary) {
+  const list=$('#tuner-vfo-list'); if(!list)return;
+  const items=[{id:'primary',frequencyHz:Number(primary?.frequencyHz||$('#tuner-frequency')?.value*1e6||0),mode:primary?.mode||$('#tuner-mode')?.value||'auto',primary:true},...tunerVFOs];
+  list.innerHTML=items.map(item=>`<div class="tuner-vfo-card ${item.primary?'selected':''}" data-vfo-id="${escapeHTML(item.id)}"><button class="tuner-vfo-select" type="button" data-vfo-select="${escapeHTML(item.id)}"><strong>${formatFrequency(item.frequencyHz)}</strong><small>${escapeHTML(String(item.mode).toUpperCase())}${item.primary?' · main':''}</small></button><span class="tuner-vfo-state">${tuning?'Ready':'Queued'}</span>${item.primary?'':'<button class="tuner-vfo-delete" type="button" data-vfo-delete="'+escapeHTML(item.id)+'" title="Remove this virtual tuner" aria-label="Remove virtual tuner">×</button>'}</div>`).join('');
+}
+function addTunerVFO(frequencyHz) {
+  if(!Number.isFinite(frequencyHz)||!tunerPassbandContains(frequencyHz)) return toast('That frequency is outside the active receiver bandwidth.',true);
+  if(tunerVFOs.some(item=>Math.abs(item.frequencyHz-frequencyHz)<1)||Math.abs(Number($('#tuner-frequency').value)*1e6-frequencyHz)<1)return toast('That frequency is already tuned.');
+  tunerVFOs.push({id:crypto.randomUUID(),frequencyHz,mode:$('#tuner-mode').value,bandwidthHz:Number($('#tuner-bandwidth').value)*1000});
+  renderTuner(); toast(`Added virtual tuner at ${formatFrequency(frequencyHz)}`);
+}
+function selectTunerVFO(id){const item=tunerVFOs.find(vfo=>vfo.id===id);if(!item)return;setTunerListenFrequency(item.frequencyHz,{apply:!!(state.status?.running&&state.status?.activeProfileID==='quick-tune'),preserveCenter:true});$('#tuner-mode').value=item.mode;$('#tuner-bandwidth').value=item.bandwidthHz/1000;renderTuner();}
+
 function tunerRequest() {
   const deviceID=$('#tuner-device').value,device=state.devices.find(item=>item.id===deviceID),hackrf=device?.kind==='HackRF';
   return {deviceID,frequencyHz:Number($('#tuner-frequency').value)*1e6,mode:$('#tuner-mode').value,
@@ -917,6 +1012,23 @@ function tunerRequest() {
 
 const decoderModeMap={digital:'dsd-fme',dmr:'dmr',p25:'dsd-fme',nxdn:'nxdn',nxdn48:'nxdn48',nxdn96:'nxdn96','d-star':'d-star',ysf:'ysf',m17:'m17',pocsag:'multimon-ng',acars:'acarsdec','ads-b':'dump1090','rtl-433':'rtl-433',ais:'ais'};
 function decoderForSelectedMode(mode){return decoderModeMap[String(mode||'').toLowerCase()]||'';}
+function updateTunerModeAvailability(){
+	const select=$('#tuner-mode'); if(!select)return;
+	const ready=new Set(state.decoders.filter(decoder=>decoder.state==='ready').map(decoder=>decoder.id));
+	for(const option of select.options){
+		const decoder=decoderForSelectedMode(option.value),available=!decoder||ready.has(decoder);
+		option.disabled=!available;
+		option.title=available?'':`${option.text} requires its decoder in Hardware`;
+	}
+	const selected=select.selectedOptions[0];
+	if(selected?.disabled){
+		tunerModeAvailabilityNote=`${selected.text} is not ready on this box. Switched to Auto; open Hardware to repair or refresh the decoder.`;
+		select.value='auto';
+		const liveMode=$('#live-mode'); if(liveMode)liveMode.value='auto';
+	}
+	const note=$('#tuner-mode-note');
+	if(note){note.textContent=tunerModeAvailabilityNote;note.classList.toggle('hidden',!tunerModeAvailabilityNote);}
+}
 function profileModeOptions(){return '<option value="auto">Auto</option><option value="am">AM</option><option value="nfm">NFM</option><option value="wfm">WFM</option><option value="digital">Digital auto</option><option value="dmr">DMR</option><option value="p25">P25 conventional</option><option value="nxdn">NXDN</option><option value="nxdn48">NXDN48</option><option value="d-star">D-STAR</option><option value="ysf">YSF</option><option value="m17">M17</option>'}
 function profileDecoderOptions(){return '<option value="">Auto / analog</option><option value="dmr">DMR · DSD-FME</option><option value="dsd-fme">Digital voice · DSD-FME</option><option value="nxdn">NXDN · DSD-FME</option><option value="d-star">D-STAR · DSD-FME</option><option value="ysf">YSF · DSD-FME</option><option value="m17">M17 · DSD-FME</option><option value="rtl-433">rtl_433 sensors</option><option value="dump1090">ADS-B / Mode S</option><option value="multimon-ng">POCSAG / FLEX</option><option value="acarsdec">ACARS</option><option value="ais">AIS</option>'}
 
@@ -933,16 +1045,24 @@ function decoderMatchesEvent(decoder, event) {
 
 function decoderMatchesConfig(decoderID,value){value=String(value||'').toLowerCase();if(decoderID==='dsd-fme')return ['dsd-fme','dmr','nxdn','nxdn48','nxdn96','d-star','ysf','m17'].includes(value);return value===decoderID;}
 
-function renderDecoders() {
+function renderDecoders(polling=false) {
   const nav = $('#decoder-nav'), detail = $('#decoder-detail');
   if (!nav || !detail) return;
   // Preserve an open menu or focused control across polling updates.
   if (detail.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
-  if (!state.decoders.some(item => item.id === state.selectedDecoderID)) state.selectedDecoderID = state.decoders[0]?.id || 'analog';
+  if (state.decoders.length && !state.decoders.some(item => item.id === state.selectedDecoderID)) state.selectedDecoderID = state.decoders[0].id;
   nav.innerHTML = state.decoders.map(decoder => `<button class="decoder-nav-item ${decoder.id === state.selectedDecoderID ? 'active' : ''}" data-decoder-id="${escapeHTML(decoder.id)}" aria-pressed="${decoder.id === state.selectedDecoderID}">
     <i class="${escapeHTML(decoder.state)}"></i><span><strong>${escapeHTML(decoder.name)}</strong><small>${escapeHTML(decoder.standards.slice(0,2).join(' · '))}</small></span></button>`).join('');
   const decoder = state.decoders.find(item => item.id === state.selectedDecoderID);
   if (!decoder) { detail.innerHTML = '<div class="empty-state">No decoders found</div>'; return; }
+  if (decoder.id === 'p25') {
+    if(polling&&Date.now()-(state.p25LastRender||0)<1500)return;
+    state.p25LastRender=Date.now();
+    const focused=detail.contains(document.activeElement)&&document.activeElement.matches('button')?{id:document.activeElement.id,eventID:document.activeElement.dataset.eventId}:null;
+    detail.innerHTML = renderP25DecoderWorkspace();
+    if(focused){const button=focused.id?document.getElementById(focused.id):[...detail.querySelectorAll('[data-event-id]')].find(item=>item.dataset.eventId===focused.eventID);button?.focus({preventScroll:true});}
+    return;
+  }
   const events = state.events.filter(event => decoderMatchesEvent(decoder,event)).slice(0,12);
   const relevantProfiles = state.profiles.filter(profile => decoder.id === 'p25' ? (profile.p25Systems || []).length :
 	profile.channels.some(channel => decoder.id === 'analog' ? ['am','nfm','wfm','fm','auto'].includes(channel.mode) : decoderMatchesConfig(decoder.id,channel.decoder)) ||
@@ -962,13 +1082,15 @@ function renderDecoders() {
 function renderP25DecoderWorkspace() {
   const status = state.p25Status || {};
 	const p25Running=status.state==='running';
-	const p25Action=p25Running?(status.reception==='locked'?'P25 locked':'P25 searching…'):'Start P25';
 	const p25Audio=status.audioState==='receiving'?`Receiving ${status.audioSampleRateHz?`${status.audioSampleRateHz/1000} kHz`:''}`:status.audioState==='idle'?'No recent PCM':status.audioState==='waiting'?'Waiting for voice':'Not running';
-  const profile = state.profiles.find(item=>item.id===(state.p25ProfileID||status.profileID||state.status?.activeProfileID)) || state.profiles.find(item=>(item.p25Systems||[]).length);
-  const configuredRate = profile?.settings?.p25SampleRateHz || 0;
-	const activeP25DeviceID=status.state==='running' ? (status.receiverDeviceIDs||[])[0] : '';
+  const profile = state.profiles.find(item=>item.id===((p25Running?status.profileID:null)||state.p25ProfileID||status.profileID||state.status?.activeProfileID)) || state.profiles.find(item=>(item.p25Systems||[]).length);
+	const activeP25DeviceIDs=status.state==='running' ? (status.receiverDeviceIDs||[]) : [];
+	const activeP25DeviceID=activeP25DeviceIDs[0]||'';
 	const displayedP25DeviceID=activeP25DeviceID||state.p25DeviceID;
-	const p25Receiver=state.devices.find(item=>item.id===displayedP25DeviceID);
+  const multiReceiverMode=state.p25DeviceID==='__multi__'||activeP25DeviceIDs.length>1;
+  const availableP25Receivers=state.devices.filter(item=>item.connected&&item.available);
+  const receiverPlanLabel=activeP25DeviceIDs.length ? `${activeP25DeviceIDs.length} assigned receiver${activeP25DeviceIDs.length===1?'':'s'}` : multiReceiverMode ? `${state.p25ReceiverIDs.length} selected receiver${state.p25ReceiverIDs.length===1?'':'s'}` : state.p25DeviceID ? '1 selected receiver' : profile?.deviceAssignments?.length ? `${profile.deviceAssignments.length} profile receiver${profile.deviceAssignments.length===1?'':'s'}` : 'No receiver assignments';
+  const multiReceiverChoices=multiReceiverMode&&!p25Running ? `<fieldset class="p25-receiver-plan"><legend>Receiver plan <small>${escapeHTML(receiverPlanLabel)}</small></legend><div>${availableP25Receivers.map(item=>`<label class="check-line"><input class="p25-receiver-plan-choice" type="checkbox" value="${escapeHTML(item.id)}" ${state.p25ReceiverIDs.includes(item.id)?'checked':''}>${escapeHTML(receiverLabel(item))}</label>`).join('')}</div><label class="p25-control-preference">Preferred control receiver<select id="p25-control-receiver"><option value="">Automatic</option>${availableP25Receivers.filter(item=>state.p25ReceiverIDs.includes(item.id)).map(item=>`<option value="${escapeHTML(item.id)}" ${state.p25ControlDeviceID===item.id?'selected':''}>${escapeHTML(receiverLabel(item))}</option>`).join('')}</select></label><small>OP25 assigns control and voice roles to selected receivers. Receiver count does not guarantee simultaneous call capacity.</small></fieldset>` : '';
   const talkgroups = state.mixer.filter(item => item.talkgroupID && (!state.p25ActiveOnly||item.active) && (!state.p25Search||[item.talkgroupID,item.channel?.name].join(' ').toLowerCase().includes(state.p25Search.toLowerCase()))).sort((left, right) => {
     if (!!left.active !== !!right.active) return left.active ? -1 : 1;
     const leftTime = left.lastHeardAt ? new Date(left.lastHeardAt).getTime() : 0;
@@ -980,19 +1102,131 @@ function renderP25DecoderWorkspace() {
   const connected = state.devices.filter(item=>item.connected);
   const calibrated = connected.filter(item=>item.calibration).length;
   const voiceSetup=setupComponent('p25-voice')?.state==='ready'?'':setupActions('p25-voice');
-  const audioAction=`<button id="p25-audio-monitor" class="secondary" title="Enable this browser tab's audio output for the live P25 PCM stream">${liveAudio.context?.state==='running'?'Audio enabled':'Enable audio'}</button>`;
-  return `<article class="panel p25-overview"><div class="p25-toolbar"><label>System profile<select id="p25-profile-choice">${state.profiles.filter(item=>(item.p25Systems||[]).length).map(item=>`<option value="${escapeHTML(item.id)}" ${profile?.id===item.id?'selected':''}>${escapeHTML(item.name)}</option>`).join('')}</select></label><label>Receiver<select id="p25-receiver-choice"><option value="">Profile assignments</option>${state.devices.filter(item=>item.connected&&item.available).map(item=>`<option value="${escapeHTML(item.id)}" ${displayedP25DeviceID===item.id?'selected':''}>${escapeHTML(receiverLabel(item))}</option>`).join('')}</select></label><button id="p25-workspace-start" class="primary" ${profile&&!p25Running?'':'disabled'} title="${p25Running?'P25 is already running; use Stop before changing systems':'Start the selected profile on its assigned or chosen receiver'}">${p25Action}</button><button id="p25-workspace-stop" ${p25Running?'':'disabled'}>Stop P25</button>${audioAction}</div><div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Control channel</span><strong>${status.controlChannelHz ? formatFrequency(status.controlChannelHz) : 'Searching'}</strong>${status.controlChannelHz ? `<small>${status.controlSource === 'decoded' ? 'Decoded current' : 'Configured primary'}</small>` : ''}</div><div><span>Decoder PCM</span><strong>${escapeHTML(p25Audio)}</strong><small>${status.audioFrames||0} frame${status.audioFrames===1?'':'s'} from OP25</small></div><div><span>Capture width</span><strong>${status.captureRateHz ? `${status.captureRateHz/1e6} MS/s` : 'Auto'}</strong></div><div><span>Front end</span><strong>${escapeHTML(status.frontendState || 'Starting…')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')}${calibrated ? ' · Saved PPM, gain, and front-end calibration applied; P25 IQ tracking remains automatic.' : ' · Calibrate the receiver on the Hardware page for best results.'}</p>${voiceSetup}
-    <div class="panel-head"><div><h2>Talkgroup mixer</h2><span>${active ? `${active} active · ` : ''}Mute and solo independently</span></div><div class="p25-mixer-tools"><input id="p25-search" class="p25-search" type="search" aria-label="Search talkgroups" placeholder="Talkgroup or name" value="${escapeHTML(state.p25Search)}"><label class="check-line"><input id="p25-active-only" type="checkbox" ${state.p25ActiveOnly?'checked':''}>Active only</label><label>Capture<select id="p25-live-rate" title="P25 receiver bandwidth; changing it restarts the active P25 profile">${p25RateOptions(configuredRate,displayedP25DeviceID)}</select></label><label ${p25Receiver?.kind==='HackRF'?'':'hidden'}>RF amp<select id="p25-amp-mode" title="Keep the working SDRTrunk gain, or override the HackRF RF amplifier. Changes restart P25."><option value="" ${!profile?.settings?.p25AmpMode?'selected':''}>Saved</option><option value="off" ${profile?.settings?.p25AmpMode==='off'?'selected':''}>Off</option><option value="on" ${profile?.settings?.p25AmpMode==='on'?'selected':''}>On</option></select></label><label ${p25Receiver?.kind==='HackRF'?'':'hidden'}>LNA<input id="p25-lna-gain" type="number" min="0" max="40" step="8" placeholder="Saved" value="${profile?.settings?.p25LNAGainDB??''}" title="HackRF LNA gain in dB; blank preserves saved gain"></label><label ${p25Receiver?.kind==='HackRF'?'':'hidden'}>VGA<input id="p25-vga-gain" type="number" min="0" max="62" step="2" placeholder="Saved" value="${profile?.settings?.p25VGAGainDB??''}" title="HackRF VGA gain in dB; blank preserves saved gain"></label><label>Order<select id="p25-order" title="Order calls by latest activity or total received"><option value="recent" ${state.p25Order === 'recent' ? 'selected' : ''}>Most recent</option><option value="heard" ${state.p25Order === 'heard' ? 'selected' : ''}>Most received</option></select></label><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div></div>
-    <div class="mixer-list p25-mixer">${talkgroups.length ? mixerRows(talkgroups) : '<div class="empty-state compact">Start a P25 profile to load talkgroups</div>'}</div></article>`;
+  const audioAction=`<button id="p25-audio-monitor" class="secondary" title="Listen to or mute live audio in this browser; recording continues independently">${liveAudio.controller?'Mute this browser':'Listen in this browser'}</button>`;
+  const archiveSettings=state.p25ArchiveDrafts[profile?.id]||profile?.settings||{};
+  const archiveControls=`<fieldset class="p25-archive"><legend>Recording preferences</legend><label class="check-line"><input id="p25-archive-calls" type="checkbox" ${archiveSettings.p25ArchiveCalls?'checked':''}>Save unencrypted calls</label><label class="check-line"><input id="p25-transcribe-calls" type="checkbox" ${archiveSettings.transcribeVoice?'checked':''}>Transcribe saved calls</label><small>Encrypted calls are never archived. Audio and transcription stay on this box; transcription processes one call at a time.</small></fieldset>`;
+  const tabs=[['operate','Operate'],['setup','Setup'],['diagnostics','Diagnostics'],['recordings','Recordings']];
+  const systems=(profile?.p25Systems||[]).filter(system=>system.enabled);
+  const activeCalls=(status.receivers||[]).filter(receiver=>receiver.state==='following'||receiver.state==='encrypted');
+  const currentControl=(status.receivers||[]).find(receiver=>receiver.state==='control_locked');
+  const reception=currentControl?'Control decoded':p25Running?(status.reception==='unknown'?'Reception unconfirmed':'Searching for control'):status.state==='error'?'Decoder stopped with an error':'Stopped';
+  const panel=(id,body)=>`<section id="p25-panel-${id}" class="p25-workspace-panel" aria-labelledby="p25-tab-${id}" ${state.p25WorkspaceTab===id?'':'hidden'}>${body}</section>`;
+  const operating=`<div class="p25-current-system"><strong>${escapeHTML(systems.map(system=>system.name).join(' · ')||'No enabled system')}</strong><button data-p25-tab="recordings" aria-controls="p25-panel-recordings">Review recordings</button></div><div class="p25-operating-summary"><div><span>Control reception</span><strong>${reception}</strong><small>${currentControl?formatFrequency(currentControl.frequencyHz):'A configured frequency is not proof of reception.'}</small></div><div><span>Receiver plan</span><strong>${escapeHTML(receiverPlanLabel)}</strong><small>Roles are assigned by the decoder.</small></div><div><span>Active call assignments</span><strong>${activeCalls.length}</strong><small>${activeCalls.length?activeCalls.map(call=>`TG ${call.talkgroupID||'unknown'}${call.state==='encrypted'?' · Encrypted':''}`).join(' · '):'Waiting for decoded calls'}</small></div><div><span>Archive</span><strong>${archiveSettings.p25ArchiveCalls?'Save unencrypted calls':'Recording off'}</strong><small>${archiveSettings.transcribeVoice&&archiveSettings.p25ArchiveCalls?'Transcription requested':'Transcription off'}</small></div></div><p class="p25-session-note" role="status">${escapeHTML(status.note||'Choose a system and receiver plan, then start P25.')}</p>
+
+    <div class="panel-head"><div><h2>Talkgroups</h2><span>${active ? `${active} active · ` : ''}${status.taggedTalkgroupAudio?'Tagged talkgroup audio · listening controls do not stop recording':'Talkgroup activity · mixed audio routing remains under validation'}</span></div><div class="p25-mixer-tools"><input id="p25-search" class="p25-search" type="search" aria-label="Search talkgroups" placeholder="Talkgroup or name" value="${escapeHTML(state.p25Search)}"><label class="check-line"><input id="p25-active-only" type="checkbox" ${state.p25ActiveOnly?'checked':''}>Active only</label><label>Order<select id="p25-order" title="Order calls by latest activity or total received"><option value="recent" ${state.p25Order === 'recent' ? 'selected' : ''}>Most recent</option><option value="heard" ${state.p25Order === 'heard' ? 'selected' : ''}>Most received</option></select></label><button class="decoder-mute-all icon-button" title="Mute or unmute every P25 talkgroup">M</button></div></div>
+    <div class="mixer-list p25-mixer">${talkgroups.length ? mixerRows(talkgroups) : '<div class="empty-state compact">No talkgroups yet. Start P25 and wait for decoded control or call activity.</div>'}</div>`;
+  const setup=`<div class="p25-setup-grid"><label>Receiver plan<select id="p25-receiver-choice" ${p25Running?'disabled':''}><option value="">Profile assignments</option><option value="__multi__" ${multiReceiverMode?'selected':''}>Choose multiple receivers</option>${availableP25Receivers.map(item=>`<option value="${escapeHTML(item.id)}" ${!multiReceiverMode&&displayedP25DeviceID===item.id?'selected':''}>One receiver · ${escapeHTML(receiverLabel(item))}</option>`).join('')}</select><small>${escapeHTML(receiverPlanLabel)}</small></label><div class="p25-radio-summary">Each receiver has its own tuning settings below. HackRF stays at 8 MS/s or higher.</div></div>${multiReceiverChoices}${renderP25ReceiverSetup(profile,status)}<fieldset class="p25-editable-settings" ${p25Running?'disabled':''}>${archiveControls}</fieldset><div class="p25-site-list"><h3>Saved receiver assignments</h3><div class="p25-assignment-summary">${(profile?.deviceAssignments||[]).map(item=>`<p><strong>${escapeHTML(receiverLabel(state.devices.find(device=>device.id===item.deviceID)||{name:item.deviceID||'Automatic receiver'}))}</strong> · ${escapeHTML(p25RoleLabel(item.role))} · ${escapeHTML(systems.find(system=>[system.id,system.name].includes(item.target))?.name||item.target||'Automatic system')}</p>`).join('')||'<p>No receivers assigned. Choose a receiver plan above.</p>'}</div><h3>System and control candidates</h3>${systems.map(system=>`<article><strong>${escapeHTML(system.name)}</strong><p>${(system.controlChannelsHz||[]).map(formatFrequency).join(' · ')||'No control candidates configured'}</p><small>Source: saved profile. Candidates are not confirmed live control channels.</small></article>`).join('')||'<p>No enabled P25 system in this profile.</p>'}<button id="p25-edit-system" ${profile&&!p25Running?'':'disabled'}>${profile?.builtIn?'Copy and edit system':'Edit system and talkgroups'}</button><p>${p25Running?'Stop P25 before changing its system, receivers or recording preferences.':'Changes apply when you start P25. Auto capture rate uses each receiver’s supported rate.'}</p></div>${voiceSetup}`;
+  const diagnostics=`<div class="p25-metrics"><div><span>Engine</span><strong>${escapeHTML(status.engine || 'Bundled')}</strong></div><div><span>Reception</span><strong>${escapeHTML(status.reception || status.state || 'setup')}</strong></div><div><span>Control channel</span><strong>${status.controlChannelHz ? formatFrequency(status.controlChannelHz) : 'Searching'}</strong>${status.controlChannelHz ? `<small>${status.controlSource === 'decoded' || status.controlSource === 'OP25 decoded control messages' ? 'Decoded current' : 'Configured primary'}</small>` : ''}</div><div><span>Decoder PCM</span><strong>${escapeHTML(p25Audio)}</strong><small>${status.audioFrames||0} frame${status.audioFrames===1?'':'s'} from OP25</small></div><div><span>Audio identity</span><strong>${escapeHTML(status.audioIdentity||'Not reported by this decoder')}</strong><small>${status.nativeAudioPackets||0} tagged packets · ${status.suppressedAudioPackets||0} unsafe or incompatible packets suppressed</small></div><div><span>Capture width</span><strong>${status.captureRateHz ? `${status.captureRateHz/1e6} MS/s` : status.receivers?.length ? 'Per receiver' : 'Auto'}</strong></div><div><span>Front end</span><strong>${escapeHTML(status.receivers?.length>1 ? 'See receiver status' : status.frontendState || 'Starting…')}</strong></div><div><span>Talkgroups</span><strong>${talkgroups.length}</strong></div><div><span>Calibration</span><strong>${calibrated}/${connected.length}</strong></div></div><p class="hardware-detail">${escapeHTML(status.note || '')} · Saved calibration supplies defaults; explicit receiver settings can override them. Configuration is not hardware readback.</p>${voiceSetup}${renderP25Diagnostics(status)}${renderP25ReceiverStatus(status)}`;
+  return `<article class="panel p25-overview"><header class="p25-operation-header"><div><h2>P25 field console</h2><span>${p25Running?'Session running':'Session stopped'} · ${escapeHTML(reception)}</span></div><div class="p25-session-actions"><button id="p25-workspace-start" class="primary" ${profile&&!p25Running?'':'disabled'}>${p25Running?'P25 running':'Start P25'}</button><button id="p25-workspace-stop" ${p25Running?'':'disabled'}>Stop P25</button>${audioAction}</div></header><div class="p25-primary-settings"><label>System profile<select id="p25-profile-choice" ${p25Running?'disabled':''}>${state.profiles.filter(item=>(item.p25Systems||[]).length).map(item=>`<option value="${escapeHTML(item.id)}" ${profile?.id===item.id?'selected':''}>${escapeHTML(item.name)}</option>`).join('')}</select></label><label class="check-line p25-silent-choice"><input id="p25-silent-mode" type="checkbox" ${archiveSettings.p25SilentMode?'checked':''} ${p25Running?'disabled':''}><span>Start with audio muted<small>Recording works with live audio muted.</small></span></label></div><nav class="p25-workspace-tabs" aria-label="P25 workspace">${tabs.map(([id,label])=>`<button id="p25-tab-${id}" data-p25-tab="${id}" aria-controls="p25-panel-${id}" aria-pressed="${state.p25WorkspaceTab===id}">${label}</button>`).join('')}</nav>${panel('operate',operating)}${panel('setup',setup)}${panel('diagnostics',diagnostics)}${panel('recordings',renderP25RecentRecordings())}</article>`;
+
+}
+
+function renderP25RecentRecordings() {
+  return `<div class="p25-recordings-head"><div><h3>Saved P25 calls</h3><p>Search saved calls across the journal by system, talkgroup, transcript or date (YYYY-MM-DD).</p></div><label>Find a recording<input id="p25-recording-search" type="search" value="${escapeHTML(state.p25RecordingSearch)}" placeholder="System, TG, date or text"></label><button id="p25-recordings-refresh" ${state.p25RecordingsBusy?'disabled':''}>Refresh recent</button></div><p id="p25-recordings-status" class="hardware-detail" role="status">${escapeHTML(p25RecordingsStatus())}</p><div id="p25-recordings-results">${renderP25RecordingCards()}</div><button id="p25-recordings-older" ${state.p25RecordingsNext&&!state.p25RecordingsBusy?'':'disabled'}>Load older calls</button><button id="p25-open-history">Open full activity history</button>`;
+}
+
+function p25RecordingsStatus() {
+  if(state.p25RecordingsError)return state.p25RecordingsError;
+  if(state.p25RecordingsBusy)return 'Loading saved calls…';
+  if(!state.p25RecordingsUpdated)return 'Open Recordings to load saved calls.';
+  return `${state.p25Recordings.length} calls shown · Updated ${new Date(state.p25RecordingsUpdated).toLocaleTimeString()}${state.p25RecordingsExpanded?' · Older history open; use Refresh recent for new calls.':' · Refreshes every 5 seconds while this view is open.'}`;
+}
+
+function renderP25RecordingCards() {
+  return `<div class="p25-recordings-list">${state.p25Recordings.map(event=>`<article><div><strong>${escapeHTML(event.label||`Talkgroup ${event.talkgroupID||'unknown'}`)}</strong><span>${escapeHTML(event.systemName||'System not recorded')} · TG ${event.talkgroupID||'unknown'}${event.p25TDMASlot!=null?` · Slot ${Number(event.p25TDMASlot)+1}`:''}</span><small>${escapeHTML(new Date(event.startedAt).toLocaleString())} · ${(event.recordedDurationSeconds??event.durationSeconds)>0?`${Number(event.recordedDurationSeconds??event.durationSeconds).toFixed(1)} s`:'Duration unknown'} · ${escapeHTML(receiverLabel(state.devices.find(device=>device.id===event.deviceID)||{name:event.deviceID||'Receiver unknown'}))}</small>${event.p25NativeCallID?'<p class="hardware-detail">Call identity carried by decoder audio packets.</p>':''}${event.recovered?'<p class="hardware-detail">Recovered interrupted recording · the last part of the audio may be missing.</p>':event.p25AudioIncomplete?'<p class="hardware-detail">Partial recording · an audio queue gap was detected.</p>':''}<p>${escapeHTML(event.transcript||({pending:'Transcription queued',running:'Transcribing',complete:'Transcription complete',no_speech:'No speech detected',failed:'Transcription failed'}[event.transcriptionState]||'Transcription not queued'))}</p>${event.transcriptionError?`<p>${escapeHTML(event.transcriptionError)}</p>`:''}${(event.transcriptionState==='failed'||(!event.transcriptionState&&!event.transcript))&&event.audioAvailable?`<button data-p25-transcription-retry="${escapeHTML(event.id)}">${event.transcriptionState==='failed'?'Retry transcription':'Queue transcription'}</button>`:''}${event.audioAvailable===false||!event.audioPath?'<p>Audio unavailable · call details preserved.</p>':''}</div><button ${event.audioAvailable===false||!event.audioPath?'disabled':''} class="play-event" data-event-id="${escapeHTML(event.id)}" aria-pressed="${recordingPlayer.dataset.eventId===event.id&&!recordingPlayer.paused}">${recordingPlayer.dataset.eventId===event.id&&!recordingPlayer.paused?'Pause':'Play recording'}</button></article>`).join('')||`<div class="empty-state compact">${state.p25RecordingsBusy?'Loading saved calls…':state.p25RecordingSearch?'No recordings match this search.':'No saved P25 calls yet. Enable saving in Setup, then wait for an unencrypted decoded call.'}</div>`}</div>`;
+}
+
+let p25RecordingsRequest=0;
+async function refreshP25Recordings(older=false) {
+  if(older&&(!state.p25RecordingsNext||state.p25RecordingsBusy))return;
+  const request=++p25RecordingsRequest, query=state.p25RecordingSearch, before=older?state.p25RecordingsNext:'';
+  state.p25RecordingsBusy=true;state.p25RecordingsError='';updateP25RecordingsView();
+  try {
+    const page=await api(`/api/p25/recordings?limit=50&q=${encodeURIComponent(query)}${before?`&before=${encodeURIComponent(before)}`:''}`);
+    if(request!==p25RecordingsRequest)return;
+    const calls=older?[...state.p25Recordings,...page.calls]:page.calls;
+    state.p25Recordings=[...new Map(calls.map(call=>[call.id,call])).values()];state.p25RecordingsError=page.queueError?`Transcription queue: ${page.queueError}`:'';state.p25RecordingsNext=state.p25Recordings.length>=500?'':page.nextBefore||'';state.p25RecordingsExpanded=older;state.p25RecordingsUpdated=Date.now();
+  }catch(error){if(request===p25RecordingsRequest)state.p25RecordingsError=`Could not load calls: ${error.message}. Use Refresh recent to retry.`;}
+  finally{if(request===p25RecordingsRequest){state.p25RecordingsBusy=false;updateP25RecordingsView();}}
+}
+
+function updateP25RecordingsView() {
+  const results=$('#p25-recordings-results');if(!results)return;
+  const focused=results.contains(document.activeElement)?document.activeElement.dataset.eventId:null;
+  results.innerHTML=renderP25RecordingCards();
+  if(focused)[...results.querySelectorAll('[data-event-id]')].find(button=>button.dataset.eventId===focused)?.focus({preventScroll:true});
+  $('#p25-recordings-status').textContent=p25RecordingsStatus();
+  $('#p25-recordings-refresh').disabled=state.p25RecordingsBusy;$('#p25-recordings-older').disabled=state.p25RecordingsBusy||!state.p25RecordingsNext;
+}
+
+function p25RoleLabel(role) {return role==='control'?'Preferred control':/^voice(?:-\d+)?$/.test(role)?'Voice / shared scheduler':role==='automatic'?'Automatic':role||'Automatic';}
+
+function renderP25ReceiverSetup(profile,status) {
+  const ids=status.state==='running'?(status.receiverDeviceIDs||[]):state.p25DeviceID==='__multi__'?state.p25ReceiverIDs:state.p25DeviceID?[state.p25DeviceID]:(status.receiverDeviceIDs?.length?status.receiverDeviceIDs:(profile?.deviceAssignments||[]).map(item=>item.deviceID));
+  const receivers=state.devices.filter(device=>ids.includes(device.id));
+  const device=receivers.find(device=>device.id===state.p25TuningDeviceID)||receivers[0];
+  if(!device)return '<p class="p25-session-note">Choose receivers to see their tuning controls.</p>';
+  const key=`${profile?.id}:${device.id}`,settings=state.p25TuningDrafts[key]||profile?.settings?.p25Receivers?.[device.id]||{},hackrf=device.kind==='HackRF',running=status.state==='running';
+  const current=status.receivers?.find(receiver=>receiver.deviceID===device.id);
+  return `<section class="p25-receiver-setup"><h3>Per-receiver tuning · OP25</h3><label>Receiver to configure<select id="p25-tuning-receiver">${receivers.map(item=>`<option value="${escapeHTML(item.id)}" ${device.id===item.id?'selected':''}>${escapeHTML(receiverLabel(item))}</option>`).join('')}</select></label><fieldset id="p25-receiver-tuning" data-device-id="${escapeHTML(device.id)}" ${running?'disabled':''}><div class="p25-tuning-grid"><label>Capture rate<select data-p25-setting="sampleRateHz">${p25RateOptions(settings.sampleRateHz||0,device.id).replace('Auto · match receiver','Use profile default')}</select></label>${hackrf?`<label>LNA gain (dB)<input data-p25-setting="lnaGainDB" type="number" min="0" max="40" step="8" placeholder="Use profile default" value="${settings.lnaGainDB??''}"></label><label>VGA gain (dB)<input data-p25-setting="vgaGainDB" type="number" min="0" max="62" step="2" placeholder="Use profile default" value="${settings.vgaGainDB??''}"></label><label>RF amplifier<select data-p25-setting="ampEnabled"><option value="">Use profile default</option><option value="off" ${settings.ampEnabled===false?'selected':''}>Off</option><option value="on" ${settings.ampEnabled===true?'selected':''}>On</option></select></label>`:`<label>${device.kind==='PlutoSDR'?'PGA':'LNA'} gain (dB)<input data-p25-setting="gainDB" type="number" min="0" max="${device.kind==='PlutoSDR'?73:49}" step="1" placeholder="Use profile default" value="${settings.gainDB??''}"></label>`}<label>Frequency correction (ppm)<input data-p25-setting="ppmCorrection" type="number" min="-200" max="200" step="1" placeholder="Saved calibration" value="${settings.ppmCorrection??''}"></label></div><div class="p25-tuning-actions"><button id="p25-tuning-save">Save receiver settings</button><button id="p25-tuning-reset">Use profile defaults</button></div></fieldset><p id="p25-tuning-note">${running?'Stop P25 to change tuning.':state.p25TuningDrafts[key]?'Unsaved receiver settings. Save before starting.':'Saved settings apply at the next start; other receivers keep their settings.'} ${hackrf?'HackRF minimum: 8 MS/s.':''}</p>${current?`<p>Current decoder configuration: ${(current.configuredRateHz/1e6).toFixed(3)} MS/s · ${escapeHTML(current.configuredGains)} · ${current.configuredPPM} ppm. Hardware readback is not available.</p>`:''}</section>`;
+}
+
+function collectP25ReceiverSettings() {
+  const settings={};for(const input of $$('#p25-receiver-tuning [data-p25-setting]')){
+    if(!input.checkValidity()){input.reportValidity();throw new Error('Check receiver tuning values');}
+    const key=input.dataset.p25Setting;if(input.value==='')continue;
+    settings[key]=key==='ampEnabled'?input.value==='on':Number(input.value);
+  }return settings;
+}
+
+async function saveP25ReceiverSettings(reset=false) {
+  if(state.p25Status?.state==='running')return toast('Stop P25 before changing receiver tuning',true);
+  const profile=state.profiles.find(item=>item.id===$('#p25-profile-choice')?.value),deviceID=$('#p25-receiver-tuning')?.dataset.deviceId;if(!profile||!deviceID)return;
+  try {
+    const settings=reset?{}:collectP25ReceiverSettings();
+    let updated=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):structuredClone(profile);
+    updated.settings||={};updated.settings.p25Receivers||={};
+    if(reset)delete updated.settings.p25Receivers[deviceID];else updated.settings.p25Receivers[deviceID]=settings;
+    updated=await api('/api/profiles',{method:'POST',body:JSON.stringify(updated)});
+    delete state.p25TuningDrafts[`${profile.id}:${deviceID}`];state.p25ProfileID=updated.id;state.selectedProfileID=updated.id;if(state.p25ArchiveDrafts[profile.id])state.p25ArchiveDrafts[updated.id]=state.p25ArchiveDrafts[profile.id];document.activeElement?.blur();await refreshAll();toast(reset?'Receiver uses profile defaults':'Receiver tuning saved');
+  }catch(error){toast(error.message,true);}
+}
+
+for(const eventName of ['play','pause','ended'])recordingPlayer.addEventListener(eventName,()=>{
+  $$('.p25-recordings-list .play-event').forEach(button=>{
+    const playing=recordingPlayer.dataset.eventId===button.dataset.eventId&&!recordingPlayer.paused;
+    button.textContent=playing?'Pause':'Play recording';
+    button.setAttribute('aria-pressed',String(playing));
+  });
+});
+
+function renderP25Diagnostics(status) {
+  const running=status.state==='running',receivers=status.receivers||[];
+  let steps=[];
+  if(status.state==='error')steps=['The decoder exited. Read the error above, check the selected receiver is connected, then start P25 again.'];
+  else if(!running)steps=['In Setup, choose the site and receivers. Save any tuning changes, then start P25.'];
+  else if(status.telemetryState!=='available')steps=['Decoder status is incomplete. This does not establish RF failure. If it persists, stop and start P25; check receiver connections on Hardware.'];
+  else if(!receivers.some(receiver=>receiver.state==='control_locked'))steps=['No recent control decode is confirmed. Check the selected site/control candidates, antenna connection and frequency correction. Stop before changing tuning.','An idle receiver is waiting for the scheduler. The preferred control receiver is a startup preference; OP25 can move that role.'];
+  else steps=['Control messages are arriving. A voice assignment still needs decoded PCM before audio reception is established. Encrypted calls are skipped.'];
+  const systemCount=new Set(receivers.map(receiver=>receiver.system).filter(Boolean)).size;
+  const capacity=running&&status.engine==='OP25'&&receivers.length&&systemCount?`<h3>Configured call capacity</h3><p>${receivers.length} decoder paths · ${systemCount} needed for control coverage · up to ${Math.max(0,receivers.length-systemCount)} remaining voice paths.</p><p>Each configured path follows one control channel or voice assignment. Wider RF capture does not add decoder paths. This is the configured budget, not measured simultaneous-call performance; signal loss and Pi load can reduce it.</p>`:'';
+  const number=value=>value==null?'Not reported':Number(value).toLocaleString();
+  return `<section class="p25-diagnostics-summary">${capacity}<h3>Reception and recovery</h3><p>Telemetry: ${escapeHTML(status.telemetryState||'Not running')} · Last check: ${status.observedAt?escapeHTML(timeAgo(status.observedAt)):'Not available'} · Last PCM: ${status.audioLastFrameAt?escapeHTML(timeAgo(status.audioLastFrameAt)):'None this session'}</p><ul>${steps.map(step=>`<li>${escapeHTML(step)}</li>`).join('')}</ul><button data-p25-tab="setup" aria-controls="p25-panel-setup">Open receiver setup</button>${(status.systems||[]).map(system=>`<article><h4>${escapeHTML(system.system)}</h4><dl><div><dt>Last system control decode</dt><dd>${system.lastControlAt?escapeHTML(timeAgo(system.lastControlAt)):'None reported this session'}</dd></div><div><dt>Control messages</dt><dd>${number(system.controlMessages)}</dd></div><div><dt>Voice frequency updates</dt><dd>${number(system.voiceUpdates)}</dd></div></dl></article>`).join('')}<p>System totals come from OP25 and can include several receivers. Voice updates are not unique calls or an audio count. Per-radio signal strength, packet-error counts and grant totals are not reported by this adapter.</p></section>`;
+}
+
+function renderP25ReceiverStatus(status) {
+  if (!status.receivers?.length) return '';
+  const labels={control_locked:'Control decoded',searching:'Searching for control',idle:'Waiting for assignment',following:'Following a call',encrypted:'Encrypted call',telemetry_unavailable:'Status unavailable',unconfirmed:'Role unconfirmed',starting:'Starting'};
+  return `<section class="p25-session-receivers" aria-label="Receiver status"><h3>Receiver status</h3><div class="p25-session-grid">${status.receivers.map(receiver=>`<article><h4>${escapeHTML(receiver.name||receiver.kind)}</h4><strong>${escapeHTML(labels[receiver.state]||receiver.state)}</strong><p>${escapeHTML(receiver.note||'')}</p><dl><div><dt>Tuned frequency</dt><dd>${receiver.frequencyHz?formatFrequency(receiver.frequencyHz):'Unknown'}</dd></div><div><dt>Configured rate</dt><dd>${Number(receiver.configuredRateHz)/1e6} MS/s</dd></div><div><dt>Configured gain</dt><dd>${escapeHTML(receiver.configuredGains||'Unknown')}</dd></div><div><dt>Current control decode</dt><dd>${receiver.lastControlAt?timeAgo(receiver.lastControlAt):'No current receiver attribution'}</dd></div><div><dt>Demodulator offset</dt><dd>${receiver.frequencyErrorHz!=null?`${Number(receiver.frequencyErrorHz).toFixed(0)} Hz`:'Not reported'}</dd></div><div><dt>Transport</dt><dd>${escapeHTML(receiver.transport||'Local device driver')}</dd></div><div><dt>Usable capture width</dt><dd>${receiver.usableBandwidthHz?`${(receiver.usableBandwidthHz/1e6).toFixed(3)} MHz`:'Not reported'}</dd></div><div><dt>System/site</dt><dd>${escapeHTML(receiver.system||'Unknown')}</dd></div><div><dt>Correction</dt><dd>${Number(receiver.configuredPPM)||0} ppm</dd></div>${receiver.talkgroupID?`<div><dt>Talkgroup</dt><dd>${Number(receiver.talkgroupID)}${receiver.tdmaSlot!=null?` · Slot ${Number(receiver.tdmaSlot)+1}`:''}</dd></div>`:''}</dl></article>`).join('')}</div><p class="hardware-detail">Rates and gains are the configuration sent to the decoder. Receiving a control channel or call requires separate decoded evidence.</p></section>`;
 }
 
 function p25RateOptions(configuredRate, deviceID=state.p25DeviceID) {
   const option = (rate, label) => `<option value="${rate}" ${configuredRate===rate?'selected':''}>${label}</option>`;
   const selected=state.devices.find(d=>d.id===deviceID);
-	if(selected?.kind==='PlutoSDR')return option(0,'Auto · match receiver')+[1000000,2000000,2400000,5000000,10000000].filter(rate=>rate<=selected.sampleRateLimit).map(rate=>option(rate,`${rate/1e6} MS/s`)).join('');
+	if(selected?.kind==='PlutoSDR')return option(0,'Auto · match receiver')+[1000000,2000000,2400000,5000000,10000000].filter(rate=>!selected.sampleRateLimit||rate<=selected.sampleRateLimit).map(rate=>option(rate,`${rate/1e6} MS/s`)).join('');
   const rtlRates = [[1024000,'1.024'],[1200000,'1.2'],[1440000,'1.44'],[1600000,'1.6'],[1800000,'1.8'],[1920000,'1.92'],[2048000,'2.048'],[2304000,'2.304'],[2400000,'2.4'],[2560000,'2.56'],[2880000,'2.88']];
-  const hackRFRates = [[5000000,'5'],[8000000,'8'],[10000000,'10'],[20000000,'20']];
-  return option(0, 'Auto · match receiver') + (selected?.kind==='HackRF'?'':`<optgroup label="RTL-SDR">${rtlRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`) + (selected?.kind==='RTL-SDR'?'':`<optgroup label="HackRF">${hackRFRates.map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`);
+  const hackRFRates = [[8000000,'8'],[10000000,'10'],[20000000,'20']];
+  return option(0, 'Auto · match receiver') + (selected?.kind==='HackRF'?'':`<optgroup label="RTL-SDR">${rtlRates.filter(([rate])=>!selected?.sampleRateLimit||rate<=selected.sampleRateLimit).map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`) + (selected?.kind==='RTL-SDR'?'':`<optgroup label="HackRF">${hackRFRates.filter(([rate])=>!selected?.sampleRateLimit||rate<=selected.sampleRateLimit).map(([rate,label])=>option(rate, `${label} MS/s`)).join('')}</optgroup>`);
 }
 
 async function startP25Workspace() {
@@ -1001,19 +1235,52 @@ async function startP25Workspace() {
     const id=$('#p25-profile-choice').value;
     let profile=state.profiles.find(item=>item.id===id);
     if(!profile)throw new Error('Select a P25 system profile');
-    if(state.p25DeviceID) {
+    if(Object.keys(state.p25TuningDrafts).some(key=>key.startsWith(profile.id+':')))throw new Error('Save or reset receiver tuning in Setup before starting');
+    const selectedDeviceIDs=state.p25DeviceID==='__multi__' ? [...state.p25ReceiverIDs] : state.p25DeviceID ? [state.p25DeviceID] : [];
+    const preferredControlID=$('#p25-control-receiver')?.value||'';
+    if(preferredControlID && selectedDeviceIDs.includes(preferredControlID)) selectedDeviceIDs.sort((a,b)=>(a===preferredControlID?-1:0)-(b===preferredControlID?-1:0));
+    const archiveCalls=$('#p25-archive-calls')?.checked!==false, transcribeCalls=!!$('#p25-transcribe-calls')?.checked, silentMode=!!$('#p25-silent-mode')?.checked;
+    if(state.p25DeviceID==='__multi__' && selectedDeviceIDs.length===0)throw new Error('Select at least one receiver for the multi-receiver plan');
+    if(selectedDeviceIDs.length || profile?.settings?.p25ArchiveCalls!==archiveCalls || profile?.settings?.transcribeVoice!==(archiveCalls&&transcribeCalls) || profile?.settings?.p25SilentMode!==silentMode) {
       profile=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(id),{method:'POST'}):structuredClone(profile);
-      profile.deviceAssignments=[{id:crypto.randomUUID(),deviceID:state.p25DeviceID,role:'control',target:null}];
+      const systems=(profile.p25Systems||[]).filter(system=>system.enabled);
+      profile.settings||={}; profile.settings.p25ArchiveCalls=archiveCalls; profile.settings.transcribeVoice=archiveCalls&&transcribeCalls; profile.settings.p25SilentMode=silentMode;
+      if(selectedDeviceIDs.length) profile.deviceAssignments=selectedDeviceIDs.map((deviceID,index)=>({id:crypto.randomUUID(),deviceID,role:index===0?'control':'voice',target:systems[index%systems.length]?.id||null}));
       profile=await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});
     }
-    await startLiveAudio();
-    await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:profile.id,deviceID:state.p25DeviceID||undefined})});
+    if(silentMode) stopLiveAudio(); else await startLiveAudio();
+    await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:profile.id})});
+    delete state.p25ArchiveDrafts[id];delete state.p25ArchiveDrafts[profile.id];
     state.selectedProfileID=state.p25ProfileID=profile.id;button.blur();await refreshAll();toast('P25 started');
   } catch(error) {toast(error.message,true);button.disabled=false;button.textContent='Start P25';}
 }
 document.addEventListener('click',async event=>{
+  const workspaceTab=event.target.closest('[data-p25-tab]');
+  if(workspaceTab){
+    state.p25WorkspaceTab=workspaceTab.dataset.p25Tab;
+    $$('.p25-workspace-panel').forEach(panel=>panel.hidden=panel.id!==`p25-panel-${state.p25WorkspaceTab}`);
+    $$('.p25-workspace-tabs [data-p25-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.p25Tab===state.p25WorkspaceTab)));
+    if(state.p25WorkspaceTab==='recordings')void refreshP25Recordings();
+    return;
+  }
+  if(event.target.closest('#p25-tuning-save'))return saveP25ReceiverSettings();
+  if(event.target.closest('#p25-tuning-reset'))return saveP25ReceiverSettings(true);
+  const retry=event.target.closest('[data-p25-transcription-retry]');
+  if(retry){retry.disabled=true;try{await api('/api/p25/transcription/retry?id='+encodeURIComponent(retry.dataset.p25TranscriptionRetry),{method:'POST'});await refreshP25Recordings();}catch(error){toast(error.message,true);retry.disabled=false;}return;}
+  if(event.target.closest('#p25-recordings-refresh'))return refreshP25Recordings();
+  if(event.target.closest('#p25-recordings-older'))return refreshP25Recordings(true);
+  if(event.target.closest('#p25-edit-system')) {
+    const profile=state.profiles.find(item=>item.id===$('#p25-profile-choice')?.value);
+    if(profile)try { openProfileEditor(profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):profile); }catch(error){toast(error.message,true);}
+    return;
+  }
+  if(event.target.closest('#p25-open-history')) {
+    state.activityTab='events';
+    $$('[data-activity-tab]').forEach(button=>button.classList.toggle('active',button.dataset.activityTab==='events'));
+    $('#activity-signals').classList.add('hidden');$('#activity-events').classList.remove('hidden');setView('activity');return;
+  }
   if(event.target.closest('#p25-audio-monitor')){
-    try { await startLiveAudio(); renderDecoders(); toast(liveAudio.context?.state==='running'?'P25 audio enabled':'Audio output is blocked',liveAudio.context?.state!=='running'); }
+    try { if(liveAudio.controller)stopLiveAudio();else await startLiveAudio(); event.target.blur();renderDecoders();toast(liveAudio.controller?'Listening in this browser':'This browser is muted'); }
     catch(error) { toast(error.message,true); }
     return;
   }
@@ -1022,10 +1289,24 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('change',event=>{
   const target=event.target;
-  if(target.id==='p25-profile-choice')state.p25ProfileID=target.value;
+  if(['p25-silent-mode','p25-archive-calls','p25-transcribe-calls'].includes(target.id)) {
+    const profileID=$('#p25-profile-choice')?.value;
+    if(profileID)state.p25ArchiveDrafts[profileID]={p25SilentMode:!!$('#p25-silent-mode')?.checked,p25ArchiveCalls:!!$('#p25-archive-calls')?.checked,transcribeVoice:!!$('#p25-transcribe-calls')?.checked};
+    return;
+  }
+  if(target.matches('[data-p25-setting]')){
+    const profileID=$('#p25-profile-choice')?.value,deviceID=$('#p25-receiver-tuning')?.dataset.deviceId;
+    try{state.p25TuningDrafts[`${profileID}:${deviceID}`]=collectP25ReceiverSettings();$('#p25-tuning-note').textContent='Unsaved receiver settings. Save before starting.';}catch(error){toast(error.message,true);}
+    return;
+  }
+  if(target.id==='p25-tuning-receiver')state.p25TuningDeviceID=target.value;
+  else if(target.id==='p25-profile-choice')state.p25ProfileID=target.value;
   else if(target.id==='p25-receiver-choice')state.p25DeviceID=target.value;
+  else if(target.id==='p25-control-receiver')state.p25ControlDeviceID=target.value;
+  else if(target.classList.contains('p25-receiver-plan-choice')){state.p25ReceiverIDs=$$('.p25-receiver-plan-choice:checked').map(item=>item.value);}
   else if(target.id==='p25-active-only')state.p25ActiveOnly=target.checked;
   else if(target.id==='p25-search')state.p25Search=target.value;
+  else if(target.id==='p25-recording-search'){state.p25RecordingSearch=target.value;target.blur();void refreshP25Recordings();return;}
   else return;
   target.blur();renderDecoders();
 });
@@ -1099,10 +1380,14 @@ function applyMasterAudio(save = true) {
   if (value) value.textContent = `${Math.round(masterAudio.volume * 100)}%`;
 }
 
+function audioMixerID(channelID){return /^p25:\d+:/.test(channelID)?channelID.split(':').slice(0,2).join(':'):channelID;}
+
 function channelGain(channelID) {
+ channelID=audioMixerID(channelID);
   let gain = liveAudio.gains.get(channelID);
   if (!gain) {
 		gain = liveAudio.context.createGain();
+    if(channelID.startsWith('p25:'))gain.gain.value=0;
 		if(liveAudio.context.createStereoPanner){const panner=liveAudio.context.createStereoPanner();gain.connect(panner);panner.connect(liveAudio.masterGain);liveAudio.panners.set(channelID,panner);}else gain.connect(liveAudio.masterGain);
     liveAudio.gains.set(channelID, gain); applyMixerGains();
   }
@@ -1138,7 +1423,7 @@ function scheduleAudioFrame(channelID, sampleRate, pcm) {
   let sources = liveAudio.sources.get(channelID);
   if (!sources) { sources = new Set(); liveAudio.sources.set(channelID, sources); }
   sources.add(source);
-  source.onended = () => { sources.delete(source); source.disconnect(); if (!sources.size && liveAudio.sources.get(channelID) === sources) liveAudio.sources.delete(channelID); };
+  source.onended = () => { sources.delete(source); source.disconnect(); if (!sources.size && liveAudio.sources.get(channelID) === sources) {liveAudio.sources.delete(channelID);if(/^p25:\d+:/.test(channelID))liveAudio.nextTimes.delete(channelID);} };
   source.start(start); liveAudio.nextTimes.set(channelID, start + buffer.duration);
 }
 
@@ -1315,8 +1600,8 @@ function renderEditorRows() {
   $('#assignments-editor').innerHTML = profile.deviceAssignments.map(item => `
     <div class="editor-row assignment" data-id="${item.id}"><select data-key="role" title="Receiver role"><option value="automatic">Automatic</option><option value="discovery">Discovery sweep</option><option value="control">Trunk control</option><option value="voice">Trunk voice</option><option value="channelBank">Wideband bank</option><option value="parked">Parked channel</option></select>
       <select data-key="deviceID" title="Pin this role to a receiver"><option value="">Any compatible receiver</option>${state.devices.filter(d=>d.available).map(d=>`<option value="${d.id}">${escapeHTML(receiverLabel(d,state.devices))}</option>`).join('')}</select>
-      <button type="button" class="remove-row" title="Remove receiver role">×</button></div>`).join('');
-  profile.deviceAssignments.forEach(item => { const row = $(`#assignments-editor [data-id="${item.id}"]`); if (row) { row.querySelector('[data-key="role"]').value = item.role; row.querySelector('[data-key="deviceID"]').value = item.deviceID || ''; } });
+      <select data-key="target" title="P25 system for this receiver"><option value="">Automatic system</option>${(profile.p25Systems||[]).map(system=>`<option value="${escapeHTML(system.id)}" ${[system.id,system.name].includes(item.target)?'selected':''}>${escapeHTML(system.name)}</option>`).join('')}${item.target&&!(profile.p25Systems||[]).some(system=>[system.id,system.name].includes(item.target))?`<option value="${escapeHTML(item.target)}" selected>${escapeHTML(item.target)}</option>`:''}</select><button type="button" class="remove-row" title="Remove receiver role">×</button></div>`).join('');
+  profile.deviceAssignments.forEach(item => { const row = $(`#assignments-editor [data-id="${item.id}"]`); if (row) { row.querySelector('[data-key="role"]').value = /^voice-\d+$/.test(item.role)?'voice':item.role; row.querySelector('[data-key="deviceID"]').value = item.deviceID || ''; } });
   $('#p25-editor').innerHTML = profile.p25Systems.length ? profile.p25Systems.map(system => `
     <div class="editor-row p25" data-id="${system.id}">
       <input data-key="name" value="${escapeHTML(system.name)}" placeholder="System name" title="P25 system name">
@@ -1348,8 +1633,9 @@ function collectEditor() {
 	  decoder: row.querySelector('[data-key="decoder"]').value.trim() || decoderForSelectedMode(row.querySelector('[data-key="mode"]').value) || null, enabled: true, priority: Number(row.querySelector('[data-key="priority"]')?.value)||0
   }));
   profile.deviceAssignments = $$('#assignments-editor .editor-row').map(row => ({
+    ...profile.deviceAssignments.find(item=>item.id===row.dataset.id),
     id: row.dataset.id, role: row.querySelector('[data-key="role"]').value,
-    deviceID: row.querySelector('[data-key="deviceID"]').value || null, target: null
+    deviceID: row.querySelector('[data-key="deviceID"]').value || null, target:row.querySelector('[data-key="target"]').value||null
   }));
   profile.p25Systems = $$('#p25-editor .editor-row').map(row => ({
     id: row.dataset.id, name: row.querySelector('[data-key="name"]').value.trim() || 'P25 system',
@@ -1583,7 +1869,9 @@ renderTunerDigits();
 $('#tuner-frequency').addEventListener('input', event => renderTunerDigits(Number(event.target.value||0)));
 $('#tuner-readout').addEventListener('click',event=>{const button=event.target.closest('[data-tuner-digit]');if(!button)return;const delta=Math.pow(10,Number(button.dataset.tunerDigit))*Number(button.dataset.direction)*1e6;setTunerListenFrequency(Number($('#tuner-frequency').value)*1e6+delta,{preserveCenter:true});});
 $('#tuner-mode').addEventListener('change', event => {
-	$('#tuner-bandwidth').value = event.target.value === 'wfm' ? '180' : event.target.value === 'am'||event.target.value==='acars' ? '10' : '12.5';
+	tunerModeAvailabilityNote='';
+	const bandwidthByMode={wfm:'180',am:'10',acars:'25',pocsag:'25','ads-b':'2000','rtl-433':'250',ais:'25'};
+	$('#tuner-bandwidth').value = bandwidthByMode[event.target.value]||'12.5';
 	$('#live-mode').value=event.target.value;$('#live-bandwidth').value=$('#tuner-bandwidth').value;
 	if(event.target.value==='wfm'){ $('#tuner-lna').value='32'; $('#tuner-vga').value='24'; $('#tuner-squelch').value='4'; $('#tuner-agc').checked=true; $('#tuner-monitor-open').checked=true; }
 	queueReceiverControls();
@@ -1606,13 +1894,20 @@ $$('#view-live .receiver-control-grid input, #view-live .receiver-control-grid s
 $$('#view-tuner .radio-controls input, #view-tuner .radio-controls select, #tuner-gain, #tuner-rate').forEach(control=>control.addEventListener(control.type==='number'?'input':'change',queueReceiverControls));
 $('#tuner-form').addEventListener('submit', async event => {
   event.preventDefault();
+	if (tunerSubmitting) return;
+	tunerSubmitting = true;
+	renderTuner();
 	const request = tunerRequest();
 	try { void startLiveAudio(); await api('/api/tuner/start',{method:'POST',body:JSON.stringify(request)});delete $('#tuner-frequency').dataset.pending;rememberTunerFrequency(request);toast(request.lockCenter&&state.status?.activeProfileID==='quick-tune'?'Software VFO moved':'Tuner started'); await refreshAll(); }
   catch(error) { stopLiveAudio(); toast(error.message,true); }
+	finally { tunerSubmitting = false; renderTuner(); }
 });
 $('#transmit-dry-run').addEventListener('change', renderTransmit);
 $('#transmit-source').addEventListener('change',renderTransmit);
-$('#expert-transmit-toggle').addEventListener('click',async()=>{if(expertTransmitMode){expertTransmitMode=false;localStorage.removeItem('gpsdr-expert-transmit-v1');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode disabled');return;}if(!await confirmAction({title:'Enable expert transmit mode?',subtitle:'One acknowledgement, remembered on this Mac.',message:'GP-SDR will remember your transmit acknowledgement on this Mac and stop asking for it before each job. RF can cause interference or damage equipment. Local-only control, device validation, health blocks, emergency stop, and the 60-second ceiling remain enforced.',confirmLabel:'Enable expert mode'}))return;expertTransmitMode=true;localStorage.setItem('gpsdr-expert-transmit-v1','true');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode enabled');});
+$('#open-desktop').addEventListener('click',async()=>{if(!await confirmAction({title:'Open the Linux desktop?',subtitle:'GP-SDR stays running in the background.',message:'Use the Return to GP-SDR icon on the desktop when you are finished.',confirmLabel:'Open desktop'}))return;try{await api('/api/system/display',{method:'POST',body:JSON.stringify({action:'desktop'})});toast('Opening desktop…');}catch(error){toast(error.message,true);}});
+$('#system-restart').addEventListener('click',async()=>{if(!await confirmAction({title:'Restart the Pi?',subtitle:'GP-SDR and the touchscreen will be briefly unavailable.',message:'Active receivers and processing will stop, then the case will restart into the touchscreen kiosk.',confirmLabel:'Restart Pi'}))return;try{await api('/api/system/power',{method:'POST',body:JSON.stringify({action:'reboot'})});toast('Restarting the Pi…');}catch(error){toast(error.message,true);}});
+$('#system-shutdown').addEventListener('click',async()=>{if(!await confirmAction({title:'Shut down the Pi?',subtitle:'Wait for the touchscreen to turn off before using the case battery switch.',message:'This stops GP-SDR cleanly and protects recordings and the data drive.',confirmLabel:'Shut down Pi'}))return;try{await api('/api/system/power',{method:'POST',body:JSON.stringify({action:'shutdown'})});toast('Shutting down safely…');}catch(error){toast(error.message,true);}});
+$('#expert-transmit-toggle').addEventListener('click',async()=>{if(expertTransmitMode){expertTransmitMode=false;localStorage.removeItem('gpsdr-expert-transmit-v1');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode disabled');return;}if(!await confirmAction({title:'Enable expert transmit mode?',subtitle:'One acknowledgement, remembered in this browser.',message:'GP-SDR will remember your transmit acknowledgement in this browser and stop asking for it before each job. RF can cause interference or damage equipment. Local-only control, device validation, health blocks, emergency stop, and the 60-second ceiling remain enforced.',confirmLabel:'Enable expert mode'}))return;expertTransmitMode=true;localStorage.setItem('gpsdr-expert-transmit-v1','true');renderExpertTransmitMode();renderTransmit();toast('Expert transmit mode enabled');});
 $('#transmit-form').addEventListener('submit', async event => {
   event.preventDefault();
   const fixtureMode=$('#transmit-source').value==='fixture',file=$('#transmit-audio').files[0];
@@ -1711,12 +2006,26 @@ function updateMapperReceiverSelection(){
   if(select)select.disabled=all;
   const radios=all?state.devices.filter(d=>d.connected&&d.available):device?[device]:[];
   const rate=$('#mapper-rate'),limit=radios.length?Math.min(...radios.map(d=>d.sampleRateLimit||20e6)):20e6;
-  for(const option of rate.options)option.disabled=Number(option.value)>limit||(Number(option.value)>0&&radios.some(d=>d.kind==='HackRF')&&Number(option.value)<2e6);
+  for(const option of rate.options)option.disabled=Number(option.value)>limit||(Number(option.value)>0&&radios.some(d=>d.kind==='HackRF')&&Number(option.value)<8e6);
   if(rate.selectedOptions[0]?.disabled)rate.value='0';
   const note=$('#mapper-receiver-note');
   note.textContent=all?`${radios.length} receivers · each range is clamped to its hardware limits`:device?`${hardwareRangeText(device)}${device.healthWarning?' · Diagnostic warning; receive enabled':''}`:'No receiver selected. Refresh after connecting a radio.';
   note.classList.toggle('warning',!!device?.healthWarning&&!all);
   $('#mapper-refresh-receivers').disabled=!!state.status?.running||mapperActiveJobs().length>0;
+	queueMapperAssignmentPreview();
+}
+function queueMapperAssignmentPreview(){
+	const root=$('#mapper-assignment-preview'),all=$('#mapper-all-receivers')?.checked;
+	if(!root)return;
+	if(!all){root.replaceChildren();root.classList.add('hidden');return;}
+	root.classList.remove('hidden');root.textContent='Calculating receiver assignments…';
+	clearTimeout(mapperPreviewTimer);mapperPreviewTimer=setTimeout(()=>void refreshMapperAssignmentPreview(),180);
+}
+async function refreshMapperAssignmentPreview(){
+	const root=$('#mapper-assignment-preview');if(!root||!$('#mapper-all-receivers')?.checked)return;
+	const request=++mapperPreviewRequest,config={mode:mapperWorkflowValue(),startHz:Number($('#mapper-start').value)*1e6,endHz:Number($('#mapper-end').value)*1e6,stepHz:Number($('#mapper-step').value)*1000};
+	if(!(config.stepHz>0&&config.endHz>=config.startHz)){root.textContent='Enter a valid range to preview assignments.';return;}
+	try{const assignments=await api('/api/mapper/jobs/preview',{method:'POST',body:JSON.stringify({config})});if(request!==mapperPreviewRequest)return;root.innerHTML=assignments.length?`<strong>Receiver assignments</strong>${assignments.map(item=>`<span>${escapeHTML(item.deviceName||item.deviceID)} · ${formatFrequency(item.startHz)}–${formatFrequency(item.endHz)}${item.targets?` · ${item.targets.toLocaleString()} targets`:''}</span>`).join('')}`:'No connected receiver can cover this range.';}catch(error){if(request===mapperPreviewRequest)root.textContent=`Assignment preview unavailable: ${error.message}`;}
 }
 $('#mapper-device').addEventListener('change',updateMapperReceiverSelection);
 $('#mapper-refresh-receivers').addEventListener('click',async()=>{const button=$('#mapper-refresh-receivers');button.disabled=true;try{state.devices=await api('/api/devices/refresh',{method:'POST'});await refreshAll();toast('Receivers refreshed');}catch(error){toast(error.message,true);}finally{updateMapperReceiverSelection();}});
@@ -1750,6 +2059,7 @@ $('#analyzer-reset-view').addEventListener('click',()=>{analyzerView={startHz:an
 $('#analyzer-graphs').addEventListener('wheel',event=>{if(!analyzerStatus.binsDBFS?.length)return;event.preventDefault();const range=analyzerVisibleRange(),span=range.endHz-range.startHz,rect=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),anchor=range.startHz+span*ratio,newSpan=Math.max((analyzerStatus.endHz-analyzerStatus.startHz)/32768,Math.min(analyzerStatus.endHz-analyzerStatus.startHz,span*(event.deltaY>0?1.35:.72)));let start=anchor-newSpan*ratio;start=Math.max(analyzerStatus.startHz,Math.min(analyzerStatus.endHz-newSpan,start));analyzerView={startHz:start,endHz:start+newSpan};renderSpectrumAnalyzer();},{passive:false});
 let analyzerDrag=null;$('#analyzer-graphs').addEventListener('pointerdown',event=>{const range=analyzerVisibleRange();analyzerDrag={x:event.clientX,startHz:range.startHz,endHz:range.endHz};event.currentTarget.setPointerCapture(event.pointerId);});$('#analyzer-graphs').addEventListener('pointermove',event=>{const range=analyzerVisibleRange(),rect=event.currentTarget.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),frequency=range.startHz+(range.endHz-range.startHz)*ratio,index=Math.round((frequency-analyzerStatus.startHz)/(analyzerStatus.endHz-analyzerStatus.startHz)*Math.max(0,(analyzerStatus.binsDBFS?.length||1)-1)),level=analyzerStatus.binsDBFS?.[index];$('#analyzer-hover').textContent=`${formatFrequency(frequency)}${Number.isFinite(level)?` · ${Number(level).toFixed(1)} dBFS`:''}`;if(analyzerDrag){const span=analyzerDrag.endHz-analyzerDrag.startHz,shift=-(event.clientX-analyzerDrag.x)/Math.max(1,rect.width)*span;let start=Math.max(analyzerStatus.startHz,Math.min(analyzerStatus.endHz-span,analyzerDrag.startHz+shift));analyzerView={startHz:start,endHz:start+span};renderSpectrumAnalyzer();}});for(const type of ['pointerup','pointercancel','pointerleave'])$('#analyzer-graphs').addEventListener(type,()=>{analyzerDrag=null;});
 $('#mapper-all-receivers').addEventListener('change',updateMapperReceiverSelection);updateMapperReceiverSelection();
+for(const id of ['mapper-start','mapper-end','mapper-step'])$('#'+id).addEventListener('input',queueMapperAssignmentPreview);
 $('#mapper-schedule-enabled').addEventListener('change',updateMapperScheduleControls);updateMapperScheduleControls();
 $('#mapper-analysis-run').addEventListener('click',async()=>{try{const concurrency=Number($('#analysis-concurrency')?.value||0);state.analysisStatus=await api('/api/analysis/start',{method:'POST',body:JSON.stringify({concurrency})});toast(state.analysisStatus.pending?`Deferred compute started · ${state.analysisStatus.concurrency||1} parallel`:'No captures are waiting');await refreshAll();}catch(error){toast(error.message,true);}});
 $('#mapper-analysis-stop').addEventListener('click',async()=>{try{state.analysisStatus=await api('/api/analysis/stop',{method:'POST',body:'{}'});toast('Deferred compute stopping');await refreshAll();}catch(error){toast(error.message,true);}});
@@ -1796,7 +2106,7 @@ $('#master-volume').addEventListener('input',event=>{masterAudio.volume=Number(e
 document.addEventListener('change', async event => {
 	if(['live-radio-device','tuner-device','band-device','mapper-device'].includes(event.target.id))updateReceiverCapabilityControls();
 	const order=event.target.closest('#p25-order');if(order){state.p25Order=order.value;localStorage.setItem('gpsdr-p25-order',order.value);renderDecoders();return;}
-	const p25Rate=event.target.closest('#p25-live-rate,#p25-amp-mode,#p25-lna-gain,#p25-vga-gain');if(p25Rate){const profile=state.profiles.find(item=>item.id===(state.p25ProfileID||state.p25Status?.profileID||state.status?.activeProfileID||$('#p25-profile-choice')?.value));if(!profile)return toast('Start or select a P25 profile first',true);try{const wasRunning=state.status?.running&&state.status.activeProfileID===profile.id;const liveDeviceID=wasRunning?(state.p25Status?.receiverDeviceIDs||[])[0]:'';const deviceID=liveDeviceID||state.p25DeviceID;let updated=profile.builtIn?await api('/api/profiles/duplicate?id='+encodeURIComponent(profile.id),{method:'POST'}):structuredClone(profile);updated.settings||={};if(p25Rate.id==='p25-live-rate')updated.settings.p25SampleRateHz=Number(p25Rate.value)||0;else if(p25Rate.id==='p25-amp-mode')updated.settings.p25AmpMode=p25Rate.value;else updated.settings[p25Rate.id==='p25-lna-gain'?'p25LNAGainDB':'p25VGAGainDB']=p25Rate.value===''?null:Number(p25Rate.value);updated=await api('/api/profiles',{method:'POST',body:JSON.stringify(updated)});if(wasRunning){await api('/api/control/stop',{method:'POST',body:'{}'});await api('/api/control/start',{method:'POST',body:JSON.stringify({profileID:updated.id,deviceID:deviceID||undefined})});}state.selectedProfileID=state.p25ProfileID=updated.id;p25Rate.blur();toast('P25 receiver settings applied');await refreshAll();}catch(error){toast(error.message,true);}return;}
+
 	const volume=event.target.closest('.mixer-volume'),pan=event.target.closest('.mixer-pan');if(!volume&&!pan)return;const slider=volume||pan,row=slider.closest('[data-mixer-id]');
 	try{await api('/api/mixer',{method:'POST',body:JSON.stringify({id:row.dataset.mixerId,...(volume?{volume:Number(slider.value)}:{pan:Number(slider.value)})})});await refreshAll();}catch(error){toast(error.message,true);}
 });
@@ -1845,38 +2155,80 @@ $('#storage-policy-form').addEventListener('submit',async event=>{event.preventD
 $('#storage-clean-now').addEventListener('click',async()=>{if(!await confirmAction({title:'Clean eligible stored data?',message:'Apply the saved limits to recordings, IQ evidence, and the raw capture diagnostic journal. Mapper results, event history, transcripts, profiles, calibration, and channel data will be kept.',confirmLabel:'Clean eligible data'}))return;try{$('#storage-clean-now').disabled=true;const storage=await api('/api/storage/cleanup',{method:'POST'});state.status.storage=storage;renderStatus();const cleanup=storage.lastCleanup||{},journal=Number(cleanup.captureIntervalsRemoved||0);toast(`Cleanup complete · ${formatBytes(cleanup.bytesFreed||0)} freed${journal?` · ${journal.toLocaleString()} journal records trimmed`:''}`);}catch(error){toast(error.message,true);$('#storage-clean-now').disabled=false;}});
 $('#app-update-button').addEventListener('click',async()=>{const native=window.webkit?.messageHandlers?.gpsdrNative,nativeUpdater=window.gpsdrNativeCapabilities?.includes('appUpdater');if(!native||!nativeUpdater){window.open('https://github.com/DragonKeeperAlex/GP-SDR/releases/latest','_blank','noopener');return;}if(state.appUpdate?.state==='available'){if(!await confirmAction({title:`Install GP-SDR ${state.appUpdate.version}?`,message:'Active receiver, Mapper, and analysis jobs will stop. The verified app will replace this copy and restart; all GP-SDR data remains in place.',confirmLabel:'Install and restart'}))return;await Promise.allSettled([api('/api/control/stop',{method:'POST',body:'{}'}),api('/api/mapper/jobs/stop-all',{method:'POST',body:'{}'}),api('/api/analysis/stop',{method:'POST',body:'{}'})]);native.postMessage({action:'installUpdate'});return;}native.postMessage({action:'checkForUpdates',currentVersion:state.status?.version||''});});
 $('#app-update-auto').checked=localStorage.getItem('gpsdr-update-auto')!=='false';$('#app-update-auto').addEventListener('change',event=>localStorage.setItem('gpsdr-update-auto',String(event.target.checked)));
-$('#local-ai-form').addEventListener('submit',async event=>{event.preventDefault();try{state.localAI=await api('/api/local-ai',{method:'PUT',body:JSON.stringify({enabled:$('#local-ai-enabled').checked,profile:$('#local-ai-profile').value,model:$('#local-ai-model').value.trim(),contextLength:Number($('#local-ai-context').value),endpoint:$('#local-ai-endpoint').value.trim(),minimumConfidence:Number($('#local-ai-confidence').value)})});renderLocalAI();toast(state.localAI.state==='ready'?'Local model analysis ready':'Local model settings saved');}catch(error){toast(error.message,true);}});
+$('#compute-mode').addEventListener('change',async event=>{const control=event.target;control.disabled=true;try{state.localAI=await api('/api/local-ai/compute',{method:'PUT',body:JSON.stringify({mode:control.value})});renderLocalAI();toast('Compute mode saved');}catch(error){control.value=state.localAI?.config?.computeMode||'local';renderLocalAI();toast(error.message,true);}finally{control.disabled=false;}});
+$('#local-ai-form').addEventListener('submit',async event=>{event.preventDefault();try{state.localAI=await api('/api/local-ai',{method:'PUT',body:JSON.stringify({...state.localAI?.config,profile:$('#local-ai-profile').value,model:$('#local-ai-model').value.trim(),contextLength:Number($('#local-ai-context').value),endpoint:$('#local-ai-endpoint').value.trim(),minimumConfidence:Number($('#local-ai-confidence').value)})});renderLocalAI();toast(state.localAI.state==='ready'?'Local model analysis ready':'Local model settings saved');}catch(error){toast(error.message,true);}});
 $('#local-ai-benchmark').addEventListener('click',async()=>{try{const models=[...$('#local-ai-benchmark-models').selectedOptions].map(option=>option.value);state.localAIBenchmark=await api('/api/local-ai/benchmark',{method:'POST',body:JSON.stringify({models})});renderLocalAI();toast('Model benchmark started');}catch(error){toast(error.message,true);}});
 $('#learning-form').addEventListener('submit',async event=>{if(event.submitter?.value!=='confirm')return;event.preventDefault();try{const frequencyHz=Number($('#learning-frequency').value),body={modulation:$('#learning-modulation').value.trim(),protocol:$('#learning-protocol').value.trim(),notes:$('#learning-notes').value.trim()};if(frequencyHz>0)await api('/api/mapper/confirm',{method:'POST',body:JSON.stringify({...body,frequencyHz})});else await api('/api/local-ai/learning',{method:'POST',body:JSON.stringify({...body,eventID:$('#learning-event-id').value,retainCaptures:$('#learning-retain').checked})});$('#learning-dialog').close();$('#learning-frequency').value='';toast('Confirmed sample added to local learning');await refreshAll();}catch(error){toast(error.message,true);}});
+$('#login-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const password = $('#login-password').value;
+  const submit = $('#login-submit');
+  submit.disabled = true;
+  $('#login-error').textContent = '';
+  try {
+    await api('/api/auth/login', {method:'POST', body:JSON.stringify({password})});
+    $('#login-password').value = '';
+    serverToken = '';
+    $('#login-dialog').close();
+    toast('Signed in');
+    await refreshAll();
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+  } finally { submit.disabled = false; }
+});
 resetMapperJob();
 refreshAll().then(()=>{if($('#app-update-auto').checked&&window.gpsdrNativeCapabilities?.includes('appUpdater'))window.webkit?.messageHandlers?.gpsdrNative?.postMessage({action:'checkForUpdates',currentVersion:state.status?.version||''});});
 setInterval(async()=>{
   if(document.hidden)return;
-	try{const mapperView=state.view==='mapper'||state.view==='analyzer'||state.view==='live',requests=[api('/api/status'),api('/api/mixer'),api('/api/p25/status')],mapperIndex=mapperView?requests.push(api('/api/mapper/jobs'))-1:-1,analysisIndex=state.view==='live'?requests.push(api('/api/analysis'))-1:-1,characterizationIndex=state.view==='hardware'&&state.characterization?.running?requests.push(api('/api/calibrations/characterization'))-1:-1,responses=await Promise.all(requests),[status,mixer,p25Status]=responses,mapperJobs=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null,characterization=characterizationIndex>=0?responses[characterizationIndex]:null;Object.assign(state,{status,mixer,p25Status});document.body.classList.remove('server-offline');if(analysisStatus)state.analysisStatus=analysisStatus;if(characterization){state.characterization=characterization;renderCharacterization();}if(mapperJobs&&state.mapper){state.mapper.jobs=mapperJobs;const active=mapperJobs.filter(job=>job.state==='running'||job.state==='stopping');if(state.view==='mapper'&&!$('#mapper-job-grid').contains(document.activeElement))$('#mapper-job-grid').innerHTML=mapperJobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';if(state.view==='mapper'){$('#mapper-state').textContent=active.length?`${active.length} active`:'Idle';$('#mapper-state').className=`chip ${active.length?'ready':''}`;$('#mapper-stop-button').disabled=!active.length;}else if(state.view==='analyzer')renderSpectrumAnalyzer();}renderStatus();if(state.view==='live'){renderLiveOverview();renderMixer();}if(state.view==='band')renderBandMonitor();if(state.view==='tuner')renderTuner();if(state.view==='decoders')renderDecoders();if(state.view==='mapper')renderMapperProgress();}catch(_){if(navigator.onLine!==false){document.body.classList.add('server-offline');$('#side-status').textContent='Reconnecting';}}
+	try{const mapperView=state.view==='mapper'||state.view==='analyzer'||state.view==='live',requests=[api('/api/status'),api('/api/mixer'),api('/api/p25/status')],mapperIndex=mapperView?requests.push(api('/api/mapper/jobs'))-1:-1,analysisIndex=state.view==='live'?requests.push(api('/api/analysis'))-1:-1,characterizationIndex=state.view==='hardware'&&state.characterization?.running?requests.push(api('/api/calibrations/characterization'))-1:-1,responses=await Promise.all(requests),[status,mixer,p25Status]=responses,mapperJobs=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null,characterization=characterizationIndex>=0?responses[characterizationIndex]:null;Object.assign(state,{status,mixer,p25Status});document.body.classList.remove('server-offline');if(analysisStatus)state.analysisStatus=analysisStatus;if(characterization){state.characterization=characterization;renderCharacterization();}if(mapperJobs&&state.mapper){state.mapper.jobs=mapperJobs;const active=mapperJobs.filter(job=>job.state==='running'||job.state==='stopping');if(state.view==='mapper'&&!$('#mapper-job-grid').contains(document.activeElement))$('#mapper-job-grid').innerHTML=mapperJobs.map(mapperJobHTML).join('')||'<div class="empty-state compact">Create one job per SDR. Each receiver can run its own range and workflow.</div>';if(state.view==='mapper'){$('#mapper-state').textContent=active.length?`${active.length} active`:'Idle';$('#mapper-state').className=`chip ${active.length?'ready':''}`;$('#mapper-stop-button').disabled=!active.length;}else if(state.view==='analyzer')renderSpectrumAnalyzer();}renderStatus();if(state.view==='live'){renderLiveOverview();renderMixer();}if(state.view==='band')renderBandMonitor();if(state.view==='tuner')renderTuner();if(state.view==='decoders')renderDecoders(true);if(state.view==='mapper')renderMapperProgress();}catch(_){if(navigator.onLine!==false){document.body.classList.add('server-offline');$('#side-status').textContent='Reconnecting';}}
 },750);
 setInterval(async()=>{
 	if(document.hidden)return;
-	try{const eventQuery=$('#event-search')?.value.trim()||'';const requests=[api(`/api/events?limit=150${eventQuery?`&q=${encodeURIComponent(eventQuery)}`:''}`),api('/api/signals?limit=400')],mapperIndex=(state.view==='mapper'||state.view==='analyzer'||state.view==='live')?requests.push(api('/api/mapper'))-1:-1,analysisIndex=(state.view==='mapper'&&state.mapperPage==='analysis')||state.view==='live'?requests.push(api('/api/analysis'))-1:-1,benchmarkIndex=state.view==='settings'&&state.localAIBenchmark?.running?requests.push(api('/api/local-ai/benchmark'))-1:-1,responses=await Promise.all(requests),events=responses[0],signals=responses[1],mapper=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null,benchmark=benchmarkIndex>=0?responses[benchmarkIndex]:null;Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;if(analysisStatus)state.analysisStatus=analysisStatus;if(benchmark)state.localAIBenchmark=benchmark;renderLatest();if(state.view==='live')renderLiveOverview();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='band')renderBandMonitor();if(state.view==='mapper'&&mapper)renderMapper();if(state.view==='analyzer'&&mapper)renderSpectrumAnalyzer();if(benchmark)renderLocalAI();}catch(_){ }
+  if(state.view==='decoders'&&state.selectedDecoderID==='p25'&&state.p25WorkspaceTab==='recordings'&&!state.p25RecordingsExpanded&&!state.p25RecordingsBusy)void refreshP25Recordings();
+	try{const eventQuery=$('#event-search')?.value.trim()||'';const requests=[api(`/api/events?limit=150${eventQuery?`&q=${encodeURIComponent(eventQuery)}`:''}`),api('/api/signals?limit=400')],mapperIndex=(state.view==='mapper'||state.view==='analyzer'||state.view==='live')?requests.push(api('/api/mapper'))-1:-1,analysisIndex=(state.view==='mapper'&&state.mapperPage==='analysis')||state.view==='live'?requests.push(api('/api/analysis'))-1:-1,benchmarkIndex=state.view==='settings'&&state.localAIBenchmark?.running?requests.push(api('/api/local-ai/benchmark'))-1:-1,homeIndex=state.view==='settings'?requests.push(api('/api/local-ai'))-1:-1,responses=await Promise.all(requests),events=responses[0],signals=responses[1],mapper=mapperIndex>=0?responses[mapperIndex]:null,analysisStatus=analysisIndex>=0?responses[analysisIndex]:null,benchmark=benchmarkIndex>=0?responses[benchmarkIndex]:null,home=homeIndex>=0?responses[homeIndex]:null;if(home)state.localAI=home;Object.assign(state,{events,signals});if(mapper)state.mapper=mapper;if(analysisStatus)state.analysisStatus=analysisStatus;if(benchmark)state.localAIBenchmark=benchmark;renderLatest();if(state.view==='live')renderLiveOverview();if(state.view==='activity'){renderSignals();renderEvents();}if(state.view==='band')renderBandMonitor();if(state.view==='mapper'&&mapper)renderMapper();if(state.view==='analyzer'&&mapper)renderSpectrumAnalyzer();if(benchmark||home)renderLocalAI();}catch(_){ }
 },5000);
 async function pollSpectrum() {
 	const mapperRunning=state.view==='mapper'&&mapperActiveJobs().length>0;
 	if(!document.hidden&&state.view==='analyzer'){try{analyzerStatus=await api('/api/spectrum-analyzer');renderSpectrumAnalyzer();}catch(_){}}
 	else if(!document.hidden && ((state.status?.running&&(state.view==='live'||state.view==='tuner'||state.view==='band'))||mapperRunning||state.view==='rfmonitor')){try{if(state.view==='rfmonitor'||state.view==='mapper'){state.spectra=await api('/api/spectra?bins='+displayPrefs.detail);if(state.view==='rfmonitor')renderRFMonitor();else renderMapperRF();}else{state.spectrum=await api('/api/spectrum?bins='+displayPrefs.detail);if(state.view==='tuner')renderTuner();if(state.view==='band')renderBandMonitor();drawSpectrum();drawWaterfall();}}catch(_){ }}
-	setTimeout(pollSpectrum,Math.max(16,1000/displayPrefs.fps));
+	// On the Pi, browser canvas work must yield to live PCM playback. Keep the
+	// user's display preference when audio is idle, but cap visual polling while
+	// the audio graph is active so graph smoothness cannot crowd out playback.
+	const audioActive=liveAudio.context?.state==='running'&&liveAudio.controller;
+	const visualFPS=audioActive&&displayPrefs.audioPriority?Math.min(displayPrefs.fps,displayPrefs.audioFPS):displayPrefs.fps;
+	const spectrumDelay=audioActive&&displayPrefs.audioPriority?Math.max(16,1000/visualFPS):Math.max(16,1000/displayPrefs.fps);
+	// Preserve the 60 Hz-capable idle path: Math.max(16,1000/displayPrefs.fps)
+	setTimeout(pollSpectrum,spectrumDelay);
 }
 pollSpectrum();
 
 function saveDisplayPrefs(){localStorage.setItem('gpsdr-display-v2',JSON.stringify(displayPrefs));$('#display-smoothing-value').textContent=displayPrefs.smoothing+'%';$$('#live-waterfall,#waterfall,#mapper-waterfall,#band-waterfall').forEach(canvas=>{canvas.dataset.lastFrame='';canvas.width=0;});if(!displayPrefs.peakHold)[$('#spectrum'),$('#tuner-spectrum'),$('#mapper-spectrum'),$('#band-spectrum')].forEach(canvas=>spectrumPeaks.delete(canvas));drawSpectrum();drawWaterfall();}
+const layoutControl=$('#display-layout');
+layoutControl.value=document.documentElement.dataset.uiLayout;
+layoutControl.addEventListener('change',()=>{
+  const layout=layoutControl.value==='touch'?'touch':'browser';
+  document.documentElement.dataset.uiLayout=layout;
+  try{localStorage.setItem('gpsdr-ui-layout',layout);}catch(_){}
+  const url=new URL(location.href);url.searchParams.set('display',layout);
+  history.replaceState({},'',`${url.pathname}${url.search}${url.hash}`);
+  requestAnimationFrame(()=>{drawSpectrum();drawWaterfall();});
+});
 for(const [id,key,number] of [['display-fps','fps',true],['display-quality','quality',true],['display-detail','detail',true],['display-smoothing','smoothing',true]]){const control=$('#'+id);control.value=displayPrefs[key];control.addEventListener('input',()=>{displayPrefs[key]=number?Number(control.value):control.value;saveDisplayPrefs();});}
+$('#display-audio-priority').checked=displayPrefs.audioPriority!==false;$('#display-audio-priority').addEventListener('change',event=>{displayPrefs.audioPriority=event.target.checked;saveDisplayPrefs();});
+$('#display-audio-fps').value=String(displayPrefs.audioFPS);$('#display-audio-fps').addEventListener('change',event=>{displayPrefs.audioFPS=Math.max(1,Math.min(12,Number(event.target.value)||4));saveDisplayPrefs();});
 $('#display-peak-hold').checked=!!displayPrefs.peakHold;$('#display-peak-hold').addEventListener('change',event=>{displayPrefs.peakHold=event.target.checked;saveDisplayPrefs();});
 $('#display-markers').checked=displayPrefs.markers!==false;$('#display-markers').addEventListener('change',event=>{displayPrefs.markers=event.target.checked;saveDisplayPrefs();});
 function frequencyAtPointer(event){const snapshot=state.spectrum;if(!snapshot?.binsDBFS?.length)return null;const rect=event.currentTarget.getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));return {fraction,frequencyHz:snapshot.startFrequencyHz+fraction*(snapshot.endFrequencyHz-snapshot.startFrequencyHz)};}
-function setVFOFromPointer(event){const point=frequencyAtPointer(event);if(!point)return;const active=state.status?.running&&state.status?.activeProfileID==='quick-tune';setTunerListenFrequency(point.frequencyHz,{apply:active,preserveCenter:active});toast(`${active?'Software VFO':'Tuner set to'} ${(point.frequencyHz/1e6).toFixed(6)} MHz${active?' · hardware center held':''}`);}
+function setVFOFromPointer(event){const point=frequencyAtPointer(event);if(!point)return;const active=state.status?.running&&state.status?.activeProfileID==='quick-tune';if(event.metaKey||event.ctrlKey){addTunerVFO(point.frequencyHz);return;}setTunerListenFrequency(point.frequencyHz,{apply:active,preserveCenter:active});toast(`${active?'Software VFO':'Tuner set to'} ${(point.frequencyHz/1e6).toFixed(6)} MHz${active?' · hardware center held':''}`);}
 $('#tuner-spectrum').addEventListener('click',setVFOFromPointer);$('#waterfall').addEventListener('click',setVFOFromPointer);
+$('#tuner-add-vfo').addEventListener('click',()=>addTunerVFO(Number($('#tuner-frequency').value)*1e6));
+$('#tuner-vfo-list').addEventListener('click',event=>{const select=event.target.closest('[data-vfo-select]'),remove=event.target.closest('[data-vfo-delete]');if(select){selectTunerVFO(select.dataset.vfoSelect);return;}if(remove){tunerVFOs=tunerVFOs.filter(item=>item.id!==remove.dataset.vfoDelete);renderTuner();toast('Virtual tuner removed');}});
 $('#tuner-spectrum').addEventListener('mousemove',event=>{const point=frequencyAtPointer(event);if(!point)return;spectrumCursors.set(event.currentTarget,point);const index=Math.min(state.spectrum.binsDBFS.length-1,Math.max(0,Math.round(point.fraction*(state.spectrum.binsDBFS.length-1)))),db=state.spectrum.binsDBFS[index];$('#tuner-cursor').textContent=`${(point.frequencyHz/1e6).toFixed(6)} MHz · ${db.toFixed(1)} dBFS`;drawSpectrumCanvas(event.currentTarget);});
 $('#tuner-spectrum').addEventListener('mouseleave',event=>{spectrumCursors.delete(event.currentTarget);$('#tuner-cursor').textContent='Hover for frequency';drawSpectrumCanvas(event.currentTarget);});
 $('#band-spectrum').addEventListener('mousemove',event=>{const point=frequencyAtPointer(event);if(!point)return;spectrumCursors.set(event.currentTarget,point);const index=Math.min(state.spectrum.binsDBFS.length-1,Math.max(0,Math.round(point.fraction*(state.spectrum.binsDBFS.length-1)))),db=state.spectrum.binsDBFS[index];$('#band-spectrum-cursor').textContent=`${(point.frequencyHz/1e6).toFixed(6)} MHz · ${db.toFixed(1)} dBFS`;drawSpectrumCanvas(event.currentTarget);});
 $('#band-spectrum').addEventListener('mouseleave',event=>{spectrumCursors.delete(event.currentTarget);$('#band-spectrum-cursor').textContent='Hover for frequency';drawSpectrumCanvas(event.currentTarget);});
+$('#band-spectrum').addEventListener('click',event=>{const point=frequencyAtPointer(event);if(!point||!bandMonitorIsRunning())return;bandWindowCenterHz=point.frequencyHz;startBandMonitor().then(()=>toast('Band window moved')).catch(error=>toast(error.message,true));});
+$('#band-spectrum').addEventListener('wheel',event=>{if(!bandMonitorIsRunning())return;event.preventDefault();const span=Number(state.spectrum?.endFrequencyHz||0)-Number(state.spectrum?.startFrequencyHz||0);if(!(span>0))return;bandWindowCenterHz=Number(state.spectrum.centerFrequencyHz)+(event.deltaY>0?span*.65:-span*.65);clearTimeout(bandApplyTimer);bandApplyTimer=setTimeout(()=>startBandMonitor().then(()=>toast('Band window moved')).catch(error=>toast(error.message,true)),180);},{passive:false});
 $('#tuner-frequency').addEventListener('keydown',event=>{if(event.key!=='ArrowUp'&&event.key!=='ArrowDown')return;event.preventDefault();const direction=event.key==='ArrowUp'?1:-1,next=Math.max(.001,Number(event.currentTarget.value)+direction*Number($('#tuner-step').value));setTunerListenFrequency(next*1e6,{preserveCenter:true});});
 $('#tuner-bookmark').addEventListener('click',async()=>{const frequencyHz=Number($('#tuner-frequency').value)*1e6,mode=$('#tuner-mode').value;if(!Number.isFinite(frequencyHz)||frequencyHz<=0)return toast('Enter a valid tuner frequency',true);const label=`${(frequencyHz/1e6).toFixed(6)} MHz ${mode.toUpperCase()}`,profile={schemaVersion:1,id:crypto.randomUUID(),name:`Saved · ${label}`,summary:'Saved from the GP-SDR tuner',ranges:[],channels:[{id:crypto.randomUUID(),name:label,frequencyHz,bandwidthHz:Number($('#tuner-bandwidth').value)*1000,mode,decoder:null,enabled:true,priority:5}],deviceAssignments:[{id:crypto.randomUUID(),deviceID:null,role:'channelBank',target:'Saved channel'}],p25Systems:[],settings:{noiseMarginDB:8,revisitSeconds:20,recordAudio:true,recordIQForUnknown:true,transcribeVoice:false,maxRecordingDays:30},builtIn:false};try{await api('/api/profiles',{method:'POST',body:JSON.stringify(profile)});toast('Channel saved to Profiles');await refreshAll();}catch(error){toast(error.message,true);}});
 $('#tuner-history').addEventListener('change',event=>{const item=tunerHistory.find(entry=>String(entry.frequencyHz)===event.target.value);if(!item)return;setTunerListenFrequency(item.frequencyHz,{apply:false});$('#tuner-mode').value=item.mode;$('#tuner-bandwidth').value=item.bandwidthHz/1e3;});
@@ -1887,5 +2239,9 @@ applyMasterAudio(false);
 saveDisplayPrefs();
 
 $('#relay-save')?.addEventListener('click',()=>saveRelay().catch(error=>toast(error.message,true)));
+$('#relay-system-audio')?.addEventListener('change',async event=>{const control=event.target;control.disabled=true;try{state.relay=await api('/api/relay/system-audio',{method:'PUT',body:JSON.stringify({enabled:control.checked})});renderRelay();toast('Relay audio mode saved');}catch(error){control.checked=!!state.relay?.systemAudio;toast(error.message,true);}finally{control.disabled=!!state.relay?.active;}});
+$('#relay-speaker-mute')?.addEventListener('change',async event=>{const control=event.target;control.disabled=true;try{state.relay=await api('/api/relay/speaker-mute',{method:'PUT',body:JSON.stringify({muted:control.checked})});renderRelay();toast(control.checked?'Box speakers muted':'Box speakers unmuted');}catch(error){control.checked=!!state.relay?.speakerMuted;toast(error.message,true);}finally{control.disabled=false;}});
+$('#relay-output-volume')?.addEventListener('input',event=>{$('#relay-output-volume-value').textContent=event.target.value+'%';});
+$('#relay-output-volume')?.addEventListener('change',async event=>{const control=event.target,previous=state.relay?.outputVolume??.2;control.disabled=true;try{state.relay=await api('/api/relay/volume',{method:'PUT',body:JSON.stringify({volume:Number(control.value)/100})});$('#relay-output-volume-value').textContent=Math.round(state.relay.outputVolume*100)+'%';toast('Relay output volume saved');}catch(error){control.value=String(Math.round(previous*100));$('#relay-output-volume-value').textContent=control.value+'%';toast(error.message,true);}finally{control.disabled=false;}});
 $('#relay-start')?.addEventListener('click',async()=>{try{state.relay=await api('/api/relay/start',{method:'POST',body:'{}'});renderRelay();toast('Relay ready');}catch(error){toast(error.message,true);}});
 $('#relay-stop')?.addEventListener('click',async()=>{try{state.relay=await api('/api/relay/stop',{method:'POST',body:'{}'});renderRelay();toast('Relay stopped');}catch(error){toast(error.message,true);}});

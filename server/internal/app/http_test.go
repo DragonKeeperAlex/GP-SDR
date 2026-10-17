@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -12,6 +14,63 @@ import (
 	"testing/fstest"
 	"time"
 )
+
+func TestPasswordSignInAuthorizesBrowserSession(t *testing.T) {
+	runtimeState, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := NewPasswordHash("field-console-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(runtimeState, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, "127.0.0.1", 8073, "token")
+	if err := server.SetPasswordAuthentication(hash, true); err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"password": "field-console-password"})
+	login := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	login.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, login)
+	if response.Code != http.StatusOK {
+		t.Fatalf("login = %d: %s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly {
+		t.Fatalf("expected a secure HttpOnly session cookie, got %#v", cookies)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	request.AddCookie(cookies[0])
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("password session status = %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestPasswordSignInRequiresHTTPS(t *testing.T) {
+	runtimeState, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := NewPasswordHash("field-console-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(runtimeState, fstest.MapFS{}, "127.0.0.1", 8073, "token")
+	if err := server.SetPasswordAuthentication(hash, false); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"field-console-password"}`))
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("HTTP password login = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
 
 func TestP25MP3RecordingPlayback(t *testing.T) {
 	root := t.TempDir()
@@ -60,6 +119,21 @@ func TestAPIToken(t *testing.T) {
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.Code)
+	}
+}
+
+func TestLoopbackKioskDoesNotNeedLANToken(t *testing.T) {
+	runtime, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(runtime, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, "127.0.0.1", 8073, "secret")
+	request := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	request.RemoteAddr = "127.0.0.1:43210"
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("loopback kiosk request = %d, want %d", response.Code, http.StatusOK)
 	}
 }
 
@@ -120,5 +194,31 @@ func TestLegacyAPITokenHeaderRemainsCompatible(t *testing.T) {
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected legacy header to remain compatible, got %d", response.Code)
+	}
+}
+
+func TestServerServesStaticUIWhileRuntimeStarts(t *testing.T) {
+	server := NewServer(nil, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ready")}}, "127.0.0.1", 8073, "")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusOK || response.Body.String() != "ready" {
+		t.Fatalf("static UI response = %d %q, want immediate UI", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("startup API response = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+
+	runtime, err := NewRuntime(t.TempDir(), "http://127.0.0.1:8073/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.SetRuntime(runtime)
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("ready API response = %d, want %d", response.Code, http.StatusOK)
 	}
 }

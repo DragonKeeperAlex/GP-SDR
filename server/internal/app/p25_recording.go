@@ -44,7 +44,7 @@ func archiveP25Recording(dataDirectory, source string, groupID uint32, startedAt
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return "", err
 	}
-	destination := filepath.Join(directory, fmt.Sprintf("%s-p25-tg%d%s", startedAt.UTC().Format("20060102T150405.000Z"), groupID, extension))
+	destination := filepath.Join(directory, fmt.Sprintf("%s-p25-tg%d%s", startedAt.UTC().Format("20060102T150405.000Z")+"-"+NewID(), groupID, extension))
 	input, err := os.Open(source)
 	if err != nil {
 		return "", err

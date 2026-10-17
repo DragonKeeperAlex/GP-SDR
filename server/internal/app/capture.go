@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// Minimum operating rate requested for HackRF RF performance.
+const minimumHackRFSampleRate = 8_000_000
+
 type SampleFormat string
 
 const (
@@ -47,6 +50,9 @@ func BuildCaptureCommand(device SDRDevice, spec CaptureSpec) (CaptureCommand, er
 	if spec.CenterFrequencyHz <= 0 || spec.SampleRateHz <= 0 {
 		return CaptureCommand{}, errors.New("center frequency and sample rate must be positive")
 	}
+	if device.Kind == "HackRF" && (spec.SampleRateHz < minimumHackRFSampleRate || spec.SampleRateHz > 20_000_000) {
+		return CaptureCommand{}, errors.New("HackRF sample rate must be between 8 and 20 MS/s")
+	}
 	if strings.HasPrefix(device.Driver, "SoapySDR:") {
 		tool, err := findTool("gpsdr-soapy")
 		if err != nil {
@@ -77,9 +83,6 @@ func BuildCaptureCommand(device SDRDevice, spec CaptureSpec) (CaptureCommand, er
 		tool, err := findTool("hackrf_transfer")
 		if err != nil {
 			return CaptureCommand{}, errors.New("hackrf_transfer is not installed")
-		}
-		if spec.SampleRateHz < 2_000_000 || spec.SampleRateHz > 20_000_000 {
-			return CaptureCommand{}, errors.New("HackRF sample rate must be between 2 and 20 Msps")
 		}
 		args := []string{"-r", "-", "-f", strconv.FormatInt(spec.CenterFrequencyHz, 10), "-s", strconv.Itoa(spec.SampleRateHz)}
 		if device.Serial != nil && *device.Serial != "" {

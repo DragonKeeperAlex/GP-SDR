@@ -40,3 +40,15 @@ does not store or print that token, and sends only local `GET` requests.
 If the panel is blank or rotated incorrectly, disable
 `gp-sdr-status-display.service`, remove the one overlay line, and reboot. This
 leaves GP-SDR, receiver configuration, PiPower5, and stored data untouched.
+
+### October 16 browser and box layout split
+
+The local web console defaults to Box touchscreen presentation; the kiosk URL
+explicitly includes `?display=touch`. Remote clients default to Browser. Settings
+→ Display → Interface layout selects the presentation for this screen only,
+retained in that browser and URL. `?display=browser` overrides a saved touch
+choice. Layout is presentation only and grants no access. Box-specific target
+sizes and navigation rules live in `touch-console.css`; companion browser rules
+live in `browser-console.css`. Neither mode depends on pointer detection. The
+Pi's software keyboard remains outside GP-SDR. Reload an already-open console
+after deployment to load the new rules.

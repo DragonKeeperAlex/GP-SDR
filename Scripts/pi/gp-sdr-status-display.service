@@ -9,9 +9,10 @@ Type=simple
 User=sdr
 Group=sdr
 SupplementaryGroups=video input
-Environment=GPSDR_TFT_FRAMEBUFFER=/dev/fb0
+Environment=GPSDR_TFT_FRAMEBUFFER=auto
 Environment=GPSDR_TFT_WIDTH=320
 Environment=GPSDR_TFT_HEIGHT=240
+Environment=GPSDR_TFT_ROTATION=180
 Environment=GPSDR_TFT_REFRESH_SECONDS=1
 Environment=GPSDR_TFT_PAGE_TIMEOUT_SECONDS=30
 Environment=GPSDR_DATA_ROOT=/mnt/gp-sdr-data

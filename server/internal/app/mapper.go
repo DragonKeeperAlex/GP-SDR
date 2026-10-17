@@ -1055,6 +1055,18 @@ func (m *MapperManager) SetIdentification(frequencyHz float64, source string, co
 
 func (m *MapperManager) SetIdentificationEvidence(frequencyHz float64, source string, confidence float64, verified bool, reason string, distanceMiles *float64) {
 	key := fmt.Sprintf("%.0f", frequencyHz)
+	source = strings.TrimSpace(source)
+	reason = strings.TrimSpace(reason)
+	// Verification is deliberately fail-closed. Band plans, local model output,
+	// saved profile guesses, and caller-provided labels are useful candidates,
+	// but cannot establish source identity. Decoder-frame confirmation is routed
+	// through SetDecodedMessages, while geographic authority must identify itself
+	// as a RadioReference match.
+	if verified && !mapperAuthoritativeReference(source, reason) {
+		verified = false
+		reason = ""
+		distanceMiles = nil
+	}
 	m.mu.Lock()
 	record, exists := m.records[key]
 	if exists {
@@ -1064,11 +1076,11 @@ func (m *MapperManager) SetIdentificationEvidence(frequencyHz float64, source st
 			m.mu.Unlock()
 			return
 		}
-		record.IdentificationSource = strings.TrimSpace(source)
+		record.IdentificationSource = source
 		record.Confidence = math.Max(record.Confidence, confidence)
 		if verified {
 			record.IdentificationVerified = true
-			record.VerificationReason = strings.TrimSpace(reason)
+			record.VerificationReason = reason
 			if distanceMiles != nil {
 				distance := *distanceMiles
 				record.ReferenceDistanceMiles = &distance
@@ -1077,6 +1089,13 @@ func (m *MapperManager) SetIdentificationEvidence(frequencyHz float64, source st
 		m.records[key] = record
 	}
 	m.mu.Unlock()
+}
+
+func mapperAuthoritativeReference(source, reason string) bool {
+	lowerSource := strings.ToLower(strings.TrimSpace(source))
+	lowerReason := strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(lowerSource, "radioreference") &&
+		(strings.Contains(lowerReason, "match") || strings.Contains(lowerReason, "reference"))
 }
 
 func (m *MapperManager) SetDecoderEvidence(frequencyHz float64, decoderID, status, evidence string, ready bool) {
@@ -1108,10 +1127,21 @@ func (m *MapperManager) SetSignalIntelligence(frequencyHz float64, analysis Sign
 		record.AnalysisEvidence = append([]string(nil), analysis.Evidence...)
 		// Local waveform classification is useful evidence, but it must not
 		// replace an explicit mode supplied by an imported or saved channel.
+		// It *does* supersede a provisional decoder nomination when that decoder
+		// has not produced a valid frame. Otherwise a user-requested DSD-FME
+		// probe can leave an NFM carrier permanently labelled "digital voice
+		// candidate" even after the complete analysis says otherwise.
 		knownMode := strings.ToUpper(strings.TrimSpace(record.Modulation))
+		provisionalDecoder := record.DetectionStatus == "candidate" &&
+			!record.IdentificationVerified &&
+			strings.Contains(strings.ToLower(record.ProtocolName), "candidate")
 		if analysis.Modulation != "" && analysis.Modulation != "UNKNOWN" &&
-			(knownMode == "" || knownMode == "AUTO" || knownMode == "UNKNOWN") {
+			(knownMode == "" || knownMode == "AUTO" || knownMode == "UNKNOWN" || provisionalDecoder) {
 			record.Modulation = analysis.Modulation
+		}
+		if provisionalDecoder && analysis.Modulation != "" && analysis.Modulation != "UNKNOWN" {
+			record.ProtocolName = ""
+			record.Name = "Unclassified " + strings.ToLower(analysis.Modulation) + " signal"
 		}
 		record.Confidence = math.Max(record.Confidence, analysis.Confidence)
 		record.Callsigns = mergeUniqueStrings(record.Callsigns, analysis.Callsigns)

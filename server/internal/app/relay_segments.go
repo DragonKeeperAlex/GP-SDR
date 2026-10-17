@@ -2,7 +2,7 @@ package app
 
 import "time"
 
-const DefaultRelaySegment = 30 * time.Second
+const DefaultRelaySegment = 20 * time.Second
 
 // RelaySegments returns bounded transmission windows. A caller should unkey
 // between every adjacent window and rekey only when the next window contains

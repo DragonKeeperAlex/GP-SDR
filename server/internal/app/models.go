@@ -10,6 +10,7 @@ import (
 var Version = "1.5.0-rc34"
 
 type SDRDevice struct {
+	Transports                []PlutoTransport   `json:"transports,omitempty"`
 	ID                        string             `json:"id"`
 	Name                      string             `json:"name"`
 	Kind                      string             `json:"kind"`
@@ -133,18 +134,23 @@ type SurveySettings struct {
 	RecordAudio        bool    `json:"recordAudio"`
 	RecordIQForUnknown bool    `json:"recordIQForUnknown"`
 	TranscribeVoice    bool    `json:"transcribeVoice"`
-	MaxRecordingDays   int     `json:"maxRecordingDays"`
-	P25SampleRateHz    int     `json:"p25SampleRateHz,omitempty"`
-	P25AmpMode         string  `json:"p25AmpMode,omitempty"`
-	P25LNAGainDB       *int    `json:"p25LNAGainDB,omitempty"`
-	P25VGAGainDB       *int    `json:"p25VGAGainDB,omitempty"`
-	SampleRateHz       int     `json:"sampleRateHz,omitempty"`
-	GainDB             float64 `json:"gainDB,omitempty"`
-	LNAGainDB          *int    `json:"lnaGainDB,omitempty"`
-	VGAGainDB          *int    `json:"vgaGainDB,omitempty"`
-	AmpEnabled         *bool   `json:"ampEnabled,omitempty"`
-	AutoGain           bool    `json:"autoGain,omitempty"`
-	DCRemoval          *bool   `json:"dcRemoval,omitempty"`
+	// P25ArchiveCalls enables local WAV capture for unencrypted P25 calls.
+	// It stays separate from general survey recording so P25 storage is opt-in.
+	P25ArchiveCalls  bool                           `json:"p25ArchiveCalls,omitempty"`
+	P25SilentMode    bool                           `json:"p25SilentMode,omitempty"`
+	MaxRecordingDays int                            `json:"maxRecordingDays"`
+	P25SampleRateHz  int                            `json:"p25SampleRateHz,omitempty"`
+	P25Receivers     map[string]P25ReceiverSettings `json:"p25Receivers,omitempty"`
+	P25AmpMode       string                         `json:"p25AmpMode,omitempty"`
+	P25LNAGainDB     *int                           `json:"p25LNAGainDB,omitempty"`
+	P25VGAGainDB     *int                           `json:"p25VGAGainDB,omitempty"`
+	SampleRateHz     int                            `json:"sampleRateHz,omitempty"`
+	GainDB           float64                        `json:"gainDB,omitempty"`
+	LNAGainDB        *int                           `json:"lnaGainDB,omitempty"`
+	VGAGainDB        *int                           `json:"vgaGainDB,omitempty"`
+	AmpEnabled       *bool                          `json:"ampEnabled,omitempty"`
+	AutoGain         bool                           `json:"autoGain,omitempty"`
+	DCRemoval        *bool                          `json:"dcRemoval,omitempty"`
 	// MonitorOpen is runtime-only. Band Monitor requests should keep the
 	// selected channel audible while it is below the scan/event threshold, but
 	// that choice must not leak into or mutate the saved scan profile.
@@ -152,14 +158,15 @@ type SurveySettings struct {
 }
 
 type BandReceiverSettings struct {
-	SampleRateHz int     `json:"sampleRateHz"`
-	GainDB       float64 `json:"gainDB"`
-	LNAGainDB    int     `json:"lnaGainDB"`
-	VGAGainDB    int     `json:"vgaGainDB"`
-	AmpEnabled   bool    `json:"ampEnabled"`
-	AutoGain     bool    `json:"autoGain"`
-	SquelchDB    float64 `json:"squelchDB"`
-	DCRemoval    bool    `json:"dcRemoval"`
+	CenterFrequencyHz float64 `json:"centerFrequencyHz,omitempty"`
+	SampleRateHz      int     `json:"sampleRateHz"`
+	GainDB            float64 `json:"gainDB"`
+	LNAGainDB         int     `json:"lnaGainDB"`
+	VGAGainDB         int     `json:"vgaGainDB"`
+	AmpEnabled        bool    `json:"ampEnabled"`
+	AutoGain          bool    `json:"autoGain"`
+	SquelchDB         float64 `json:"squelchDB"`
+	DCRemoval         bool    `json:"dcRemoval"`
 }
 
 type ScanProfile struct {
@@ -190,6 +197,10 @@ type ProfileReferenceArea struct {
 }
 
 type TransmissionEvent struct {
+	P25StreamIndex      *int                 `json:"p25StreamIndex,omitempty"`
+	P25TDMASlot         *int                 `json:"p25TDMASlot,omitempty"`
+	P25NativeCallID     string               `json:"p25NativeCallID,omitempty"`
+	P25AudioIncomplete  bool                 `json:"p25AudioIncomplete,omitempty"`
 	CaptureID           string               `json:"captureID,omitempty"`
 	CapturePolicy       string               `json:"capturePolicy,omitempty"`
 	MediaIssues         []string             `json:"mediaIssues,omitempty"`
@@ -322,6 +333,7 @@ type RuntimeStatus struct {
 	Storage              StorageStatus       `json:"storage"`
 	HealthNotices        []HealthNotice      `json:"healthNotices"`
 	PowerHat             PiPowerHatStatus    `json:"powerHat"`
+	SystemHealth         SystemHealth        `json:"systemHealth"`
 }
 
 type StorageStatus struct {

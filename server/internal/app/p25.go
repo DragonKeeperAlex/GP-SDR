@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,57 +18,72 @@ import (
 )
 
 type P25Status struct {
-	State             string     `json:"state"`
-	Engine            string     `json:"engine"`
-	Executable        *string    `json:"executable"`
-	ProfileID         *string    `json:"profileID"`
-	ConfigPath        *string    `json:"configPath"`
-	APIURL            *string    `json:"apiURL,omitempty"`
-	Note              string     `json:"note"`
-	Reception         string     `json:"reception,omitempty"`
-	ControlChannelHz  float64    `json:"controlChannelHz,omitempty"`
-	ControlSource     string     `json:"controlSource,omitempty"`
-	CaptureRateHz     int        `json:"captureRateHz,omitempty"`
-	AudioState        string     `json:"audioState,omitempty"`
-	AudioFrames       uint64     `json:"audioFrames,omitempty"`
-	AudioSampleRateHz int        `json:"audioSampleRateHz,omitempty"`
-	AudioLastFrameAt  *time.Time `json:"audioLastFrameAt,omitempty"`
-	FrontendState     string     `json:"frontendState,omitempty"`
+	TaggedTalkgroupAudio   bool       `json:"taggedTalkgroupAudio"`
+	AudioIdentity          string     `json:"audioIdentity,omitempty"`
+	NativeAudioPackets     uint64     `json:"nativeAudioPackets,omitempty"`
+	SuppressedAudioPackets uint64     `json:"suppressedAudioPackets,omitempty"`
+	State                  string     `json:"state"`
+	Engine                 string     `json:"engine"`
+	Executable             *string    `json:"executable"`
+	ProfileID              *string    `json:"profileID"`
+	ConfigPath             *string    `json:"configPath"`
+	APIURL                 *string    `json:"apiURL,omitempty"`
+	Note                   string     `json:"note"`
+	Reception              string     `json:"reception,omitempty"`
+	ControlChannelHz       float64    `json:"controlChannelHz,omitempty"`
+	ControlSource          string     `json:"controlSource,omitempty"`
+	CaptureRateHz          int        `json:"captureRateHz,omitempty"`
+	AudioState             string     `json:"audioState,omitempty"`
+	AudioFrames            uint64     `json:"audioFrames,omitempty"`
+	AudioSampleRateHz      int        `json:"audioSampleRateHz,omitempty"`
+	AudioLastFrameAt       *time.Time `json:"audioLastFrameAt,omitempty"`
+	FrontendState          string     `json:"frontendState,omitempty"`
 	// ReceiverDeviceIDs is the live P25 assignment, not merely a profile
 	// preference. The web client uses it to avoid rendering controls for a
 	// previously selected receiver after a P25 session has started elsewhere.
-	ReceiverDeviceIDs []string `json:"receiverDeviceIDs,omitempty"`
+	ReceiverDeviceIDs []string            `json:"receiverDeviceIDs,omitempty"`
+	Systems           []P25SystemStatus   `json:"systems,omitempty"`
+	Receivers         []P25ReceiverStatus `json:"receivers,omitempty"`
+	TelemetryState    string              `json:"telemetryState,omitempty"`
+	StartedAt         *time.Time          `json:"startedAt,omitempty"`
+	ObservedAt        *time.Time          `json:"observedAt,omitempty"`
 }
 
 type OP25Manager struct {
-	mu            sync.Mutex
-	restartMu     sync.Mutex
-	command       *exec.Cmd
-	done          chan struct{}
-	waitError     error
-	log           io.Closer
-	profileID     *string
-	configPath    *string
-	lastError     *string
-	engine        string
-	apiURL        *string
-	streamStop    chan struct{}
-	audioFeeds    map[uint32]struct{}
-	profile       *ScanProfile
-	plan          []ReceiverPlanItem
-	devices       []SDRDevice
-	dataRoot      string
-	muted         map[uint32]bool
-	restartTimer  *time.Timer
-	sessionStart  time.Time
-	rateFallback  bool
-	audioHub      *AudioHub
-	audioSockets  []io.Closer
-	audioFrames   uint64
-	audioSamples  uint64
-	audioLastAt   time.Time
-	captureRateHz int
-	op25Calls     map[int]P25ActiveCall
+	op25Receivers        []P25ReceiverStatus
+	mu                   sync.Mutex
+	restartMu            sync.Mutex
+	command              *exec.Cmd
+	done                 chan struct{}
+	waitError            error
+	log                  io.Closer
+	profileID            *string
+	configPath           *string
+	lastError            *string
+	engine               string
+	apiURL               *string
+	streamStop           chan struct{}
+	audioFeeds           map[uint32]struct{}
+	profile              *ScanProfile
+	plan                 []ReceiverPlanItem
+	devices              []SDRDevice
+	dataRoot             string
+	muted                map[uint32]bool
+	restartTimer         *time.Timer
+	sessionStart         time.Time
+	rateFallback         bool
+	audioHub             *AudioHub
+	taggedTalkgroupAudio bool
+	audioSession         string
+	audioSockets         []io.Closer
+	nativeAudioPackets   uint64
+	nativeAudioRejected  uint64
+	untaggedAudioPackets uint64
+	audioFrames          uint64
+	audioSamples         uint64
+	audioLastAt          time.Time
+	captureRateHz        int
+	op25Calls            map[int]P25ActiveCall
 }
 
 type op25Configuration struct {
@@ -168,6 +185,16 @@ func assignedDevices(plan []ReceiverPlanItem, devices []SDRDevice) []SDRDevice {
 			seen[device.ID] = true
 		}
 	}
+	// OP25 initially gives control coverage to the first eligible channel in
+	// each system. Honor the operator's preferred control role instead of the
+	// discovery/checkbox order; the decoder may reassign roles during recovery.
+	control := make(map[string]bool)
+	for _, assignment := range plan {
+		if assignment.DeviceID != nil && assignment.Role == "control" {
+			control[*assignment.DeviceID] = true
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return control[items[i].ID] && !control[items[j].ID] })
 	return items
 }
 
@@ -199,7 +226,7 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 	for index, device := range devices {
 		name := fmt.Sprintf("sdr%d", index)
 		rate := effectiveOP25DeviceRate(profile, device)
-		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25Gains(device),
+		configuration.Devices = append(configuration.Devices, op25Device{Arguments: op25DeviceArguments(device), Gains: op25GainsForProfile(profile, device),
 			Name: name, Rate: rate, UsablePercent: .85, Tunable: true})
 		if device.Calibration != nil {
 			configuration.Devices[len(configuration.Devices)-1].PPM = float64(device.Calibration.PPMCorrection)
@@ -222,6 +249,11 @@ func buildOP25ConfigurationWithPlan(profile ScanProfile, devices []SDRDevice, pl
 				}
 				return 0
 			}())
+		}
+		if settings, ok := profile.Settings.P25Receivers[device.ID]; ok {
+			if err := applyP25ReceiverSettings(&configuration.Devices[len(configuration.Devices)-1], device, settings); err != nil {
+				return nil, fmt.Errorf("P25 receiver %s: %w", device.Name, err)
+			}
 		}
 		system := systems[index%len(systems)]
 		for _, item := range plan {
@@ -268,11 +300,8 @@ func effectiveOP25DeviceRate(profile ScanProfile, device SDRDevice) int {
 		if isHackRFSampleRate(requested) {
 			return requested
 		}
-		// 5 MS/s leaves enough bandwidth for a P25 control/voice channel while
-		// avoiding the USB and CPU pressure that made the automatic 10 MS/s
-		// choice miss a known live control channel on the Pi. Higher rates remain
-		// available when the user explicitly selects one.
-		return 5_000_000
+		// Preserve the HackRF 8 MS/s minimum with the lowest compliant Pi load.
+		return minimumHackRFSampleRate
 	case "RTL-SDR":
 		if _, ok := rtlSDRSampleRateName(requested); ok {
 			return requested
@@ -342,6 +371,21 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		return err
 	}
 	done := make(chan struct{})
+	id := profile.ID
+	m.mu.Lock()
+	m.command, m.done, m.log = command, done, logFile
+	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
+	m.engine, m.apiURL = "OP25", nil
+	m.nativeAudioPackets, m.nativeAudioRejected, m.untaggedAudioPackets = 0, 0, 0
+	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
+	m.taggedTalkgroupAudio = os.Getenv("GPSDR_P25_TAGGED_AUDIO") == "1" && len(config.Trunking.Channels) == 1
+	m.op25Calls = nil
+	m.op25Receivers = op25ReceiverConfiguration(config, assignedDevices(plan, devices))
+	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
+	m.sessionStart = time.Now()
+	m.mu.Unlock()
+	// Register the child before waiting: an immediate startup failure must
+	// observe its own session and clear audio state, not miss registration.
 	go func() {
 		waitError := command.Wait()
 		m.mu.Lock()
@@ -351,6 +395,8 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 				message := op25ExitDiagnostic(logPath, waitError)
 				m.lastError = &message
 			}
+			m.audioSession = ""
+			m.taggedTalkgroupAudio = false
 			sockets := m.audioSockets
 			m.audioSockets = nil
 			for _, socket := range sockets {
@@ -360,16 +406,6 @@ func (m *OP25Manager) startOP25(profile ScanProfile, plan []ReceiverPlanItem, de
 		m.mu.Unlock()
 		close(done)
 	}()
-	id := profile.ID
-	m.mu.Lock()
-	m.command, m.done, m.log = command, done, logFile
-	m.profileID, m.configPath, m.lastError, m.waitError = &id, &configPath, nil, nil
-	m.engine, m.apiURL = "OP25", nil
-	m.audioFrames, m.audioSamples, m.audioLastAt, m.captureRateHz = 0, 0, time.Time{}, captureRateHz
-	m.op25Calls = nil
-	m.profile, m.plan, m.devices, m.dataRoot = &profile, append([]ReceiverPlanItem(nil), plan...), append([]SDRDevice(nil), devices...), dataDirectory
-	m.sessionStart = time.Now()
-	m.mu.Unlock()
 	started = true
 	return nil
 }
@@ -409,9 +445,12 @@ func op25ExitDiagnostic(logPath string, waitError error) string {
 func (m *OP25Manager) stopProcess() {
 	m.mu.Lock()
 	command, done, logFile := m.command, m.done, m.log
+	m.audioSession = ""
+	m.taggedTalkgroupAudio = false
 	sockets := m.audioSockets
 	m.audioSockets = nil
 	m.command, m.done, m.log, m.profileID, m.configPath = nil, nil, nil, nil, nil
+	m.op25Receivers = nil
 	m.mu.Unlock()
 	for _, socket := range sockets {
 		_ = socket.Close()
@@ -433,7 +472,19 @@ func (m *OP25Manager) stopProcess() {
 
 func (m *OP25Manager) op25Status() P25Status {
 	m.mu.Lock()
+	observedCommand := m.command
+	m.mu.Unlock()
+	var updates []map[string]json.RawMessage
+	if observedCommand != nil {
+		updates = readOP25Updates()
+	}
+	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Stop/restart can happen during the HTTP request. Never project the old
+	// child's observations onto its replacement, and never block Stop on HTTP.
+	if m.command != observedCommand {
+		updates = nil
+	}
 	if m.command != nil {
 		select {
 		case <-m.done:
@@ -460,8 +511,28 @@ func (m *OP25Manager) op25Status() P25Status {
 		status := P25Status{State: "running", Engine: "OP25", Executable: ptr(m.command.Path), ProfileID: m.profileID, ConfigPath: m.configPath, CaptureRateHz: m.captureRateHz,
 			Reception: "searching", Note: "OP25 is checking the configured P25 control channels.", ReceiverDeviceIDs: p25ReceiverDeviceIDs(m.plan, m.devices)}
 		status.AudioState, status.AudioFrames, status.AudioSampleRateHz, status.AudioLastFrameAt = audioState, m.audioFrames, 8000, audioLastAt
+		status.TaggedTalkgroupAudio = m.taggedTalkgroupAudio
+		status.NativeAudioPackets = m.nativeAudioPackets
+		status.SuppressedAudioPackets = m.nativeAudioRejected + m.untaggedAudioPackets
+		if os.Getenv("GPSDR_P25_TAGGED_AUDIO") == "1" {
+			status.AudioIdentity = "Waiting for decoder-tagged call audio"
+			if m.nativeAudioPackets > 0 {
+				status.AudioIdentity = "Decoder packet headers received; waiting for attributed clear PCM"
+			}
+			if m.nativeAudioPackets > 0 && m.audioFrames > 0 {
+				status.AudioIdentity = "Decoder-tagged call audio"
+			}
+			if m.untaggedAudioPackets > 0 {
+				status.AudioIdentity = "Decoder adapter mismatch: untagged audio rejected; install the matching native adapter"
+			}
+		} else {
+			status.AudioIdentity = "Legacy audio: call identity comes from polled metadata"
+		}
+
 		status.FrontendState = p25FrontendState(m.profile, m.plan, m.devices)
-		if frequency, ok := readOP25ControlStatus(); ok {
+		if len(m.op25Receivers) > 0 {
+			summarizeOP25Session(&status, m.op25Receivers, updates, m.sessionStart, time.Now())
+		} else if frequency, ok := op25ControlStatusFromUpdates(updates); ok {
 			status.Reception = "locked"
 			status.ControlChannelHz = frequency
 			status.ControlSource = "OP25 decoded control messages"
@@ -476,7 +547,7 @@ func (m *OP25Manager) op25Status() P25Status {
 		}
 		return P25Status{State: "ready", Engine: "OP25", Executable: &executable, Note: note}
 	}
-	return P25Status{State: "setup", Engine: "none", Note: "The bundled P25 receiver is missing from this package."}
+	return P25Status{State: "setup", Engine: "OP25", Note: "The bundled P25 receiver is missing from this package."}
 }
 
 // p25FrontendState reports the values written to the live OP25 receiver
@@ -492,7 +563,10 @@ func p25FrontendState(profile *ScanProfile, plan []ReceiverPlanItem, devices []S
 	device := assigned[0]
 	switch device.Kind {
 	case "HackRF":
-		lna, vga := 24, 24
+		// Match the conservative values written by buildOP25Configuration.
+		// Reporting a higher legacy default here misled field operators about
+		// the actual front-end state.
+		lna, vga := 8, 0
 		if profile.Settings.P25LNAGainDB != nil {
 			lna = *profile.Settings.P25LNAGainDB
 		}
@@ -525,7 +599,10 @@ func p25ReceiverDeviceIDs(plan []ReceiverPlanItem, devices []SDRDevice) []string
 // OP25 can decode control traffic without an enabled talkgroup receiving a
 // voice grant. Use its local decoded state rather than a voice-only log marker.
 func readOP25ControlStatus() (float64, bool) {
-	updates := readOP25Updates()
+	return op25ControlStatusFromUpdates(readOP25Updates())
+}
+
+func op25ControlStatusFromUpdates(updates []map[string]json.RawMessage) (float64, bool) {
 	for _, update := range updates {
 		var kind string
 		_ = json.Unmarshal(update["json_type"], &kind)
@@ -557,6 +634,9 @@ func readOP25Updates() []map[string]json.RawMessage {
 		return nil
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil
+	}
 	var updates []map[string]json.RawMessage
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&updates); err != nil {
 		return nil
@@ -616,6 +696,20 @@ func op25Gains(device SDRDevice) string {
 		return "PGA:45"
 	}
 	return "LNA:36"
+}
+
+func op25GainsForProfile(profile ScanProfile, device SDRDevice) string {
+	if device.Kind == "RTL-SDR" && profile.Settings.GainDB > 0 {
+		gain := int(math.Round(profile.Settings.GainDB))
+		if gain < 0 {
+			gain = 0
+		}
+		if gain > 49 {
+			gain = 49
+		}
+		return fmt.Sprintf("LNA:%d", gain)
+	}
+	return op25Gains(device)
 }
 
 func normalizedHex(value, fallback string) string {

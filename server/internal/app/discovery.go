@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -60,6 +61,7 @@ var discoverPhysicalDevices = func() []SDRDevice {
 		}
 		devices = append(devices, SDRDevice{ID: "plutosdr-driver", Name: "PlutoSDR / AD936x", Kind: "PlutoSDR", Driver: "SoapySDR:plutosdr", Available: available, Connected: false, SampleRateLimit: &limit, Note: ptr(note)})
 	}
+	attachPlutoTransportChoices(devices)
 	return devices
 }
 
@@ -69,6 +71,7 @@ var discoverPhysicalDevices = func() []SDRDevice {
 func applyNominalFrequencyRange(device *SDRDevice) {
 	switch device.Kind {
 	case "HackRF":
+		device.SampleRateMinimumHz = max(device.SampleRateMinimumHz, minimumHackRFSampleRate)
 		device.FrequencyMinimumHz, device.FrequencyMaximumHz = 1e6, 6e9
 		device.FrequencyRangeNote = "Nominal HackRF One tuning range"
 	case "RTL-SDR", "RTL-TCP":
@@ -264,6 +267,13 @@ func discoverSoapy() []SDRDevice {
 		fullDuplex, supportsAGC := false, false
 		minimumRateHz, maximumRateHz, maximumBandwidthHz := 0.0, 0.0, 0.0
 		if strings.Contains(strings.ToLower(driver), "pluto") {
+			// A Pluto connected over USB also exposes a USB-network interface.  A
+			// pinned network URI lets a Pi keep its RF transport on Ethernet while
+			// USB is used only for board power.  This is intentionally opt-in: a
+			// malformed preference falls back to the driver-discovered URI.
+			if preferred := preferredPlutoURI(); preferred != "" {
+				uri = preferred
+			}
 			probeArgs := "driver=" + driver
 			if uri != "" {
 				probeArgs += ",uri=" + uri
@@ -317,6 +327,14 @@ func discoverSoapy() []SDRDevice {
 		items = append(items, SDRDevice{ID: id, Name: label, Kind: kindForDriver(driver), Serial: serialPtr, Driver: "SoapySDR:" + driver, DeviceArguments: arguments, Connected: true, Available: true, SampleRateLimit: limit, FrequencyMinimumHz: minimumHz, FrequencyMaximumHz: maximumHz, FrequencyRangeNote: capabilityNote, HardwareModel: hardwareModel, FirmwareVersion: firmwareVersion, Transport: transport, ReceiveChannels: receiveChannels, TransmitChannels: transmitChannels, FullDuplex: fullDuplex, SupportsAGC: supportsAGC, SampleRateMinimumHz: minimumRateHz, DriverSampleRateMaximumHz: maximumRateHz, FilterBandwidthLimitHz: maximumBandwidthHz, HelperArchitecture: ptr(runtime.GOARCH)})
 	}
 	return items
+}
+
+func preferredPlutoURI() string {
+	uri := strings.TrimSpace(os.Getenv("GPSDR_PLUTO_URI"))
+	if strings.HasPrefix(uri, "ip:") {
+		return uri
+	}
+	return ""
 }
 
 func parseSoapyChannelCounts(output string) (int, int) {

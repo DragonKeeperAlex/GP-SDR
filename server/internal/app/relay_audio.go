@@ -16,7 +16,7 @@ type RelayAudioConfig struct {
 
 func (c RelayAudioConfig) normalized() RelayAudioConfig {
 	if c.Device == "" {
-		c.Device = "plughw:2,0"
+		c.Device = "plughw:CARD=A,DEV=0"
 	}
 	if c.SampleRate <= 0 {
 		c.SampleRate = 8000

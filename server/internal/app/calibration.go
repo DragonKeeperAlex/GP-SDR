@@ -140,8 +140,8 @@ func (r *Runtime) AutoCalibrate(request CalibrationRequest) (DeviceCalibration, 
 	if rate == 0 {
 		rate = 2_400_000
 	}
-	if device.Kind == "HackRF" && rate < 2_000_000 {
-		rate = 2_000_000
+	if device.Kind == "HackRF" && rate < minimumHackRFSampleRate {
+		rate = minimumHackRFSampleRate
 	}
 	spec := CaptureSpec{CenterFrequencyHz: int64(math.Round(request.ReferenceHz)), SampleRateHz: rate,
 		LNAGainDB: request.LNAGainDB, VGAGainDB: request.VGAGainDB}

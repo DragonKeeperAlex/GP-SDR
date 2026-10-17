@@ -33,7 +33,7 @@ func TestDeferredModelFailureRetainsIQ(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &Runtime{Events: store, localAI: ai, transcriber: NewTranscriber(root)}
-	if err := runtime.analyzeStoredEvent(event, make(chan struct{})); err == nil || !strings.Contains(err.Error(), "local model analysis") {
+	if err := runtime.analyzeStoredEvent(event, make(chan struct{})); err == nil || !strings.Contains(err.Error(), "model analysis") {
 		t.Fatalf("model failure hidden: %v", err)
 	}
 	if _, err := os.Stat(iq); err != nil {

@@ -1,0 +1,78 @@
+/* Box-only ergonomics, selected independently of pointer hardware. */
+@media all {
+  :root[data-ui-layout="touch"] button, :root[data-ui-layout="touch"] select, :root[data-ui-layout="touch"] input:not([type="range"]), :root[data-ui-layout="touch"] textarea {
+    min-height: 44px;
+  }
+
+  :root[data-ui-layout="touch"] input[type="checkbox"], :root[data-ui-layout="touch"] input[type="radio"] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+
+  :root[data-ui-layout="touch"] .nav-item { min-height: 44px; }
+  :root[data-ui-layout="touch"] .topbar { min-height: 56px; height: auto; }
+  :root[data-ui-layout="touch"] .top-actions { gap: 8px; }
+  :root[data-ui-layout="touch"] .panel-head { min-height: 48px; }
+  :root[data-ui-layout="touch"] .card-actions button, :root[data-ui-layout="touch"] .tuner-actions button { min-width: 68px; }
+  /* Keep each digit stepper visible and large enough to use deliberately.
+     Direct frequency entry below remains the fastest option for a full tune. */
+  :root[data-ui-layout="touch"] .tuner-readout .tuner-digit-control {
+    grid-template-rows: 24px 30px 24px;
+    min-width: 24px;
+    margin: 0 1px;
+  }
+  :root[data-ui-layout="touch"] .tuner-digit-control > button {
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+    opacity: 1;
+    font-size: 13px;
+    line-height: 1;
+  }
+  :root[data-ui-layout="touch"] .tuner-digit-control > b { min-width: 24px; }
+  :root[data-ui-layout="touch"] .tuner-readout .tuner-digit-decimal { min-width: 8px; }
+  :root[data-ui-layout="touch"] .tuner-digit-readout strong { min-height: 78px; font-size: 27px; }
+  :root[data-ui-layout="touch"] .tuner-readout { min-height: 108px; }
+}
+
+/* A 1024px-wide 10-inch panel has enough room for named navigation. Keeping
+   those labels visible is safer than an icon-only operator console. */
+@media (min-width: 701px) and (max-width: 1150px) {
+  :root[data-ui-layout="touch"] .shell { grid-template-columns: 148px minmax(0, 1fr); }
+  :root[data-ui-layout="touch"] .sidebar { width: 148px; }
+  :root[data-ui-layout="touch"] .brand span:last-child, :root[data-ui-layout="touch"] .nav-item span:last-child, :root[data-ui-layout="touch"] .sidebar-foot span:last-child { display: inline; }
+  :root[data-ui-layout="touch"] .brand { justify-content: flex-start; }
+  :root[data-ui-layout="touch"] .nav-item { justify-content: flex-start; }
+}
+
+/* The sidebar intentionally scrolls on short touch displays. Every workspace
+   stays reachable without shrinking targets or hiding an operational page. */
+@media (min-width: 701px) and (max-height: 850px) {
+  :root[data-ui-layout="touch"] .sidebar { overflow-y: auto; overscroll-behavior: contain; }
+  :root[data-ui-layout="touch"] .sidebar-foot { margin-top: 10px; }
+}
+
+/* Keep navigation reachable when the box uses a keyboard or trackpad. */
+@media (min-width: 701px) and (max-height: 850px) {
+  :root[data-ui-layout="touch"] .sidebar { overflow: hidden; }
+  :root[data-ui-layout="touch"] .sidebar nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-bottom: 8px;
+  }
+  :root[data-ui-layout="touch"] .sidebar-foot { flex: 0 0 auto; margin-top: 8px; }
+}
+
+
+:root[data-ui-layout="touch"] .settings-card button,
+:root[data-ui-layout="touch"] .settings-card select,
+:root[data-ui-layout="touch"] .settings-card input:not([type="checkbox"]):not([type="range"]) { min-height:48px; }
+:root[data-ui-layout="touch"] .settings-card label,
+:root[data-ui-layout="touch"] .settings-card p { font-size:13px; }
+:root[data-ui-layout="touch"] .settings-card small,
+:root[data-ui-layout="touch"] .range-sync-detail { font-size:12px; }
+:root[data-ui-layout="touch"] .settings-card .check-line { min-height:44px; }

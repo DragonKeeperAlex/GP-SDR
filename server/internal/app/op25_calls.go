@@ -9,15 +9,24 @@ import (
 // Control-channel metadata is not a voice call. Only active, unencrypted
 // channel_update entries are promoted, and stale transport state expires.
 func (m *OP25Manager) readOP25Calls() []P25ActiveCall {
+	m.mu.Lock()
+	observed := m.command
+	m.mu.Unlock()
 	updates := readOP25Updates()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.engine != "OP25" {
+	if m.engine != "OP25" || m.command == nil || m.command != observed {
 		return nil
 	}
 	m.op25Calls = mergeOP25Calls(m.op25Calls, updates, time.Now())
 	result := make([]P25ActiveCall, 0, len(m.op25Calls))
 	for _, call := range m.op25Calls {
+		for _, receiver := range m.op25Receivers {
+			if receiver.StreamIndex == call.StreamIndex && receiver.System == call.Grant.System {
+				call.DeviceSerial = receiver.DeviceID
+				break
+			}
+		}
 		result = append(result, call)
 	}
 	return result
@@ -50,19 +59,20 @@ func mergeOP25Calls(previous map[int]P25ActiveCall, updates []map[string]json.Ra
 				Encrypted int     `json:"encrypted"`
 				Emergency int     `json:"emergency"`
 				Slot      *int    `json:"tdma"`
+				Hold      uint32  `json:"hold_tgid"`
 			}
 			if json.Unmarshal(raw, &channel) != nil {
 				continue
 			}
-			if channel.Group == nil || *channel.Group == 0 || channel.Encrypted != 0 || channel.Frequency <= 0 {
+			if channel.Tag == "Idle" || channel.Tag == "Control Channel" || channel.Hold != 0 || channel.Group == nil || *channel.Group == 0 || channel.Encrypted != 0 || channel.Frequency <= 0 {
 				delete(result, index)
 				continue
 			}
-			call := P25ActiveCall{Grant: p25GrantState{System: channel.System, Protocol: "P25 Phase 1", GroupID: *channel.Group, SourceID: channel.Source, FrequencyHz: uint32(channel.Frequency), Emergency: channel.Emergency != 0}, StartedAt: now, LastHeardAt: now, Following: true}
+			call := P25ActiveCall{StreamIndex: index, TDMASlot: channel.Slot, Grant: p25GrantState{System: channel.System, Protocol: "P25 Phase 1", GroupID: *channel.Group, SourceID: channel.Source, FrequencyHz: uint32(channel.Frequency), Emergency: channel.Emergency != 0}, StartedAt: now, LastHeardAt: now, Following: true}
 			if channel.Slot != nil {
 				call.Grant.Protocol = "P25 Phase 2"
 			}
-			if old, ok := previous[index]; ok && old.Grant.GroupID == call.Grant.GroupID && old.Grant.System == call.Grant.System && old.Grant.FrequencyHz == call.Grant.FrequencyHz && now.Sub(old.LastHeardAt) < 2*time.Second {
+			if old, ok := previous[index]; ok && old.Grant.GroupID == call.Grant.GroupID && old.Grant.System == call.Grant.System && old.Grant.FrequencyHz == call.Grant.FrequencyHz && sameP25Slot(old.TDMASlot, call.TDMASlot) && (old.Grant.SourceID == 0 || call.Grant.SourceID == 0 || old.Grant.SourceID == call.Grant.SourceID) && now.Sub(old.LastHeardAt) < 2*time.Second {
 				call.StartedAt = old.StartedAt
 			}
 			call.Talkgroup = &P25TalkgroupState{ID: *channel.Group, AlphaTag: channel.Tag, Scan: true, Discovered: true}
@@ -70,4 +80,8 @@ func mergeOP25Calls(previous map[int]P25ActiveCall, updates []map[string]json.Ra
 		}
 	}
 	return result
+}
+
+func sameP25Slot(left, right *int) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }

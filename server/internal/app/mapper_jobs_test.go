@@ -108,6 +108,58 @@ func TestMapperFanoutUsesEveryConnectedReceiver(t *testing.T) {
 	}
 }
 
+func TestMapperFanoutPartitionsByReceiverCapabilityWithoutOverlap(t *testing.T) {
+	config := MapperConfig{Mode: "discovery", StartHz: 100e6, EndHz: 109e6, StepHz: 1e6}
+	devices := []SDRDevice{
+		{ID: "wide", Name: "Wide", FrequencyMinimumHz: 100e6, FrequencyMaximumHz: 109e6},
+		{ID: "lower", Name: "Lower", FrequencyMinimumHz: 100e6, FrequencyMaximumHz: 104e6},
+		{ID: "upper", Name: "Upper", FrequencyMinimumHz: 105e6, FrequencyMaximumHz: 109e6},
+	}
+	partitions := mapperJobPartitions(config, devices)
+	seen := map[float64]string{}
+	for _, partition := range partitions {
+		if partition.startHz < partition.device.FrequencyMinimumHz || partition.endHz > partition.device.FrequencyMaximumHz {
+			t.Fatalf("partition escaped receiver capability: %#v", partition)
+		}
+		for frequency := partition.startHz; frequency <= partition.endHz; frequency += config.StepHz {
+			if prior, exists := seen[frequency]; exists {
+				t.Fatalf("target %.0f assigned to both %s and %s", frequency, prior, partition.device.ID)
+			}
+			seen[frequency] = partition.device.ID
+		}
+	}
+	if len(seen) != 10 {
+		t.Fatalf("expected all ten requested targets to be assigned, got %#v", seen)
+	}
+	for _, deviceID := range []string{"wide", "lower", "upper"} {
+		found := false
+		for _, assigned := range seen {
+			if assigned == deviceID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("capable receiver %s received no partition: %#v", deviceID, partitions)
+		}
+	}
+}
+
+func TestMapperAssignmentPreviewMatchesPartitionTargets(t *testing.T) {
+	runtimeState := mapperTestRuntime(t)
+	runtimeState.mu.Lock()
+	runtimeState.devices[0].FrequencyMinimumHz, runtimeState.devices[0].FrequencyMaximumHz = 100e6, 104e6
+	runtimeState.devices[1].FrequencyMinimumHz, runtimeState.devices[1].FrequencyMaximumHz = 105e6, 109e6
+	runtimeState.mu.Unlock()
+	preview := runtimeState.MapperJobPreview(MapperConfig{Mode: "discovery", StartHz: 100e6, EndHz: 109e6, StepHz: 1e6})
+	if len(preview) != 2 || preview[0].Targets+preview[1].Targets != 10 {
+		t.Fatalf("unexpected Mapper preview: %#v", preview)
+	}
+	if preview[0].EndHz > 104e6 || preview[1].StartHz < 105e6 {
+		t.Fatalf("preview escaped receiver ranges: %#v", preview)
+	}
+}
+
 func TestMapperRejectsTwoJobsOnSameReceiver(t *testing.T) {
 	runtimeState := mapperTestRuntime(t)
 	jobA := saveMapperTestJob(t, runtimeState, "First", "simulator-0", "discovery", 150e6, 150.1e6)

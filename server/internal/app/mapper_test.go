@@ -160,6 +160,20 @@ func TestMapperIdentificationPrefersRadioReferenceProfileEvidence(t *testing.T) 
 	}
 }
 
+func TestMapperRejectsUntrustedVerifiedSourceClaims(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	manager.Observe(155_250_000, true, -31, -76, "NFM", "Analog FM", "County dispatch", "")
+	manager.SetIdentificationEvidence(155_250_000, "AI band guess", .99, true, "model says this is the source", nil)
+	status := manager.Status()
+	if status.VerifiedRecords != 0 || status.Records[0].IdentificationVerified {
+		t.Fatalf("untrusted source claim became verified: %#v", status.Records[0])
+	}
+	manager.SetIdentificationEvidence(155_250_000, "RadioReference import · Local", .98, true, "nearby authoritative match", nil)
+	if manager.Status().VerifiedRecords != 1 {
+		t.Fatal("authoritative RadioReference match was not accepted")
+	}
+}
+
 func TestMapperVerifiedStatusRequiresAuthoritativeEvidence(t *testing.T) {
 	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
 	manager.Observe(155_250_000, true, -31, -76, "NFM", "Analog FM", "County dispatch", "")
@@ -227,6 +241,17 @@ func TestMapperCandidateEvidenceCannotDowngradeDecoderFrame(t *testing.T) {
 	record := manager.Status().Records[0]
 	if !mapperRecordFullyIdentified(record) || record.DetectionStatus != "confirmed" || record.ProtocolName != "LaCrosse-TX141Bv3" {
 		t.Fatalf("candidate evidence downgraded a valid decoder frame: %+v", record)
+	}
+}
+
+func TestMapperWaveformEvidenceSupersedesUnconfirmedDecoderCandidate(t *testing.T) {
+	manager := &MapperManager{records: make(map[string]MapperFrequencyRecord), lastSeen: make(map[string]time.Time)}
+	manager.Observe(462_538_867, true, -45, -73, "DIGITAL", "Digital voice candidate", "Digital voice activity", "")
+	manager.SetDecoderEvidence(462_538_867, "dsd-fme", "candidate", "DSD-FME completed with no valid frames", true)
+	manager.SetSignalIntelligence(462_538_867, SignalIntelligence{Modulation: "NFM", SignalFamily: "Analog frequency", Confidence: .59})
+	record := manager.Status().Records[0]
+	if record.Modulation != "NFM" || record.ProtocolName != "" || record.Name != "Unclassified nfm signal" {
+		t.Fatalf("unconfirmed decoder candidate obscured waveform result: %+v", record)
 	}
 }
 

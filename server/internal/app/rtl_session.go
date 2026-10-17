@@ -162,7 +162,14 @@ func (r *persistentRTLReader) Read(data []byte) (int, error) {
 	return count, err
 }
 
-func (r *persistentRTLReader) Close() error { return nil }
+// Close ends this capture window's rtl_tcp client connection. The helper stays
+// alive and retains the USB device, but rtl_tcp's output must not be left
+// unread between windows: once its socket buffer fills, a later retune would
+// reuse a stalled stream and time out.
+func (r *persistentRTLReader) Close() error {
+	r.session.markConnectionBroken(r.conn)
+	return nil
+}
 
 func (s *localRTLSession) markConnectionBroken(conn net.Conn) {
 	s.stateMu.Lock()

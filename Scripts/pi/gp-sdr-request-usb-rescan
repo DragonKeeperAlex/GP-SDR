@@ -1,0 +1,4 @@
+#!/bin/sh
+# Request an immediate safe GP-SDR receiver recovery scan after a desktop SDR exits.
+set -eu
+exec /usr/bin/systemctl start --no-block gp-sdr-usb-recovery.service

@@ -1,0 +1,11 @@
+/* Companion-browser rules. The box uses touch-console.css instead. */
+@media (min-width: 701px) {
+  :root[data-ui-layout="browser"] .sidebar { overflow:hidden; }
+  :root[data-ui-layout="browser"] .sidebar nav {
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+  :root[data-ui-layout="browser"] .sidebar-foot { flex:0 0 auto; margin-top:8px; }
+}

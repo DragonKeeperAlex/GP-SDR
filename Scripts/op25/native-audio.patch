@@ -1,0 +1,226 @@
+--- a/op25/gr-op25_repeater/lib/op25_audio.cc
++++ b/op25/gr-op25_repeater/lib/op25_audio.cc
+@@ -24,6 +24,7 @@
+ #endif
+ 
+ #include <unistd.h>
++#include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+ #include <errno.h>
+@@ -98,6 +99,7 @@
+     d_ws_enabled(false),
+     d_ws_port(port)
+ {
++    d_gpsdr_tagged = getenv("GPSDR_P25_TAGGED_AUDIO") && !strcmp(getenv("GPSDR_P25_TAGGED_AUDIO"), "1");
+     d_ws_connections.clear();
+     char ip[20];
+     if (hostname_to_ip(udp_host, ip) == 0)
+@@ -135,6 +137,7 @@
+     static const std::string P_FILE = "file";
+     static const std::string P_WS   = "ws";
+     d_ws_host.clear();
++    d_gpsdr_tagged = getenv("GPSDR_P25_TAGGED_AUDIO") && !strcmp(getenv("GPSDR_P25_TAGGED_AUDIO"), "1");
+     d_ws_connections.clear();
+ 
+     std::string dest_str(destination);
+@@ -289,6 +292,10 @@
+ ssize_t op25_audio::send_audio(const void *buf, size_t len)
+ {
+     ws_send_audio(buf, len);
++    if (d_gpsdr_tagged && d_udp_enabled) {
++        const auto& p=d_gpsdr_tag.packet(0,buf,len);
++        return do_send(p.data(),p.size(),d_audio_port,false);
++    }
+     return do_send(buf, len, d_audio_port, false);
+ }
+ 
+@@ -305,6 +312,12 @@
+     // 16 bit little endian encoding
+     audio_flag[0] = (udp_flag & 0x00ff);
+     audio_flag[1] = ((udp_flag & 0xff00) >> 8);
++    if (d_gpsdr_tagged && d_udp_enabled) {
++        const auto& p=d_gpsdr_tag.packet(udp_flag==DROP?2:1,nullptr,0);
++        ssize_t rc=do_send(p.data(),p.size(),d_audio_port+slot_id*2,true);
++        d_gpsdr_tag.end();
++        return rc;
++    }
+     return do_send(audio_flag, 2, d_audio_port + slot_id*2, true);
+ }
+ 
+--- a/op25/gr-op25_repeater/lib/p25p2_tdma.cc
++++ b/op25/gr-op25_repeater/lib/p25p2_tdma.cc
+@@ -132,6 +132,7 @@
+ void p25p2_tdma::set_slotid(int slotid)
+ {
+     assert (slotid == 0 || slotid == 1);
++    if(d_slotid!=slotid) {gpsdr_group=0;gpsdr_source=0;gpsdr_crypto_known=false;gpsdr_encrypted_hint=false;}
+     d_slotid = slotid;
+ }
+ 
+@@ -251,6 +252,9 @@
+     for (int i = 0; i < 9; i++) {
+         ess_mi[i] = byte_buf[i+1];
+     }
++    op25audio.set_gpsdr_context(0,0,0,-1,0,false);
++    gpsdr_group=grpaddr;gpsdr_source=srcaddr;gpsdr_crypto_known=true;
++    gpsdr_encrypted_hint=byte_buf[10]!=0x80;
+     ess_algid = byte_buf[10];
+     ess_keyid = (byte_buf[11] << 8) + byte_buf[12];
+     if (d_debug >= 10) {
+@@ -296,6 +300,7 @@
+ 
+     decode_mac_msg(byte_buf, len);
+     op25audio.send_audio_flag(op25_audio::DRAIN);
++    gpsdr_group=0;gpsdr_source=0;gpsdr_crypto_known=false;
+ 
+     if (d_debug >= 10)
+         fprintf(stderr, ", rs_errs=%d\n", rs_errs);
+@@ -319,6 +324,7 @@
+ 
+     decode_mac_msg(byte_buf, len);
+     op25audio.send_audio_flag(op25_audio::DRAIN);
++    gpsdr_group=0;gpsdr_source=0;gpsdr_crypto_known=false;
+ 
+     if (d_debug >= 10)
+         fprintf(stderr, ", rs_errs=%d\n", rs_errs);
+@@ -660,6 +666,7 @@
+         write_buf[write_bufp++] = snd >> 8;
+     }
+     if (d_do_audio_output && (write_bufp >= 0)) { 
++        op25audio.set_gpsdr_context(gpsdr_group,gpsdr_source,d_nac,d_slotid,gpsdr_encrypted_hint?0xff:ess_algid,gpsdr_crypto_known);
+         op25audio.send_audio(write_buf, write_bufp);
+         write_bufp = 0;
+     }
+@@ -800,6 +807,7 @@
+         if ((ec >= 0) && (ec <= 14)) { // upper limit 14 corrections
+                                        // if FEC decode is good, save next set of received ess info 
+             next_algid = (ESS_B[0] << 2) + (ESS_B[1] >> 4);
++            gpsdr_encrypted_hint=(next_algid!=0x80);
+             next_keyid = ((ESS_B[1] & 15) << 12) + (ESS_B[2] << 6) + ESS_B[3]; 
+ 
+             j = 0;
+--- a/op25/gr-op25_repeater/lib/p25p1_fdma.h
++++ b/op25/gr-op25_repeater/lib/p25p1_fdma.h
+@@ -64,7 +64,7 @@
+                 void process_frame();
+                 void check_timeout();
+                 inline bool encrypted() { return (ess_algid != 0x80); }
+-                inline void reset_ess() { ess_algid = 0x80; memset(ess_mi, 0, sizeof(ess_mi)); }
++                inline void reset_ess() { vf_tgid=0; gpsdr_source=0; gpsdr_crypto_known=false; gpsdr_encrypted_hint=false; ess_algid = 0x80; memset(ess_mi, 0, sizeof(ess_mi)); }
+                 void send_msg(const std::string msg_str, long msg_type);
+ 
+                 // internal instance variables and state
+@@ -96,6 +96,9 @@
+                 uint8_t ess_algid;
+                 uint8_t  ess_mi[9] = {0};
+                 uint16_t vf_tgid;
++                uint32_t gpsdr_source=0;
++                bool gpsdr_crypto_known=false;
++                bool gpsdr_encrypted_hint=false;
+ 
+                 // FEC counters surfaced via fec_stats control() command.
+                 uint64_t d_stat_tsbk_attempted = 0;
+--- a/op25/gr-op25_repeater/lib/op25_audio.h
++++ b/op25/gr-op25_repeater/lib/op25_audio.h
+@@ -35,6 +35,7 @@
+ #include <websocketpp/server.hpp>
+ 
+ #include "log_ts.h"
++#include "gpsdr_audio_tag.h"
+ 
+ class op25_audio
+ {
+@@ -46,6 +47,8 @@
+     };
+ 
+ private:
++    gpsdr_audio_tag d_gpsdr_tag;
++    bool d_gpsdr_tagged = false;
+     bool        d_udp_enabled;
+     int         d_debug;
+     int         d_msgq_id;
+@@ -89,6 +92,7 @@
+ 
+     ssize_t     send_to(const void *buf, size_t len);
+ 
++    void set_gpsdr_context(uint32_t g,uint32_t s,uint16_t n,int8_t sl,uint8_t alg,bool known) { d_gpsdr_tag.context(g,s,n,sl,alg,known); }
+     ssize_t     send_audio(const void *buf, size_t len);
+     ssize_t     send_audio_flag(const udpFlagEnumType udp_flag);
+ 
+--- a/op25/gr-op25_repeater/lib/p25p2_tdma.h
++++ b/op25/gr-op25_repeater/lib/p25p2_tdma.h
+@@ -93,6 +93,10 @@
+         std::vector<uint8_t> ESS_A; // ESS_A and ESS_B are hexbits vectors
+         std::vector<uint8_t> ESS_B;
+ 
++        uint16_t gpsdr_group=0;
++        uint32_t gpsdr_source=0;
++        bool gpsdr_crypto_known=false;
++        bool gpsdr_encrypted_hint=false;
+         uint16_t ess_keyid;
+         uint8_t ess_algid;
+         uint8_t ess_mi[9] = {0};
+@@ -116,7 +120,7 @@
+         void convert_abbrev_msg(const uint8_t byte_buf[], const uint16_t nac, const uint8_t mfid = 0x00);
+         void handle_4V2V_ess(const uint8_t dibits[]);
+         inline bool encrypted() { return (ess_algid != 0x80); }
+-        inline void reset_ess() { ess_algid = 0x80; memset(ess_mi, 0, sizeof(ess_mi)); }
++        inline void reset_ess() { gpsdr_group=0; gpsdr_source=0; gpsdr_crypto_known=false; gpsdr_encrypted_hint=false; ess_algid = 0x80; memset(ess_mi, 0, sizeof(ess_mi)); }
+ 
+         void send_msg(const std::string msg_str, long msg_type);
+ };
+--- a/op25/gr-op25_repeater/lib/p25p1_fdma.cc
++++ b/op25/gr-op25_repeater/lib/p25p1_fdma.cc
+@@ -273,6 +273,10 @@
+                 MFID      =  (HB[j  ]         <<  2) + (HB[j+1] >> 4);						// 8 bit MfrId
+                 ess_algid = ((HB[j+1] & 0x0f) <<  4) + (HB[j+2] >> 2);						// 8 bit AlgId
+                 ess_keyid = ((HB[j+2] & 0x03) << 14) + (HB[j+3] << 8) + (HB[j+4] << 2) + (HB[j+5] >> 4);	// 16 bit KeyId
++                op25audio.set_gpsdr_context(0,0,0,-1,0,false);
++                gpsdr_crypto_known=true;
++                gpsdr_encrypted_hint=(ess_algid!=0x80);
++                gpsdr_source=0;
+                 vf_tgid   = ((HB[j+5] & 0x0f) << 12) + (HB[j+6] << 6) +  HB[j+7];				// 16 bit TGID
+ 
+                 if (d_debug >= 10) {
+@@ -362,6 +366,7 @@
+                 ess_algid = next_algid;
+             }
+ 
++            if(next_ess_valid) {gpsdr_crypto_known=true;gpsdr_encrypted_hint=(next_algid!=0x80);}
+             process_voice(A, FT_LDU2);
+ 
+             // replace existing ess with newly received data now that voice processing is complete
+@@ -453,6 +458,16 @@
+             int sf =  ((lcw[0] & 0x40) >> 6);
+             int lco =   lcw[0] & 0x3f;
+             std::string s = "";
++            // Standard, unprotected Group Voice Channel User link control.
++            // Do not reinterpret vendor-specific/protected LC as an identity.
++            if (!pb && !sf && lco==0 && lcw[1]==0) {
++                vf_tgid=(uint16_t(lcw[4])<<8)|lcw[5];
++                gpsdr_source=(uint32_t(lcw[6])<<16)|(uint32_t(lcw[7])<<8)|lcw[8];
++                // The service-option encryption bit is authoritative even
++                // before the next ESS; never tag this block as clear audio.
++                gpsdr_encrypted_hint=(lcw[2]&0x40)!=0;
++                if(gpsdr_encrypted_hint) gpsdr_crypto_known=true;
++            }
+ 
+             if (d_debug >= 10) {
+                 fprintf(stderr, "LCW: ec=%d, pb=%d, sf=%d, lco=%d : %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+@@ -569,6 +584,7 @@
+         }
+ 
+         void p25p1_fdma::process_voice(const bit_vector& A, const frame_type fr_type) {
++            op25audio.set_gpsdr_context(vf_tgid,gpsdr_source,framer->nac,-1,gpsdr_encrypted_hint?0xff:ess_algid,gpsdr_crypto_known);
+             if (d_do_imbe || d_do_audio_output) {
+                 if (encrypted()) {
+                     crypt_algs.prepare(ess_algid, ess_keyid, PT_P25_PHASE1, ess_mi);
+@@ -785,6 +801,7 @@
+                         op25audio.send_audio_flag(op25_audio::DRAIN);
+                     }
+ 
++                    vf_tgid=0;gpsdr_source=0;gpsdr_crypto_known=false;gpsdr_encrypted_hint=false;
+                     qtimer.reset();
+                     d_stat_timeouts++;
+                     gr::message::sptr msg = gr::message::make(get_msg_type(PROTOCOL_P25, M_P25_TIMEOUT), (d_msgq_id << 1), logts.get_ts());

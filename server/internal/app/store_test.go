@@ -224,3 +224,21 @@ func TestDeferredAnalysisQueueAndStatusUpdates(t *testing.T) {
 		t.Fatalf("analysis completion was not recorded: %#v", updated)
 	}
 }
+
+func TestWaveformAnalysisReplacesUnconfirmedDecoderCandidate(t *testing.T) {
+	store, err := NewEventStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := TransmissionEvent{ID: "candidate", StartedAt: time.Now(), FrequencyHz: 462_538_867, Modulation: "DIGITAL", ProtocolName: ptr("Digital voice candidate"), Label: ptr("Digital voice activity")}
+	if err := store.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateAnalysis(event.ID, SignalIntelligence{Modulation: "NFM", SignalFamily: "Analog frequency", Confidence: .59}); err != nil {
+		t.Fatal(err)
+	}
+	updated, ok := store.Get(event.ID)
+	if !ok || updated.Modulation != "NFM" || updated.ProtocolName != nil || stringValue(updated.Label) != "Unclassified nfm signal" {
+		t.Fatalf("candidate was not reconciled with waveform analysis: %#v", updated)
+	}
+}

@@ -68,6 +68,12 @@ func normalizeFPVRequest(request FPVReceiverRequest, device SDRDevice) (FPVRecei
 	if request.SampleRateHz <= 0 {
 		request.SampleRateHz = 16_000_000
 	}
+	if device.Kind == "HackRF" {
+		request.SampleRateHz = max(request.SampleRateHz, minimumHackRFSampleRate)
+		if maximumCaptureRate(device) < minimumHackRFSampleRate {
+			return request, errors.New("HackRF requires at least 8 MS/s")
+		}
+	}
 	request.SampleRateHz = min(request.SampleRateHz, maximumCaptureRate(device))
 	if request.SampleRateHz <= 0 {
 		return request, errors.New("receiver does not report a usable sample rate")
