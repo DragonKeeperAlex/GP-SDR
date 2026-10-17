@@ -760,3 +760,7 @@ label { color: var(--muted); font-size: 11px; }label input, label select { displ
 .p25-overview .p25-session-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); }
 .p25-overview .p25-session-grid dl { font-size:13px; }
 .p25-overview .p25-session-receivers h3 { font-size:16px; }
+
+.compute-mode-control { display:flex; flex-direction:column; gap:8px; max-width:520px; margin:12px 0; color:var(--muted); }
+.compute-mode-control select { width:100%; min-width:0; min-height:44px; }
+#compute-status { overflow-wrap:anywhere; line-height:1.5; }

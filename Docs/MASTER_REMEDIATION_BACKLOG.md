@@ -815,3 +815,36 @@ No gameplay, input injection, logoff/reboot or subjective latency test performed
 Future clients must use the guarded port; direct Ollama clients bypass it.
 See HOME_DEFERRED_COMPUTE.md for scope, controls, reproduction and rollback.
 P25/RF/group-4 acceptance states are unchanged. No secrets or media committed.
+
+
+### October 17 — selectable model compute and automatic PC preference
+
+Added authenticated browser/box Settings selector: Automatic (prefer home PC,
+fall back to local), Local only, Deferred/home only (queue while unavailable),
+and Off. Both saved endpoint/model configurations survive switching. New and
+queued model work follow the selection; the Pi uses one shared local inference
+slot. Availability probes honor the Windows activity guard, use no inference,
+and are bounded/cached. Endpoint/credential editing retains local-only rules.
+Live default is Automatic. RF/DSP/decoding/transcription remain receiver-local.
+
+Routing, fallback, deferred persistence, queue-local processing, authentication
+and safe mode-only updates pass locally and on Pi. Full Go suite, focused race/
+vet and browser-handler checks pass. Browser mode changes are software evidence;
+no physical display, gameplay, model accuracy or RF acceptance is inferred.
+See HOME_DEFERRED_COMPUTE.md for modes, migration, retry timing and limitations.
+
+
+October 17 live follow-up: mode changes saved from the authenticated external
+browser; Local, Deferred and Off were verified, then Automatic restored and
+persisted. The home PC reports ready/preferred. At 1280×800 with explicit touch
+rules, the selector measured 48 pixels high and the compute card had no horizontal
+overflow. At desktop browser size the same compact card exposes the selector
+while advanced model/benchmark controls stay collapsed. These are browser
+viewport checks, not a new physical touchscreen acceptance claim. P25 was restored
+with the saved three-receiver silent profile after deployment.
+Final installed ARM64 SHA-256:
+`bdc3726cc12ccbb4287ca69e376eae28fcb08e6b6ab4897c81f58102817a7652`.
+Full exact-staged-source Go suite passes; focused routing/race/vet, UI handler
+checks, Windows build and actual-Pi routing/queue checks pass. A retention test's
+error-text expectation was updated for the destination-neutral "model analysis"
+wording; it still verifies failed analysis preserves the original IQ.

@@ -36,7 +36,7 @@ type DeepAnalysisQueue struct {
 func NewDeepAnalysisQueue(dataDirectory string, analyzer *LocalAIAnalyzer) *DeepAnalysisQueue {
 	if analyzer != nil {
 		// Home-server stalls must not occupy the Pi first-pass semaphore.
-		analyzer = &LocalAIAnalyzer{client: analyzer.client, semaphore: make(chan struct{}, 1), learning: analyzer.learning, profiles: analyzer.profiles}
+		analyzer = &LocalAIAnalyzer{client: analyzer.client, semaphore: analyzer.semaphore, remoteSemaphore: make(chan struct{}, 1), learning: analyzer.learning, profiles: analyzer.profiles}
 	}
 	q := &DeepAnalysisQueue{path: filepath.Join(dataDirectory, "Data", "deep-analysis-queue.json"), analyzer: analyzer}
 	if data, err := os.ReadFile(q.path); err == nil {
@@ -110,10 +110,10 @@ func (q *DeepAnalysisQueue) List() []DeepAnalysisJob {
 }
 
 func (q *DeepAnalysisQueue) Process(ctx context.Context, config LocalAIConfig, limit int) []DeepAnalysisJob {
-	if !config.RemoteEnabled || q.analyzer == nil {
+	if config.ComputeMode == "off" || (!config.Enabled && !config.RemoteEnabled) || q.analyzer == nil {
 		return nil
 	}
-	if validateLocalAIEndpoint(config.RemoteEndpoint) != nil {
+	if config.ComputeMode == "" && validateLocalAIEndpoint(config.RemoteEndpoint) != nil {
 		return nil
 	}
 	if q.loadError != nil || !q.processMu.TryLock() {
@@ -154,7 +154,14 @@ func (q *DeepAnalysisQueue) Process(ctx context.Context, config LocalAIConfig, l
 		if discarded {
 			continue
 		}
-		result, err := q.analyzer.analyzeWithConfig(ctx, event, LocalAIConfig{Enabled: true, Endpoint: config.RemoteEndpoint, Model: config.RemoteModel, Profile: "deep", MinimumConfidence: config.RemoteMinConfidence, ContextLength: config.ContextLength})
+		var result SignalIntelligence
+		var err error
+		if config.ComputeMode == "" {
+			remote := &LocalAIAnalyzer{client: q.analyzer.client, semaphore: q.analyzer.remoteSemaphore, learning: q.analyzer.learning, profiles: q.analyzer.profiles}
+			result, err = remote.analyzeWithConfig(ctx, event, LocalAIConfig{Enabled: true, Endpoint: config.RemoteEndpoint, Model: config.RemoteModel, Profile: "deep", MinimumConfidence: config.RemoteMinConfidence, ContextLength: config.ContextLength})
+		} else {
+			result, err = q.analyzer.analyzePreferred(ctx, event, normalizeLocalAIConfig(config))
+		}
 		q.mu.Lock()
 		if q.jobs[index].Status == "discarded" {
 			q.mu.Unlock()

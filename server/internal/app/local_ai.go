@@ -21,6 +21,7 @@ import (
 // leaves this computer: waveform classification and protocol decoders run
 // first, and the model receives only their bounded text metadata.
 type LocalAIConfig struct {
+	ComputeMode         string `json:"computeMode"`
 	Enabled             bool   `json:"enabled"`
 	Endpoint            string `json:"endpoint"`
 	Model               string `json:"model"`
@@ -34,13 +35,15 @@ type LocalAIConfig struct {
 }
 
 type LocalAIStatus struct {
-	RemoteQueue *DeepAnalysisQueueSummary `json:"remoteQueue,omitempty"`
-	State       string                    `json:"state"`
-	Note        string                    `json:"note"`
-	Config      LocalAIConfig             `json:"config"`
-	CanManage   bool                      `json:"canManage"`
-	Models      []LocalAIModelOption      `json:"models,omitempty"`
-	Learning    LearningLibraryStatus     `json:"learning"`
+	ComputeTarget string                    `json:"computeTarget"`
+	Home          HomeComputeStatus         `json:"home"`
+	RemoteQueue   *DeepAnalysisQueueSummary `json:"remoteQueue,omitempty"`
+	State         string                    `json:"state"`
+	Note          string                    `json:"note"`
+	Config        LocalAIConfig             `json:"config"`
+	CanManage     bool                      `json:"canManage"`
+	Models        []LocalAIModelOption      `json:"models,omitempty"`
+	Learning      LearningLibraryStatus     `json:"learning"`
 }
 
 type LocalAIModelOption struct {
@@ -71,21 +74,27 @@ type LocalAIBenchmarkStatus struct {
 }
 
 type LocalAIAnalyzer struct {
-	mu          sync.RWMutex
-	path        string
-	config      LocalAIConfig
-	client      *http.Client
-	semaphore   chan struct{}
-	learning    *SignalLearningLibrary
-	profiles    *ProfileStore
-	benchmarkMu sync.RWMutex
-	benchmark   LocalAIBenchmarkStatus
+	remoteMu        sync.Mutex
+	remoteChecked   time.Time
+	remoteKey       string
+	remoteStatus    HomeComputeStatus
+	remoteSemaphore chan struct{}
+	deferEvidence   func(TransmissionEvent) error
+	mu              sync.RWMutex
+	path            string
+	config          LocalAIConfig
+	client          *http.Client
+	semaphore       chan struct{}
+	learning        *SignalLearningLibrary
+	profiles        *ProfileStore
+	benchmarkMu     sync.RWMutex
+	benchmark       LocalAIBenchmarkStatus
 }
 
 func (a *LocalAIAnalyzer) SetReferenceProfiles(profiles *ProfileStore) { a.profiles = profiles }
 
 func NewLocalAIAnalyzer(dataDirectory string, learning ...*SignalLearningLibrary) *LocalAIAnalyzer {
-	a := &LocalAIAnalyzer{path: filepath.Join(dataDirectory, "Data", "local-ai.json"), client: &http.Client{Timeout: 90 * time.Second}, semaphore: make(chan struct{}, 1)}
+	a := &LocalAIAnalyzer{path: filepath.Join(dataDirectory, "Data", "local-ai.json"), client: &http.Client{Timeout: 90 * time.Second}, semaphore: make(chan struct{}, 1), remoteSemaphore: make(chan struct{}, 1)}
 	if len(learning) > 0 {
 		a.learning = learning[0]
 	}
@@ -103,6 +112,25 @@ func defaultLocalAIConfig() LocalAIConfig {
 
 func normalizeLocalAIConfig(config LocalAIConfig) LocalAIConfig {
 	defaults := defaultLocalAIConfig()
+	switch config.ComputeMode {
+	case "auto", "local", "deferred", "off":
+	default:
+		if config.RemoteEnabled {
+			if config.Enabled {
+				config.ComputeMode = "auto"
+			} else {
+				config.ComputeMode = "deferred"
+			}
+		} else if config.Enabled {
+			config.ComputeMode = "local"
+		} else {
+			config.ComputeMode = "off"
+		}
+	}
+	config.Enabled = config.ComputeMode != "off"
+	config.RemoteEnabled = config.ComputeMode == "auto" || config.ComputeMode == "deferred"
+	config.RemoteEndpoint = strings.TrimRight(strings.TrimSpace(config.RemoteEndpoint), "/")
+	config.RemoteModel = strings.TrimSpace(config.RemoteModel)
 	config.Endpoint = strings.TrimRight(strings.TrimSpace(config.Endpoint), "/")
 	if config.Endpoint == "" {
 		config.Endpoint = defaults.Endpoint
@@ -152,11 +180,15 @@ func validateLocalAIEndpoint(raw string) error {
 	return nil
 }
 
-func (a *LocalAIAnalyzer) Status() LocalAIStatus {
+func (a *LocalAIAnalyzer) Status() (status LocalAIStatus) {
 	a.mu.RLock()
 	config := a.config
 	a.mu.RUnlock()
-	status := LocalAIStatus{Config: config, CanManage: true}
+	status = LocalAIStatus{Config: config, CanManage: true}
+	defer func() { a.computeStatus(&status) }()
+	if config.ComputeMode == "deferred" {
+		return status
+	}
 	if a.learning != nil {
 		status.Learning = a.learning.Status()
 	}
@@ -211,6 +243,11 @@ func (a *LocalAIAnalyzer) Status() LocalAIStatus {
 
 func (a *LocalAIAnalyzer) Update(config LocalAIConfig) (LocalAIStatus, error) {
 	config = normalizeLocalAIConfig(config)
+	if config.RemoteEnabled {
+		if err := validateLocalAIEndpoint(config.RemoteEndpoint); err != nil {
+			return a.Status(), err
+		}
+	}
 	if err := validateLocalAIEndpoint(config.Endpoint); err != nil {
 		return a.Status(), err
 	}
@@ -245,7 +282,7 @@ func (a *LocalAIAnalyzer) Analyze(parent context.Context, event TransmissionEven
 	a.mu.RLock()
 	config := a.config
 	a.mu.RUnlock()
-	return a.analyzeWithConfig(parent, event, config)
+	return a.analyzePreferred(parent, event, normalizeLocalAIConfig(config))
 }
 
 func (a *LocalAIAnalyzer) analyzeWithConfig(parent context.Context, event TransmissionEvent, config LocalAIConfig) (SignalIntelligence, error) {

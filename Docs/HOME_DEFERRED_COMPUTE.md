@@ -176,3 +176,67 @@ named firewall rule. Leave the original Ollama task/configuration untouched.
 
 API references: [Microsoft input-idle session semantics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo),
 [Ollama model residency control](https://docs.ollama.com/api/generate).
+
+## Compute selection — October 17, 2026
+
+Settings → Local intelligence → **Analysis compute** has one immediately saved
+**Compute mode** selector, available to authenticated browser and box users:
+
+| Mode | New analysis and saved queued work |
+| --- | --- |
+| Automatic — prefer home PC | Use the home model when its server/model are available and the activity guard permits it. Otherwise try the Pi model. A failed home request also falls back locally, unless the caller cancelled the job. |
+| Local — this receiver only | Use the saved local endpoint/model; never send inference to the home PC. Pending saved analysis follows this selection too. |
+| Deferred — home PC only | Use the home model. If paused/offline, retain the evidence in the durable queue and retry later; do not run the Pi model. |
+| Off — no model analysis | Stop starting model requests. Preserve queued evidence and all RF/media data. |
+
+Automatic is the configured live default. Existing installations with local and
+home analysis enabled migrate to Automatic. Legacy home-only configurations
+remain Deferred; local-only remains Local; disabled remains Off. Choices retain
+both endpoint/model configurations, so switching does not require re-entering
+addresses or passwords. Active requests may finish using their previous selection;
+new requests and the next queued job follow the selected mode. Retry backoff can
+still delay previously failed jobs by up to five minutes. The Windows activity
+guard independently cancels home inference promptly when the PC becomes busy.
+
+The status text shows home readiness/paused/offline and the selected destination.
+Availability checks are bounded to 1.5 seconds and cached for five seconds; they
+do not load a model. The Pi's local inference is limited to one shared slot even
+when queued work falls back to it. Home work uses a separate slot. RF capture,
+DSP, protocol decoding and transcription remain on the receiver; this switch is
+for metadata model analysis, not a general raw-RF/transcription offload switch.
+If both models are unavailable, analysis can remain queued/retry or report an
+analysis error; the selector does not install missing runtimes/models.
+
+The remote-safe mode endpoint accepts only `mode`, not host/model/credential
+changes. Advanced endpoint/model changes retain their existing local-only access
+rule. The main selector uses a 44-pixel minimum target; local model settings and
+benchmarks are collapsed to reduce field-use clutter. The Pi's existing 2K
+context now has an explicit option in the local-model settings.
+
+Routing regressions cover home preference, guard pause, offline/missing model,
+mid-request error fallback, Local/Deferred/Off, durable deferred evidence,
+processing queued work locally, persistence, authentication and rejection of
+endpoint fields at the mode-only API. Local and Pi tests pass; full Go, focused
+race/vet and browser handler checks pass. These remain software checks; model
+identification accuracy and RF/physical acceptance gates are unchanged.
+
+P25 transcript completion now queues model evidence without starting inference
+inside the transcription callback. A focused regression verifies that the callback
+saves a job without contacting the model. This preserves transcription throughput
+while the shared queue follows the current compute selection.
+
+
+October 17 live follow-up: mode changes saved from the authenticated external
+browser; Local, Deferred and Off were verified, then Automatic restored and
+persisted. The home PC reports ready/preferred. At 1280×800 with explicit touch
+rules, the selector measured 48 pixels high and the compute card had no horizontal
+overflow. At desktop browser size the same compact card exposes the selector
+while advanced model/benchmark controls stay collapsed. These are browser
+viewport checks, not a new physical touchscreen acceptance claim. P25 was restored
+with the saved three-receiver silent profile after deployment.
+Final installed ARM64 SHA-256:
+`bdc3726cc12ccbb4287ca69e376eae28fcb08e6b6ab4897c81f58102817a7652`.
+Full exact-staged-source Go suite passes; focused routing/race/vet, UI handler
+checks, Windows build and actual-Pi routing/queue checks pass. A retention test's
+error-text expectation was updated for the destination-neutral "model analysis"
+wording; it still verifies failed analysis preserves the original IQ.

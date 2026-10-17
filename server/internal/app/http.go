@@ -259,6 +259,19 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		status := s.runtime.LocalAIStatus()
 		status.CanManage = requestIsLocal(r)
 		writeJSON(w, 200, status)
+	case r.Method == "PUT" && path == "/api/local-ai/compute":
+		var selection struct {
+			Mode string `json:"mode"`
+		}
+		if !decodeBody(w, r, &selection) {
+			return
+		}
+		status, err := s.runtime.localAI.SetComputeMode(selection.Mode)
+		if err == nil {
+			status = s.runtime.LocalAIStatus()
+		}
+		status.CanManage = requestIsLocal(r)
+		writeResult(w, status, err, 200)
 	case r.Method == "PUT" && path == "/api/local-ai":
 		if !requestIsLocal(r) {
 			writeError(w, http.StatusForbidden, "Local model settings can only be changed from the GP-SDR computer.")

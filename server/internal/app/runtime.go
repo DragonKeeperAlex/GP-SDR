@@ -121,6 +121,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		characterization: NewCharacterizationManager(dataDirectory), deviceSpectra: make(map[string]SpectrumSnapshot)}
 	runtimeState.transmit = newTransmitState()
 	runtimeState.deepQueue = NewDeepAnalysisQueue(dataDirectory, localAI)
+	localAI.deferEvidence = func(event TransmissionEvent) error { _, _, err := runtimeState.deepQueue.Enqueue(event); return err }
 	runtimeState.relay = NewRelayRuntime(runtimeState.audioHub, dataDirectory)
 	runtimeState.op25.audioHub = runtimeState.audioHub
 	runtimeState.fpv = newFPVReceiverState(dataDirectory)
@@ -140,16 +141,17 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 		if !ok {
 			return
 		}
+		// Keep transcription throughput independent of model inference latency.
+		// The durable worker uses the selected Automatic/Local/Deferred policy.
 		localAI.mu.RLock()
-		remoteEnabled := localAI.config.RemoteEnabled
+		enabled := localAI.config.Enabled
 		localAI.mu.RUnlock()
-		if remoteEnabled {
+		if enabled {
 			if _, _, err := runtimeState.deepQueue.Enqueue(event); err != nil {
-				runtimeState.setRuntimeError("Queue home analysis: " + err.Error())
+				runtimeState.setRuntimeError("Queue model analysis: " + err.Error())
 			}
-		} else {
-			runtimeState.analyzeEventWithLocalAI(context.Background(), eventID, event.FrequencyHz)
 		}
+
 	}
 	if err := runtimeState.recoverP25CallSpools(); err != nil {
 		runtimeState.setRuntimeError("P25 checkpoint recovery: " + err.Error())
@@ -167,7 +169,7 @@ func NewRuntime(dataDirectory, webAddress string, demo bool) (*Runtime, error) {
 
 func (r *Runtime) LocalAIStatus() LocalAIStatus {
 	status := r.localAI.Status()
-	if status.Config.RemoteEnabled {
+	if r.deepQueue != nil {
 		status.RemoteQueue = r.deepQueue.summary()
 	}
 	return status
